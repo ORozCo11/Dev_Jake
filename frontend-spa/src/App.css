@@ -1849,6 +1849,16 @@ html[data-theme="light"] .toast-notice.error {
   flex-direction: column;
   gap: 12px;
   padding: 20px 24px;
+  /* A max-height still lets this item's content size grow toward that
+     cap, and CSS Grid inflates the "auto" rows it spans to match — so
+     the stat-card/filter area kept getting taller with every new report
+     even with a cap in place. Only a fixed height fully decouples this
+     item's grid contribution from its content, so the section's
+     footprint truly never changes; see .latest-issue-timeline-list
+     below for the part that actually scrolls. */
+  height: 320px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 @media (max-width: 900px) {
   .latest-issue-card {
@@ -1896,6 +1906,8 @@ html[data-theme="light"] .toast-notice.error {
   position: relative;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   max-height: 440px;
   overflow-y: auto;
   padding-left: 22px;
