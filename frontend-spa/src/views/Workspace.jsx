@@ -3418,23 +3418,25 @@ function Workspace() {
           render: (row) => {
             if (row.final_status === 'Deleted') {
               return (
-                <button
-                  className="btn-reopen-action icon-btn"
-                  type="button"
-                  title="Reopen Ticket"
-                  aria-label="Reopen Ticket"
-                  onClick={() => {
-                    setConfirmDialog({
-                      title: 'Reopen Deleted Ticket',
-                      message: `Are you sure you want to reopen Ticket #${row.ticket_id} for ${row.vehicle_name}? It will be restored with all its sub-issues to how they were before it was deleted.`,
-                      confirmLabel: 'Reopen Ticket',
-                      variant: 'primary',
-                      onConfirm: () => ticketAction(`/ticket-archives/${row.archive_id}/reopen`, {}, 'Ticket successfully reopened.'),
-                    });
-                  }}
-                >
-                  <Icon name="undo" size={14} />
-                </button>
+                <div className="row-actions">
+                  <button
+                    className="btn-reopen-action icon-btn"
+                    type="button"
+                    title="Reopen Ticket"
+                    aria-label="Reopen Ticket"
+                    onClick={() => {
+                      setConfirmDialog({
+                        title: 'Reopen Deleted Ticket',
+                        message: `Are you sure you want to reopen Ticket #${row.ticket_id} for ${row.vehicle_name}? It will be restored with all its sub-issues to how they were before it was deleted.`,
+                        confirmLabel: 'Reopen Ticket',
+                        variant: 'primary',
+                        onConfirm: () => ticketAction(`/ticket-archives/${row.archive_id}/reopen`, {}, 'Ticket successfully reopened.'),
+                      });
+                    }}
+                  >
+                    <Icon name="undo" size={14} />
+                  </button>
+                </div>
               );
             }
             // A Closed ticket is permanently locked (no Reopen), but its
@@ -3442,15 +3444,17 @@ function Workspace() {
             // to see the full history of what was done.
             if (row.final_status === 'Closed') {
               return (
-                <button
-                  className="btn-view-action icon-btn"
-                  type="button"
-                  title="View Ticket"
-                  aria-label="View Ticket"
-                  onClick={() => openTicketProfile({ ticket_id: row.ticket_id })}
-                >
-                  <Icon name="eye" size={14} />
-                </button>
+                <div className="row-actions">
+                  <button
+                    className="btn-view-action icon-btn"
+                    type="button"
+                    title="View Ticket"
+                    aria-label="View Ticket"
+                    onClick={() => openTicketProfile({ ticket_id: row.ticket_id })}
+                  >
+                    <Icon name="eye" size={14} />
+                  </button>
+                </div>
               );
             }
             return <span className="muted">—</span>;
