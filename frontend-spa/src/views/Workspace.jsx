@@ -7149,9 +7149,23 @@ const USER_STAT_CARDS = [
 // `cards` is [{ key, label, icon, bg, color }]; `counts` maps key -> number;
 // clicking a card toggles `activeFilter` via `onFilterChange`.
 function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange }) {
+  const isTotalMulti = Array.isArray(activeFilter);
+  const isTotalActive = isTotalMulti ? activeFilter.length === 0 : !activeFilter;
   return (
     <section className="metric-grid" aria-label="Status summary" style={{ marginBottom: '16px' }}>
-      <article className="metric-card metric-card-iconic metric-card-solid" style={{ background: '#2563eb' }}>
+      <button
+        type="button"
+        className={`metric-card metric-card-iconic metric-card-solid stat-filter-card${isTotalActive ? ' is-active' : ''}`}
+        style={{
+          cursor: 'pointer',
+          background: '#2563eb',
+          boxShadow: isTotalActive
+            ? '0 0 0 3px #ffffff, 0 0 0 5px #2563eb, 0 10px 24px 2px color-mix(in srgb, #2563eb 55%, transparent)'
+            : undefined,
+        }}
+        onClick={() => onFilterChange(isTotalMulti ? [] : '')}
+        title={`Filter: ${totalLabel}`}
+      >
         <span className="metric-card-icon" style={{ background: 'rgba(255, 255, 255, 0.22)', color: '#ffffff' }}>
           <Icon name="grid" size={18} />
         </span>
@@ -7159,7 +7173,7 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
           <span style={{ color: 'rgba(255, 255, 255, 0.85)' }}>{totalLabel}</span>
           <strong style={{ color: '#ffffff' }}>{total}</strong>
         </div>
-      </article>
+      </button>
       {cards.map(({ key, label, icon, color }) => {
         // activeFilter is a plain string in some modules (a dedicated
         // single-purpose bucket filter) and an array in others (the shared
