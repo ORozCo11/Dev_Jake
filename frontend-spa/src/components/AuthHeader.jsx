@@ -13,7 +13,9 @@ const roleRoutes = {
 // Shared header for the public-facing pages (Login, About, Developers) —
 // the sign-in-side counterpart to WorkspaceFooter, so those pages read as
 // one connected site instead of disconnected standalone screens.
-export default function AuthHeader() {
+// extraActions — optional JSX rendered in the right area before the nav
+// (e.g. page-specific quick-action buttons like FAQ / Report a Concern).
+export default function AuthHeader({ extraActions }) {
   const { user } = useContext(AuthContext);
   // A logged-in user can land here too (e.g. "Visit Support Center" from
   // their workspace footer) — without this, Register/Login would be their
@@ -31,6 +33,7 @@ export default function AuthHeader() {
           </div>
         </Link>
         <div className="auth-page-header-right">
+          {extraActions && <div className="auth-header-extra-actions">{extraActions}</div>}
           <nav className="auth-page-nav">
             <Link to={dashboardPath ?? '/login'}>Home</Link>
             <Link to="/about">About</Link>

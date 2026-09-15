@@ -1,18 +1,24 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import AuthHeader from '../components/AuthHeader';
 import AuthFooter from '../components/AuthFooter';
 
-// TODO: replace the placeholder team info below with your actual capstone
-// group's names, roles, and (optionally) contact/GitHub links.
-//
-// To add a real photo: drop the image file in `public/team/` (e.g.
-// `public/team/juan.jpg`) and set `photo: '/team/juan.jpg'` below. Leaving
-// `photo: null` keeps the initials placeholder shown now.
+// Photo cutouts are transparent PNGs, normalized to the same canvas size and
+// head position (see public/team/*-cutout.png) so the blue glow and hover
+// role tag line up consistently across cards. `photoWhiteBg`, when present,
+// is a real photo shown by default that crossfades into the transparent
+// cutout on hover/focus; without it, the frame's own white background
+// stands in for the default look instead.
 const TEAM = [
-  { name: 'Precious Dignos', role: 'Project Manager / QA Specialist', photo: '/team/precious-dignos.jpg' },
-  { name: 'John Paul Orozco', role: 'Project Lead / Full-Stack Developer', photo: '/team/paul-orozco.jpg' },
-  { name: 'Justine Mae Belia', role: 'Documentation / QA Specialist', photo: '/team/justine-mae-belia.jpg' },
-  { name: 'Jake Engana', role: 'Backend Developer / UI-UX Designer', photo: null },
+  { name: 'Precious Dignos', role: 'Project Manager / QA Specialist', photo: '/team/precious-cutout.png' },
+  { name: 'John Paul Orozco', role: 'Project Lead / Full-Stack Developer', photo: '/team/john-paul-cutout.png' },
+  { name: 'Justine Mae Belia', role: 'Documentation / QA Specialist', photo: '/team/justine-cutout.png' },
+  {
+    name: 'Jake Engana',
+    role: 'Backend Developer / UI-UX Designer',
+    photo: '/team/jake-cutout.png',
+    photoWhiteBg: '/team/jake-whitebg.jpg',
+  },
 ];
 
 const PER_PAGE = 4;
@@ -42,9 +48,16 @@ export default function Developers() {
   const totalPages = Math.max(1, Math.ceil(TEAM.length / PER_PAGE));
   const visible = TEAM.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
 
+  const pageActions = (
+    <div className="dev-header-actions">
+      <Link to="/support" className="dev-header-action-btn">Report a Concern</Link>
+      <a href="#faq" className="dev-header-action-btn">FAQ</a>
+    </div>
+  );
+
   return (
-    <div className="auth-page-shell">
-      <AuthHeader />
+    <div className="auth-page-shell" style={{ overflow: 'hidden', height: '100vh' }}>
+      <AuthHeader extraActions={pageActions} />
 
       <main className="auth-hero">
         <DecoArrow className="dev-team-deco-arrow dev-team-deco-arrow-left" gradientId="devArrowLeft" />
@@ -71,18 +84,31 @@ export default function Developers() {
 
             <div className="dev-team-grid">
               {visible.map((member, i) => (
-                <div className="dev-team-card" key={`${page}-${i}`}>
-                  <div className="dev-team-photo">
+                <div
+                  className="dev-team-card"
+                  key={`${page}-${i}`}
+                  tabIndex="0"
+                  aria-label={`${member.name}, ${member.role}`}
+                >
+                  <p className="dev-team-role-tag">{member.role}</p>
+                  <div className="dev-team-photo-frame">
                     {member.photo ? (
-                      <img src={member.photo} alt={member.name} />
+                      <>
+                        {member.photoWhiteBg && (
+                          <img
+                            className="dev-team-photo-whitebg"
+                            src={member.photoWhiteBg}
+                            alt=""
+                            aria-hidden="true"
+                          />
+                        )}
+                        <img className="dev-team-photo-img" src={member.photo} alt={member.name} />
+                      </>
                     ) : (
                       <div className="dev-team-photo-placeholder">{initialsOf(member.name)}</div>
                     )}
-                    <div className="dev-team-caption">
-                      <p className="dev-team-name">{member.name}</p>
-                      <p className="dev-team-role">{member.role}</p>
-                    </div>
                   </div>
+                  <p className="dev-team-name">{member.name}</p>
                 </div>
               ))}
             </div>
