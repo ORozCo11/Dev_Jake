@@ -22,9 +22,16 @@ export default function WorkspaceFooter() {
         </div>
       </div>
       <div className="workspace-footer-actions">
+        <div className="workspace-footer-action-icon" aria-hidden="true">
+          <Icon name="clipboard" size={22} />
+        </div>
         <div className="workspace-footer-buttons">
-          <Link to="/support" className="workspace-footer-btn workspace-footer-btn-light">Visit Support Center</Link>
-          <Link to="/support#contact" className="workspace-footer-btn workspace-footer-btn-dark">Contact Us</Link>
+          <Link to="/support" className="workspace-footer-btn workspace-footer-btn-light">
+            <Icon name="clipboard" size={13} /> Visit Support Center
+          </Link>
+          <Link to="/support#contact" className="workspace-footer-btn workspace-footer-btn-dark">
+            <Icon name="alert" size={13} /> Contact Us
+          </Link>
         </div>
         <p className="workspace-footer-copyright">
           © {new Date().getFullYear()} Barangay Vehicle Management System. All rights reserved.
