@@ -168,6 +168,35 @@ const PATHS = {
       <line x1="3" y1="18" x2="3.01" y2="18" />
     </>
   ),
+  // Table "Choose Columns" toolbar button — three vertical panes inside a
+  // frame, distinct from `grid`'s four even squares so it doesn't get
+  // confused with a card/grid-view toggle at a glance.
+  columns: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="9" y1="4" x2="9" y2="20" />
+      <line x1="15" y1="4" x2="15" y2="20" />
+    </>
+  ),
+  // Drag handle — two columns of three dots, the standard "grab to reorder"
+  // affordance (rendered as filled circles, so it reads as a handle rather
+  // than an outline shape at 14px).
+  gripVertical: (
+    <>
+      <circle cx="9" cy="5" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="19" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="5" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="19" r="1.4" fill="currentColor" stroke="none" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </>
+  ),
   edit: (
     <>
       <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />

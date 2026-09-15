@@ -31,6 +31,15 @@ class TicketSubIssue extends Model
         'status',
         'assigned_mechanic_id',
         'maintenance_type',
+        // How this sub-issue's repair was/will be carried out — in_house,
+        // cannibalized, or external. Set at ticket creation when already
+        // known, or at the Log Repairs step once a mechanic starts the work.
+        'repair_type',
+        'source_vehicle_id',
+        // Only meaningful when repair_type is 'external' — which shop did
+        // the work, and how long the repair is warrantied for.
+        'external_vendor',
+        'warranty_until',
         'work_order_notes',
         'mechanic_assigned_at',
         'mechanic_assigned_by',
@@ -65,6 +74,7 @@ class TicketSubIssue extends Model
         'mechanic_assigned_at' => 'datetime',
         'verified_at'          => 'datetime',
         'confirmed_at'         => 'datetime',
+        'warranty_until'       => 'date',
         'deferred_at'          => 'datetime',
         'maintenance_cost'     => 'decimal:2',
         'functional_test'      => 'array',
@@ -89,6 +99,11 @@ class TicketSubIssue extends Model
     public function assignedMechanic()
     {
         return $this->belongsTo(User::class, 'assigned_mechanic_id');
+    }
+
+    public function sourceVehicle()
+    {
+        return $this->belongsTo(Vehicle::class, 'source_vehicle_id', 'vehicle_id');
     }
 
     public function mechanicAssignedBy()

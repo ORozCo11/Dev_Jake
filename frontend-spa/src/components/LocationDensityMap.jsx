@@ -8,6 +8,7 @@ import {
   PAKNAAN_CENTER,
   PAKNAAN_POLYGON,
 } from '../data/paknaanLocationDensity';
+import { geoJsonToRings } from '../utils/boundary';
 
 // Normalizes a hub record from the Laravel `/hubs` API into the shape the map/UI expects.
 function normalizeHub(record) {
@@ -111,50 +112,6 @@ function createSelectedVehicleIcon() {
 
 function isValidCoordinate(value) {
   return Number.isFinite(value);
-}
-
-// Converts a GeoJSON Polygon/MultiPolygon geometry into an array of Leaflet
-// LatLng rings — one ring per Polygon, one per part of a MultiPolygon (e.g.
-// islands). Holes are dropped since this is only ever used to draw a
-// decorative boundary outline, not an exact administrative shape.
-// Malformed/unexpected boundary data (e.g. a ring that isn't an array of
-// [lng, lat] pairs) must not throw here — this runs inside a useMemo during
-// render, so an uncaught error would crash the whole Workspace with a white
-// screen. Any ring that doesn't look right is skipped (and logged) instead.
-function isLngLatPair(point) {
-  return Array.isArray(point) && point.length >= 2
-    && Number.isFinite(point[0]) && Number.isFinite(point[1]);
-}
-
-function toLatLngRing(ring) {
-  if (!Array.isArray(ring) || !ring.every(isLngLatPair)) {
-    console.warn('LocationDensityMap: skipping malformed boundary ring', ring);
-    return null;
-  }
-  return ring.map(([lng, lat]) => [lat, lng]);
-}
-
-function geoJsonToRings(geometry) {
-  if (!geometry) return [];
-
-  if (geometry.type === 'Polygon') {
-    if (!Array.isArray(geometry.coordinates)) {
-      console.warn('LocationDensityMap: skipping malformed Polygon geometry', geometry);
-      return [];
-    }
-    const ring = toLatLngRing(geometry.coordinates[0]);
-    return ring ? [ring] : [];
-  }
-  if (geometry.type === 'MultiPolygon') {
-    if (!Array.isArray(geometry.coordinates)) {
-      console.warn('LocationDensityMap: skipping malformed MultiPolygon geometry', geometry);
-      return [];
-    }
-    return geometry.coordinates
-      .map((polygon) => (Array.isArray(polygon) ? toLatLngRing(polygon[0]) : null))
-      .filter(Boolean);
-  }
-  return [];
 }
 
 function normalizeLocation(value = '') {
@@ -441,22 +398,48 @@ function LocationDensityMap({
     setPendingLatLng(latLng);
   }, []);
 
+  // Opens the same naming dialog without requiring a map click first — the
+  // lat/lng inputs in it start at the barangay's known center and are fully
+  // editable, so a location can be added by typing coordinates alone (e.g.
+  // copied from another map/GPS reading) instead of having to click the
+  // exact spot.
+  const openManualEntry = useCallback(() => {
+    setAddMode(false);
+    setHubNameDraft('');
+    setPendingLatLng({ lat: PAKNAAN_CENTER.lat, lng: PAKNAAN_CENTER.lng });
+  }, []);
+
   const cancelNaming = useCallback(() => {
     setPendingLatLng(null);
     setHubNameDraft('');
   }, []);
 
+  // Both fields are typed as text (not <input type="number">'s value, which
+  // silently reverts to "" on an invalid intermediate keystroke like a
+  // trailing "-" or ".") — parsed to numbers only at save time, so the
+  // field the map click seeded can still be hand-edited digit by digit.
+  const updatePendingCoord = useCallback((axis, rawValue) => {
+    setPendingLatLng((prev) => ({ ...(prev ?? {}), [axis]: rawValue }));
+  }, []);
+
+  const pendingLat = Number(pendingLatLng?.lat);
+  const pendingLng = Number(pendingLatLng?.lng);
+  const hasValidPendingCoords = pendingLatLng
+    && String(pendingLatLng.lat).trim() !== '' && String(pendingLatLng.lng).trim() !== ''
+    && Number.isFinite(pendingLat) && Number.isFinite(pendingLng)
+    && pendingLat >= -90 && pendingLat <= 90 && pendingLng >= -180 && pendingLng <= 180;
+
   const confirmNaming = useCallback(async () => {
     const name = hubNameDraft.trim();
-    if (!name || !pendingLatLng || !canManageHubs) {
+    if (!name || !hasValidPendingCoords || !canManageHubs) {
       return;
     }
 
     try {
       await api.post('/hubs', {
         name,
-        lat: pendingLatLng.lat,
-        lng: pendingLatLng.lng,
+        lat: pendingLat,
+        lng: pendingLng,
         label: name.substring(0, 2).toUpperCase(),
       });
       await fetchHubs();
@@ -467,7 +450,7 @@ function LocationDensityMap({
       setPendingLatLng(null);
       setHubNameDraft('');
     }
-  }, [canManageHubs, fetchHubs, hubNameDraft, pendingLatLng]);
+  }, [canManageHubs, fetchHubs, hasValidPendingCoords, hubNameDraft, pendingLat, pendingLng]);
 
   const captureMap = useCallback(async () => {
     setCapturing(true);
@@ -590,7 +573,7 @@ function LocationDensityMap({
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
           {canManageHubs
-            ? (addMode ? 'Click anywhere on the map to drop the new hub.' : 'Click "Add Hub", then click the map to pin a new location.')
+            ? (addMode ? 'Click anywhere on the map to drop the new hub.' : 'Click "Add Hub" then the map to pin a location, or "By Coordinates" to type its name and lat/lng directly.')
             : 'Hubs shown here are shared by every workspace user.'}
         </span>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -645,6 +628,22 @@ function LocationDensityMap({
                   Add Hub
                 </>
               )}
+            </button>
+          )}
+          {canManageHubs && !addMode && (
+            <button
+              type="button"
+              className="location-density-btn is-secondary"
+              onClick={openManualEntry}
+              title="Type a name and coordinates instead of clicking the map"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              By Coordinates
             </button>
           )}
           <button
@@ -921,10 +920,6 @@ function LocationDensityMap({
               <h3 id="hub-modal-title">Name this location hub</h3>
             </div>
 
-            <p className="hub-modal-coords">
-              Lat {pendingLatLng.lat.toFixed(6)} · Lng {pendingLatLng.lng.toFixed(6)}
-            </p>
-
             <label className="hub-modal-label" htmlFor="hub-name-input">Hub name</label>
             <input
               id="hub-name-input"
@@ -941,6 +936,51 @@ function LocationDensityMap({
               maxLength={60}
             />
 
+            {/* Seeded from wherever the map was clicked (or the barangay
+                center, for the "By Coordinates" entry point) but always
+                editable — clicking gets you close, typing gets you exact. */}
+            <div className="hub-modal-coord-fields">
+              <div>
+                <label className="hub-modal-label" htmlFor="hub-lat-input">Latitude</label>
+                <input
+                  id="hub-lat-input"
+                  className="hub-modal-input"
+                  type="number"
+                  step="any"
+                  min={-90}
+                  max={90}
+                  placeholder="e.g. 10.346106"
+                  value={pendingLatLng.lat}
+                  onChange={(e) => updatePendingCoord('lat', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') confirmNaming();
+                    if (e.key === 'Escape') cancelNaming();
+                  }}
+                />
+              </div>
+              <div>
+                <label className="hub-modal-label" htmlFor="hub-lng-input">Longitude</label>
+                <input
+                  id="hub-lng-input"
+                  className="hub-modal-input"
+                  type="number"
+                  step="any"
+                  min={-180}
+                  max={180}
+                  placeholder="e.g. 123.961186"
+                  value={pendingLatLng.lng}
+                  onChange={(e) => updatePendingCoord('lng', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') confirmNaming();
+                    if (e.key === 'Escape') cancelNaming();
+                  }}
+                />
+              </div>
+            </div>
+            {!hasValidPendingCoords && (
+              <p className="hub-modal-coord-hint">Enter a latitude between -90 and 90, and a longitude between -180 and 180.</p>
+            )}
+
             <div className="hub-modal-actions">
               <button type="button" className="hub-modal-btn hub-modal-cancel" onClick={cancelNaming}>
                 Cancel
@@ -949,7 +989,7 @@ function LocationDensityMap({
                 type="button"
                 className="hub-modal-btn hub-modal-save"
                 onClick={confirmNaming}
-                disabled={!hubNameDraft.trim()}
+                disabled={!hubNameDraft.trim() || !hasValidPendingCoords}
               >
                 Save Hub
               </button>

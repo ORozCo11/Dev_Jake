@@ -4,12 +4,15 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import LocationDensityMap from '../components/LocationDensityMap';
 import VehicleLocationMap from '../components/VehicleLocationMap';
+import AddLocationMap from '../components/AddLocationMap';
 import Icon from '../components/Icon';
 import TextType from '../components/TextType';
 import WorkspaceFooter from '../components/WorkspaceFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { AuthContext } from '../context/AuthContextObject';
-import { groupLocationRowsByHub } from '../data/paknaanLocationDensity';
+import { groupLocationRowsByHub, PAKNAAN_POLYGON } from '../data/paknaanLocationDensity';
+import { geoJsonToRings, isPointWithinBoundaryRings } from '../utils/boundary';
+import { geocodeAddress, reverseGeocode } from '../utils/geocode';
 
 const FormNoticeContext = createContext(null);
 // Lets shared table cells (VehicleCell, UserAvatarName) open the right detail
@@ -377,6 +380,8 @@ function Workspace() {
   const isNewUserPage = /\/users\/new$/.test(location.pathname);
   const editUserId = location.pathname.match(/\/users\/(\d+)\/edit$/)?.[1] ?? null;
   const viewUserId = location.pathname.match(/\/users\/(\d+)$/)?.[1] ?? null;
+  const isNewLocationPage = /\/locations\/new$/.test(location.pathname);
+  const editLocationVehicleId = location.pathname.match(/\/locations\/(\d+)\/edit$/)?.[1] ?? null;
   const logRepairsMatch = location.pathname.match(/\/work-orders\/(\d+)\/(\d+)\/log-repairs$/);
   const logRepairsTicketId = logRepairsMatch?.[1] ?? null;
   const logRepairsSubIssueId = logRepairsMatch?.[2] ?? null;
@@ -387,7 +392,7 @@ function Workspace() {
     || isNewCategoryPage || editCategoryId || isNewSchedulePage || editScheduleId
     || isNewIssuePage || editIssueId || viewIssueId || isNewConditionPage || editConditionId
     || isNewMaintenancePage || editMaintenanceId || maintenanceProfileId || isNewUserPage || editUserId || viewUserId
-    || logRepairsTicketId || inspectTicketId || isProfilePage
+    || logRepairsTicketId || inspectTicketId || isProfilePage || isNewLocationPage || editLocationVehicleId
   );
   // The bold page title for whichever create/edit/view sub-page is active —
   // null when just looking at a module's own list, in which case the heading
@@ -415,6 +420,8 @@ function Workspace() {
     || (logRepairsTicketId && 'Log Repairs')
     || (inspectTicketId && 'Inspect Vehicle')
     || (isProfilePage && 'My Profile')
+    || (isNewLocationPage && 'Add Location')
+    || (editLocationVehicleId && 'Update Location')
     || null;
   const { user, logout, refreshUser } = useContext(AuthContext);
   const moduleGroups = useMemo(() => resolveModuleGroups(user), [user.role, user.roles]);
@@ -454,6 +461,7 @@ function Workspace() {
     : isNewIssuePage || editIssueId || viewIssueId ? 'issues'
     : isNewConditionPage || editConditionId ? 'conditions'
     : isNewUserPage || editUserId || viewUserId ? 'users'
+    : isNewLocationPage || editLocationVehicleId ? 'locations'
     : logRepairsTicketId ? 'ticketWorkOrders'
     : inspectTicketId ? 'ticketInspections'
     : activeModule;
@@ -1139,7 +1147,8 @@ function Workspace() {
   // it (usually just the bare dashboard route), not "the module the user was
   // on". This is the deterministic replacement — go to the base route AND
   // explicitly set the module, instead of trusting history.
-  const returnToModule = useCallback((moduleKey) => {
+  const returnToModule = useCallback((moduleKey, filter) => {
+    if (filter !== undefined) setFilterStatus(filter);
     navigate(roleRoutes[user.role]);
     setActiveModule(moduleKey);
   }, [navigate, user.role]);
@@ -1651,9 +1660,18 @@ function Workspace() {
   }, []);
 
   const locationTableColumns = useMemo(
-    () => locationColumns(user, viewVehicleOnMap),
-    [user, viewVehicleOnMap],
+    () => locationColumns(user, viewVehicleOnMap, (row) => navigate(`${roleRoutes[user.role]}/locations/${row.vehicle_id}/edit`)),
+    [user, viewVehicleOnMap, navigate],
   );
+
+  // "All Vehicles" is the pilot table for the Choose Columns toolbar button
+  // (show/hide + drag to reorder, persisted per browser) — see
+  // ColumnChooserButton/useColumnChooser below.
+  const vehicleColumnDefs = useMemo(
+    () => vehicleColumns(user.role, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile),
+    [user.role, openVehicleProfile, deleteRecord, restoreRecord, filterStatus, openTicketProfile],
+  );
+  const vehicleColumnChooser = useColumnChooser('vms_vehicle_columns', vehicleColumnDefs);
 
   const unreadCount = notifications.filter((n) => !n.read_at).length;
 
@@ -1721,6 +1739,16 @@ function Workspace() {
   const [mapBarangays, setMapBarangays] = useState([]);
   const [mapBarangayId, setMapBarangayId] = useState('');
   const [mapBoundaryOverride, setMapBoundaryOverride] = useState(null);
+  // Same "what counts as inside the service area" boundary the map draws,
+  // recomputed here so the Add Location form can reject a geocoded address
+  // that falls outside it — mirrors LocationDensityMap's own fallback (the
+  // hardcoded Paknaan outline when no barangay override is selected, or the
+  // override has no boundary geometry on file).
+  const locationBoundaryRings = useMemo(() => {
+    const overrideRings = geoJsonToRings(mapBoundaryOverride?.geometry);
+    return overrideRings.length ? overrideRings : [PAKNAAN_POLYGON];
+  }, [mapBoundaryOverride]);
+  const locationBoundaryLabel = mapBoundaryOverride?.label ?? 'Paknaan';
   // Guards the one-time "default to Paknaan" seed below from re-firing on a
   // second effect invocation (React's dev-only StrictMode double-invokes
   // effects on mount) — without this, a second run would call
@@ -2185,6 +2213,48 @@ function Workspace() {
               onSubmit={handleCreateVehicle}
               onDirty={() => setHasUnsavedChanges(true)}
             />
+          ) : isNewLocationPage ? (
+            <NewLocationPage
+              onBack={() => returnToModule('locations')}
+              boundaryRings={locationBoundaryRings}
+              boundaryLabel={locationBoundaryLabel}
+              onSubmit={async (hub) => {
+                await api.post('/hubs', hub);
+                setNotice({ type: 'success', text: 'Location added.' });
+                await refreshCurrent();
+                returnToModule('locations');
+              }}
+            />
+          ) : editLocationVehicleId ? (
+            <EditLocationPage
+              row={locationRows.find((r) => String(r.vehicle_id) === String(editLocationVehicleId)) ?? null}
+              allHubs={allHubs}
+              boundaryRings={locationBoundaryRings}
+              boundaryLabel={locationBoundaryLabel}
+              onBack={() => returnToModule('locations')}
+              onSubmit={async ({ name, lat, lng, label, addressArea, remarks }) => {
+                // Reuse the hub if that name already exists (case-insensitive
+                // — hub names are unique per barangay); otherwise this is a
+                // brand-new location, so create it first exactly like Add
+                // Location does. Either way the vehicle's location update
+                // itself always goes through POST /locations, so it's still
+                // one more entry in that vehicle's location history, not an
+                // edit of a past one.
+                const existingHub = allHubs.find((h) => h.name.toLowerCase() === name.toLowerCase());
+                if (!existingHub) {
+                  await api.post('/hubs', { name, lat, lng, label });
+                }
+                await api.post('/locations', {
+                  vehicle_id: editLocationVehicleId,
+                  current_location: existingHub ? existingHub.name : name,
+                  address_area: addressArea,
+                  remarks,
+                });
+                setNotice({ type: 'success', text: 'Location updated.' });
+                await refreshCurrent();
+                returnToModule('locations');
+              }}
+            />
           ) : isNewTicketPage ? (
             <NewTicketPage
               onBack={() => { setPrefilledTicketData(null); returnToModule('tickets'); }}
@@ -2322,6 +2392,7 @@ function Workspace() {
           ) : logRepairsTicketId ? (
             <LogRepairsPage
               ticket={flattenSubIssueRows(records.ticketWorkOrders).find((r) => String(r.ticket_id) === String(logRepairsTicketId) && String(r.sub_issue_id) === String(logRepairsSubIssueId))}
+              vehicleOptions={lookups.vehicles ?? []}
               onBack={() => returnToModule('ticketWorkOrders')}
               onSubmit={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/log-repairs`, payload, 'Repair logs submitted. Sent for Custodian verification.').then((ok) => { if (ok) returnToModule('ticketWorkOrders'); })}
               onDirty={() => setHasUnsavedChanges(true)}
@@ -2391,6 +2462,7 @@ function Workspace() {
           basePath={roleRoutes[user.role]}
           onNavigate={navigate}
           onGoToSchedules={() => returnToModule('schedules')}
+          onGoToModule={returnToModule}
         />
       );
     }
@@ -2445,12 +2517,13 @@ function Workspace() {
               value={searchQuery}
               onChange={setSearchQuery}
               placeholder="Search vehicles..."
+              columnChooser={vehicleColumnChooser}
               onAdd={hasRole(user, 'Admin') ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`) : undefined}
               addLabel="Add Vehicle"
               onExport={() => exportRowsToCsv('vehicles.csv', VEHICLE_EXPORT_COLUMNS, visibleRows)}
             />
           </div>
-          <PaginatedTable columns={vehicleColumns(user.role, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile)} rows={visibleRows} onRowClick={openVehicleProfile} emptyMessage="No vehicles here yet — click the + button to register one." />
+          <PaginatedTable columns={vehicleColumnChooser.visibleColumns} rows={visibleRows} onRowClick={openVehicleProfile} onReorderColumn={vehicleColumnChooser.reorderColumn} emptyMessage="No vehicles here yet — click the + button to register one." />
         </ModulePanel>
       );
     }
@@ -2645,8 +2718,15 @@ function Workspace() {
                     value={searchQuery}
                     onChange={setSearchQuery}
                     placeholder="Search records..."
-                    onAdd={() => setEditTarget({})}
-                    addLabel="Add Record"
+                    // A vehicle's current location is already set from the
+                    // Add/Edit Vehicle form (its Current Location field is a
+                    // creatable-select, so it can introduce a new hub name
+                    // too). What THIS tab had no way to do was define a new
+                    // hub's actual map position — "Add Location" is its own
+                    // page (fields + a live map, either one fills the
+                    // other) instead of a click-the-map-first flow.
+                    onAdd={hasRole(user, 'Admin') ? () => navigate(`${roleRoutes[user.role]}/locations/new`) : undefined}
+                    addLabel="Add Location"
                   />
                 </div>
                 <div style={{ overflowX: 'auto' }}>
@@ -2657,20 +2737,6 @@ function Workspace() {
                     emptyMessage="No location records yet."
                   />
                 </div>
-                {editTarget !== null && (
-                  <div className="location-form-panel">
-                    <h3>{editTarget?.location_record_id ? 'Update Location Record' : 'Add Location Record'}</h3>
-                    <SmartForm
-                      fields={locationFields(lookups, allHubs)}
-                      initialValues={editTarget?.vehicle_id ? editTarget : EMPTY_OBJ}
-                      key="location-create"
-                      onCancel={() => setEditTarget(null)}
-                      onSubmit={submitModuleForm}
-                      submitLabel={editTarget?.location_record_id ? 'Update Record' : 'Add Record'}
-                      title=""
-                    />
-                  </div>
-                )}
               </div>
             )}
           </ModulePanel>
@@ -2963,12 +3029,16 @@ function Workspace() {
             <h3>Maintenance Records <span className="count-badge">{visibleRows.length}</span></h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <ViewModeDropdown value={maintenanceViewMode} onChange={changeMaintenanceViewMode} />
+              {/* No general "+ Add" entry point here anymore — repair data
+                  is now entered through Tickets. This form still exists and
+                  is still reachable from the "Send to External Shop" bridge
+                  off a deferred ticket sub-issue (handleSendToExternalShop)
+                  and from Maintenance Schedule completions, which create
+                  records through their own dedicated paths, not this list. */}
               <LocalSearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search maintenance..."
-                onAdd={(hasRole(user, 'Admin') || hasRole(user, 'Maintenance Personnel') || hasRole(user, 'Custodian')) ? () => navigate(`${roleRoutes[user.role]}/maintenance/new`) : undefined}
-                addLabel="Add Maintenance"
               />
             </div>
           </div>
@@ -3849,16 +3919,26 @@ function clampPercent(value) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function DashboardMicroMetric({ icon, label, value, tone = 'neutral' }) {
-  return (
-    <div className={`dashboard-micro-metric is-${tone}`}>
+function DashboardMicroMetric({ icon, label, value, tone = 'neutral', onClick }) {
+  const content = (
+    <>
       <span><Icon name={icon} size={15} /></span>
       <div>
         <small>{label}</small>
         <strong>{value}</strong>
       </div>
-    </div>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button type="button" className={`dashboard-micro-metric is-${tone} is-clickable`} onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={`dashboard-micro-metric is-${tone}`}>{content}</div>;
 }
 
 function DashboardSignalCard({ icon, label, value, detail, tone = 'neutral', meter = 0, onClick }) {
@@ -3901,7 +3981,7 @@ function DashboardStatusStrip({ rows }) {
   );
 }
 
-function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedules }) {
+function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedules, onGoToModule }) {
   const [weather, setWeather] = useState(null);
   const [greeting, setGreeting] = useState(() => buildLocalGreeting(user?.name));
   const [greetingRole, setGreetingRole] = useState(() => dashboardRoleLabel(user?.role));
@@ -4088,9 +4168,9 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           />
           <p>{dateStr || 'Today'}</p>
           <div className="dashboard-command-pills">
-            <span>{totalVehicles} fleet units</span>
-            <span>{locationsByHub.length} active sites</span>
-            <span>{data.vehicles_by_type?.length ?? 0} vehicle types</span>
+            <button type="button" onClick={() => onGoToModule('vehicles', [])}>{totalVehicles} fleet units</button>
+            <button type="button" onClick={() => onGoToModule('locations', [])}>{locationsByHub.length} active sites</button>
+            <button type="button" onClick={() => onGoToModule('categories', [])}>{data.vehicles_by_type?.length ?? 0} vehicle types</button>
           </div>
         </div>
 
@@ -4118,10 +4198,10 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
             )}
           </div>
           <div className="dashboard-command-mini-grid">
-            <DashboardMicroMetric icon="vehicle" label="Available" value={availableVehicles} tone="ok" />
-            <DashboardMicroMetric icon="wrench" label="In Shop" value={underMaintenanceVehicles} tone="warn" />
-            <DashboardMicroMetric icon="alert" label="Issues" value={reportedIssues} tone={reportedIssues > 0 ? 'alert' : 'ok'} />
-            <DashboardMicroMetric icon="calendar" label="Overdue" value={overdueMaintenanceCount} tone={overdueMaintenanceCount > 0 ? 'alert' : 'neutral'} />
+            <DashboardMicroMetric icon="vehicle" label="Available" value={availableVehicles} tone="ok" onClick={() => onGoToModule('vehicles', ['Available'])} />
+            <DashboardMicroMetric icon="wrench" label="In Shop" value={underMaintenanceVehicles} tone="warn" onClick={() => onGoToModule('vehicles', ['Under Maintenance'])} />
+            <DashboardMicroMetric icon="alert" label="Issues" value={reportedIssues} tone={reportedIssues > 0 ? 'alert' : 'ok'} onClick={() => onGoToModule('issues', [])} />
+            <DashboardMicroMetric icon="calendar" label="Overdue" value={overdueMaintenanceCount} tone={overdueMaintenanceCount > 0 ? 'alert' : 'neutral'} onClick={onGoToSchedules} />
           </div>
         </div>
       </section>
@@ -5434,7 +5514,7 @@ function SelectOrOtherField({ field, value, onChange }) {
           }
         }}
       >
-        <option value="">Select</option>
+        <option value="">{' '}</option>
         {options.map((option, i) => (
           <option key={option?.value != null ? option.value : `opt-${i}`} value={option?.value ?? option ?? ''}>
             {option?.label ?? option}
@@ -5634,10 +5714,17 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
       {(() => {
         const renderField = (field) => {
         const quantity = field.type === 'quantity' ? splitQuantityValue(values[field.name], field.units) : null;
+        // Drives the floating-label float-up: a value counts even for an
+        // array (checkboxes/list), so those fields' captions float too
+        // once at least one row/option is filled in.
+        const rawFieldValue = values[field.name];
+        const fieldHasValue = Array.isArray(rawFieldValue)
+          ? rawFieldValue.some((v) => String(v ?? '').trim() !== '')
+          : rawFieldValue !== undefined && rawFieldValue !== null && String(rawFieldValue).trim() !== '';
         return (
         <Fragment key={field.name}>
         <label
-          className={field.compactFile ? 'file-inline' : undefined}
+          className={[field.compactFile ? 'file-inline' : null, fieldHasValue ? 'has-value' : null].filter(Boolean).join(' ') || undefined}
           style={field.fullWidth ? { gridColumn: '1 / -1' } : undefined}
         >
           <span style={field.action ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } : undefined}>
@@ -5682,7 +5769,7 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
             <textarea
               name={field.name}
               onChange={handleChange}
-              placeholder={field.placeholder}
+              placeholder={field.placeholder ?? field.label}
               required={field.required}
               rows={field.rows ?? 3}
               value={values[field.name] ?? ''}
@@ -5695,7 +5782,10 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
               required={field.required}
               value={values[field.name] ?? ''}
             >
-              <option value="">Select</option>
+              {/* Blank rather than "Select" — at rest the floating label
+                  sits centered over the field like a placeholder, so a
+                  visible option here would double up with it. */}
+              <option value="">{' '}</option>
               {field.options.map((option, i) => (
                 <option
                   key={option?.value != null ? option.value : `opt-${i}`}
@@ -5845,7 +5935,7 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
                 autoComplete="new-password"
                 name={field.name}
                 onChange={handleChange}
-                placeholder={field.placeholder}
+                placeholder={field.placeholder ?? field.label}
                 required={field.required}
                 title={field.title}
                 type={visiblePasswords[field.name] ? 'text' : 'password'}
@@ -5870,7 +5960,7 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
               name={field.name}
               onChange={handleChange}
               pattern={field.pattern}
-              placeholder={field.placeholder}
+              placeholder={field.placeholder ?? field.label}
               required={field.required}
               title={field.title}
               type={field.type}
@@ -5970,6 +6060,263 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
   );
 }
 
+// Its own page (not a modal/inline panel) reached at .../locations/new —
+// typing a Complete Address geocodes it and drops/moves the map pin there;
+// clicking the map instead reverse-geocodes the click back into the Address
+// field. Either path has to land inside the active service-area boundary
+// (the same polygon the fleet map draws) before Save is allowed — an
+// out-of-bounds result shows why instead of silently creating a hub nobody
+// can find on the map. Saving POSTs to /hubs, same endpoint and shape the
+// map's own "Add Hub" flow uses.
+// Shared by NewLocationPage ("Add Location", defines a brand-new hub) and
+// EditLocationPage ("Update Location", reassigns a vehicle — to an existing
+// hub OR, same as Add, a brand-new one typed/clicked in) — both need the
+// exact same address<->map sync and boundary check; only the extra
+// Address/Area + Remarks fields and the submit wiring differ by mode.
+function LocationAddressMapForm({
+  mode = 'add',
+  initialName = '',
+  initialAddress = '',
+  initialMarker = null,
+  initialAddressArea = '',
+  initialRemarks = '',
+  boundaryRings,
+  boundaryLabel,
+  onBack,
+  onSubmit,
+}) {
+  const isEdit = mode === 'edit';
+  const [name, setName] = useState(initialName);
+  const [address, setAddress] = useState(initialAddress);
+  const [marker, setMarker] = useState(initialMarker);
+  const [addressArea, setAddressArea] = useState(initialAddressArea);
+  const [remarks, setRemarks] = useState(initialRemarks);
+  const [error, setError] = useState(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  // Distinguishes "the map just moved the pin, don't re-geocode the address
+  // that produced it" from "the admin is typing" — without it, a map click
+  // (which fills Address via reverse geocoding) would immediately trigger
+  // the address-typing effect below and re-geocode right back, wasting a
+  // lookup and risking a slightly different point than the one clicked.
+  const addressFromMapRef = useRef(false);
+  // Edit mode starts with `address` already non-empty (the hub's own
+  // internal name/address, paired with a marker we already know is correct
+  // from initialMarker) — without this, mounting immediately re-triggers
+  // the geocode effect below on that pre-filled value, which usually isn't
+  // a real searchable address string, showing a spurious "couldn't find
+  // that address" error over a perfectly valid pin. Compared by VALUE
+  // (not a one-shot consumed flag) so React StrictMode's dev-only double
+  // effect invocation — same address, effect body run twice — still skips
+  // both times instead of geocoding on the second pass.
+  const skipGeocodeForAddressRef = useRef(initialAddress || null);
+
+  // Debounced geocode-as-you-type — waits for a pause in typing so it's not
+  // firing a lookup on every keystroke.
+  useEffect(() => {
+    if (addressFromMapRef.current) {
+      addressFromMapRef.current = false;
+      return undefined;
+    }
+    if (skipGeocodeForAddressRef.current !== null && address === skipGeocodeForAddressRef.current) {
+      return undefined;
+    }
+    skipGeocodeForAddressRef.current = null;
+    const trimmed = address.trim();
+    if (!trimmed) return undefined;
+
+    const timer = setTimeout(async () => {
+      setLookingUp(true);
+      setError(null);
+      try {
+        const match = await geocodeAddress(trimmed);
+        if (!match) {
+          setError(`Couldn't find that address yet — keep typing, or click the map instead.`);
+          return;
+        }
+        setMarker({ lat: match.lat, lng: match.lng });
+        if (!isPointWithinBoundaryRings(match, boundaryRings)) {
+          setError(`That address is outside the ${boundaryLabel} boundary — only locations within ${boundaryLabel} can be added.`);
+        }
+      } catch (err) {
+        setError(err.message || 'Address lookup failed.');
+      } finally {
+        setLookingUp(false);
+      }
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [address, boundaryRings, boundaryLabel]);
+
+  const handleMapPick = useCallback(async (latLng) => {
+    setMarker(latLng);
+    setError(null);
+
+    if (!isPointWithinBoundaryRings(latLng, boundaryRings)) {
+      setError(`That spot is outside the ${boundaryLabel} boundary — only locations within ${boundaryLabel} can be added.`);
+      return;
+    }
+
+    setLookingUp(true);
+    try {
+      const displayName = await reverseGeocode(latLng.lat, latLng.lng);
+      if (displayName) {
+        addressFromMapRef.current = true;
+        setAddress(displayName);
+      }
+    } catch {
+      // Reverse geocoding is a convenience, not a requirement — a failed
+      // lookup still leaves a valid, in-bounds pin; the admin can type the
+      // address in by hand instead.
+    } finally {
+      setLookingUp(false);
+    }
+  }, [boundaryRings, boundaryLabel]);
+
+  const isPinValid = marker && isPointWithinBoundaryRings(marker, boundaryRings);
+  const canSubmit = name.trim() && isPinValid && !lookingUp && !submitting;
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!canSubmit) return;
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onSubmit({
+        name: name.trim(),
+        lat: marker.lat,
+        lng: marker.lng,
+        label: name.trim().substring(0, 2).toUpperCase(),
+        addressArea: addressArea.trim(),
+        remarks: remarks.trim(),
+      });
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || `Failed to ${isEdit ? 'update' : 'add'} location.`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModulePanel description={
+      isEdit
+        ? 'Type the complete address or click the map — either one fills in the other. Pick where this vehicle already is, or move it to a brand-new location the same way you would add one.'
+        : 'Type the complete address or click the map — either one fills in the other.'
+    }>
+      <form className="add-location-page" onSubmit={handleSubmit} noValidate>
+        <div className="add-location-fields smart-form">
+          {error && (
+            <div className="toast-notice toast-notice-validation error" role="alert">
+              <Icon name="alert" size={17} className="toast-notice-icon" />
+              <div className="toast-notice-lines"><span>{error}</span></div>
+            </div>
+          )}
+          <label className={name.trim() ? 'has-value' : undefined}>
+            <span>Location Name <span className="required-asterisk">*</span></span>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Paknaan Health Center"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            {isEdit && <small className="field-hint">An existing name reuses that location; a new one creates it.</small>}
+          </label>
+          <label className={address.trim() ? 'has-value' : undefined}>
+            <span>Complete Address <span className="required-asterisk">*</span></span>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Purok 5, Paknaan, Mandaue City, Cebu"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
+            <small className="field-hint">
+              {lookingUp ? 'Looking up…' : `Must be within the ${boundaryLabel} boundary — you can also click the map to pinpoint it.`}
+            </small>
+          </label>
+          {isEdit && (
+            <>
+              <label className={addressArea.trim() ? 'has-value' : undefined}>
+                <span>Address / Area</span>
+                <input
+                  type="text"
+                  placeholder="e.g. Bay 3, near the north gate"
+                  value={addressArea}
+                  onChange={(e) => setAddressArea(e.target.value)}
+                />
+              </label>
+              <label className={remarks.trim() ? 'has-value' : undefined}>
+                <span>Remarks</span>
+                <textarea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              </label>
+            </>
+          )}
+          <div className="form-actions">
+            <button className="ghost-button" onClick={onBack} type="button" disabled={submitting}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={!canSubmit}>
+              {submitting ? 'Saving…' : (isEdit ? 'Update Location' : 'Add Location')}
+            </button>
+          </div>
+        </div>
+        <div className="add-location-map-shell">
+          <AddLocationMap marker={marker} boundaryRings={boundaryRings} onPick={handleMapPick} />
+        </div>
+      </form>
+    </ModulePanel>
+  );
+}
+
+function NewLocationPage({ onBack, boundaryRings, boundaryLabel, onSubmit }) {
+  return (
+    <LocationAddressMapForm
+      mode="add"
+      boundaryRings={boundaryRings}
+      boundaryLabel={boundaryLabel}
+      onBack={onBack}
+      onSubmit={({ name, lat, lng, label }) => onSubmit({ name, lat, lng, label })}
+    />
+  );
+}
+
+// Its own page (.../locations/:vehicleId/edit), reached from the pencil icon
+// on the Location Records table — reassigns a vehicle's current location.
+// Reuses the exact same address/map picker Add Location uses (not just a
+// dropdown of existing hubs) so moving a vehicle to a genuinely new spot
+// doesn't require a separate trip to Add Location first; the parent's
+// onSubmit decides whether the typed name matches an existing hub (reuse
+// it) or not (create it), same as Add Location's own POST /hubs.
+function EditLocationPage({ row, allHubs, boundaryRings, boundaryLabel, onBack, onSubmit }) {
+  if (!row) {
+    return (
+      <ModulePanel description="Update a vehicle's current location.">
+        <p className="empty-state">
+          That vehicle's location record couldn't be found — it may have been removed.{' '}
+          <button type="button" className="link-button" onClick={onBack}>Back to Location Records</button>
+        </p>
+      </ModulePanel>
+    );
+  }
+
+  const currentHub = allHubs.find((h) => h.name === row.current_location);
+
+  return (
+    <LocationAddressMapForm
+      mode="edit"
+      initialName={row.current_location ?? ''}
+      initialAddress={currentHub?.address ?? row.current_location ?? ''}
+      initialMarker={currentHub ? { lat: currentHub.lat, lng: currentHub.lng } : null}
+      initialAddressArea={row.address_area ?? ''}
+      initialRemarks={row.remarks ?? ''}
+      boundaryRings={boundaryRings}
+      boundaryLabel={boundaryLabel}
+      onBack={onBack}
+      onSubmit={onSubmit}
+    />
+  );
+}
+
 function PartsTags({ value }) {
   if (!value) return <span style={{ color: '#94a3b8' }}>-</span>;
   const parts = value.split(',').map((p) => p.trim()).filter(Boolean);
@@ -5983,12 +6330,30 @@ function PartsTags({ value }) {
   );
 }
 
-function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 'No records found.' }) {
+// Column headers are drag-reorderable in-place whenever `onReorderColumn`
+// is passed AND the columns carry a stable `key` (only some tables' column
+// functions set one so far, e.g. vehicleColumns — the rest render exactly
+// as before, since a column with no `key` just never becomes draggable).
+// Mirrors the same reorder semantics ColumnChooserButton's popover list
+// uses, so dragging a header does the same thing as dragging its row there
+// — just without opening the popover first.
+function DataTable({ columns, rows, compact = false, onRowClick, onReorderColumn, emptyMessage = 'No records found.' }) {
+  // Which side of which header the dragged column would land on — drawn as
+  // a thin vertical line right on that edge (matching the realcore
+  // reference), so there's no guessing where a drop will actually land.
+  // Declared before the early return below so the hook itself is always
+  // called regardless of whether `rows` is empty on a given render.
+  const [dropIndicator, setDropIndicator] = useState(null);
+
   if (!rows?.length) {
     return <p className="empty-state">{emptyMessage}</p>;
   }
 
   const hasWidths = columns.some((column) => column.width);
+  const sideOf = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return e.clientX - rect.left < rect.width / 2 ? 'before' : 'after';
+  };
 
   return (
     <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}`}>
@@ -6002,9 +6367,37 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
         )}
         <thead>
           <tr>
-            {columns.map((column) => (
-              <th key={column.label}>{column.label}</th>
-            ))}
+            {columns.map((column) => {
+              const draggable = Boolean(onReorderColumn && column.key && !column.locked);
+              const isDropTarget = draggable && dropIndicator?.key === column.key;
+              return (
+                <th
+                  key={column.label}
+                  className={[
+                    draggable ? 'is-draggable-column' : null,
+                    isDropTarget ? `is-drop-${dropIndicator.side}` : null,
+                  ].filter(Boolean).join(' ') || undefined}
+                  draggable={draggable}
+                  title={draggable ? `Drag to move "${column.label}"` : undefined}
+                  onDragStart={draggable ? (e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', column.key); } : undefined}
+                  onDragOver={draggable ? (e) => {
+                    e.preventDefault();
+                    const side = sideOf(e);
+                    setDropIndicator((prev) => (prev?.key === column.key && prev.side === side ? prev : { key: column.key, side }));
+                  } : undefined}
+                  onDragLeave={draggable ? () => setDropIndicator((prev) => (prev?.key === column.key ? null : prev)) : undefined}
+                  onDragEnd={draggable ? () => setDropIndicator(null) : undefined}
+                  onDrop={draggable ? (e) => {
+                    e.preventDefault();
+                    const dragKey = e.dataTransfer.getData('text/plain');
+                    if (dragKey) onReorderColumn(dragKey, column.key, sideOf(e));
+                    setDropIndicator(null);
+                  } : undefined}
+                >
+                  {column.label}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -6649,20 +7042,6 @@ function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPhotoUrl 
   ];
 }
 
-function locationFields(lookups, allHubs = []) {
-  const hubOptions = allHubs.map((hub) => ({
-    value: hub.name,
-    label: hub.name,
-  }));
-
-  return [
-    { label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select' },
-    { label: 'Current Location', name: 'current_location', options: hubOptions, required: true, type: 'select' },
-    { label: 'Address / Area', name: 'address_area', type: 'text' },
-    { label: 'Remarks', name: 'remarks', type: 'textarea' },
-  ];
-}
-
 function conditionFields(lookups) {
   return [
     { label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select' },
@@ -7202,22 +7581,25 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
 
 function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket) {
   const columns = [
-    { label: 'ID', render: (row) => row.vehicle_id },
+    { key: 'id', label: 'ID', locked: true, render: (row) => row.vehicle_id },
     {
+      key: 'vehicle',
       label: 'Vehicle',
+      locked: true,
       render: (row) => (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
           <PhotoCell alt={row.vehicle_name} url={row.photo_url} />
-          <span>{row.vehicle_name}</span>
+          <span className="row-title-text">{row.vehicle_name}</span>
         </div>
       ),
     },
-    { label: 'Plate', render: (row) => row.plate_number },
-    { label: 'Type', render: (row) => row.category?.category_name ?? 'Unassigned' },
-    { label: 'Brand / Model', render: (row) => `${row.brand} ${row.model}` },
-    { label: 'Capacity', render: (row) => row.capacity },
-    { label: 'Location', render: (row) => row.current_location },
+    { key: 'plate', label: 'Plate', render: (row) => row.plate_number },
+    { key: 'type', label: 'Type', render: (row) => row.category?.category_name ?? 'Unassigned' },
+    { key: 'brand_model', label: 'Brand / Model', render: (row) => `${row.brand} ${row.model}` },
+    { key: 'capacity', label: 'Capacity', render: (row) => row.capacity },
+    { key: 'location', label: 'Location', render: (row) => row.current_location },
     {
+      key: 'status',
       label: 'Status',
       render: (row) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
@@ -7239,8 +7621,9 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
         </div>
       ),
     },
-    { label: 'Condition', render: (row) => <StatusBadge value={row.condition} /> },
+    { key: 'condition', label: 'Condition', render: (row) => <StatusBadge value={row.condition} /> },
     {
+      key: 'ready',
       label: 'Ready to Respond',
       render: (row) => {
         const badge = READINESS_BADGE[row.readiness_state];
@@ -7259,14 +7642,16 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
 
   if (filterStatus?.includes?.('Inactive')) {
     columns.push(
-      { label: 'Archived At', render: (row) => <DateBadge value={row.archived_at} /> },
-      { label: 'Archived By', render: (row) => <UserAvatarName user={row.archived_by} fallback="—" /> },
+      { key: 'archived_at', label: 'Archived At', render: (row) => <DateBadge value={row.archived_at} /> },
+      { key: 'archived_by', label: 'Archived By', render: (row) => <UserAvatarName user={row.archived_by} fallback="—" /> },
     );
   }
 
   if (role === 'Admin') {
     columns.push({
+      key: 'action',
       label: 'Action',
+      locked: true,
       render: (row) => (
         <div className="row-actions">
           {/* Jumps straight to whatever ticket is keeping this vehicle
@@ -7346,7 +7731,7 @@ function userColumns(onEdit, onToggleActive, currentUserId) {
   ];
 }
 
-function locationColumns(currentUser, onViewOnMap) {
+function locationColumns(currentUser, onViewOnMap, onEdit) {
   return [
   { label: 'ID', render: (row) => row.location_record_id ?? 'Current' },
   { label: 'Vehicle', render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { label: 'Plate', render: (row) => row.vehicle?.plate_number ?? '-' },
@@ -7360,20 +7745,33 @@ function locationColumns(currentUser, onViewOnMap) {
   { label: 'Date Updated', render: (row) => <DateBadge value={row.updated_at} /> },
   { label: 'Time', render: (row) => formatTime(row.updated_at) },
   {
-    label: 'View',
+    label: 'Action',
     render: (row) => (
-      <button
-        className="btn-view-action icon-btn"
-        onClick={() => onViewOnMap(row)}
-        title="View vehicle on map"
-        aria-label="View vehicle on map"
-        type="button"
-      >
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      </button>
+      <div className="row-actions">
+        {hasRole(currentUser, 'Admin') && (
+          <button
+            className="btn-edit-action icon-btn"
+            onClick={() => onEdit(row)}
+            title="Update this vehicle's location"
+            aria-label="Update this vehicle's location"
+            type="button"
+          >
+            <Icon name="edit" size={14} />
+          </button>
+        )}
+        <button
+          className="btn-view-action icon-btn"
+          onClick={() => onViewOnMap(row)}
+          title="View vehicle on map"
+          aria-label="View vehicle on map"
+          type="button"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+      </div>
     ),
   },
   ];
@@ -8239,7 +8637,7 @@ function logColumns(vehicles, onViewVehicle) {
   ];
 }
 
-function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = false, pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
+function PaginatedTable({ columns, rows, onRowClick, onReorderColumn, emptyMessage, compact = false, pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [page, setPage] = useState(1);
 
@@ -8248,7 +8646,7 @@ function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = fal
   }, [rows.length, pageSize]);
 
   if (!rows?.length) {
-    return <DataTable columns={columns} rows={rows} onRowClick={onRowClick} emptyMessage={emptyMessage} compact={compact} />;
+    return <DataTable columns={columns} rows={rows} onRowClick={onRowClick} onReorderColumn={onReorderColumn} emptyMessage={emptyMessage} compact={compact} />;
   }
 
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -8258,7 +8656,7 @@ function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = fal
 
   return (
     <>
-      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} compact={compact} />
+      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} onReorderColumn={onReorderColumn} compact={compact} />
       <div className="table-pagination">
         <span className="muted">Showing {start + 1}-{Math.min(start + pageSize, rows.length)} of {rows.length}</span>
         <div className="table-pagination-controls">
@@ -8494,12 +8892,21 @@ function UserAvatarName({ user, fallback = '-' }) {
 
 // Vehicle cell (photo + name). The name opens the vehicle profile; the photo
 // still opens the full-size image in a new tab.
-function VehicleCell({ vehicle }) {
+// `isRowTitle` (default true) marks whether THIS column is also what the
+// row's own onRowClick opens — true in every table except the Maintenance
+// Tickets list, whose row click opens the ticket (the Title column) rather
+// than this vehicle, so only that one caller passes false. Drives whether
+// hovering anywhere in the row underlines this name too (row-title-text) —
+// leaving it on everywhere would underline two different "click targets"
+// at once on that one table.
+function VehicleCell({ vehicle, isRowTitle = true }) {
   const actions = useContext(RowActionsContext);
 
   if (!vehicle) {
     return '-';
   }
+
+  const textClassName = `vcn-text${isRowTitle ? ' row-title-text' : ''}`;
 
   return (
     <div className="vehicle-cell">
@@ -8511,11 +8918,11 @@ function VehicleCell({ vehicle }) {
           onClick={(e) => { e.stopPropagation(); actions.viewVehicle(vehicle); }}
           title={vehicle.vehicle_name}
         >
-          <span className="vcn-text">{vehicle.vehicle_name}</span>
+          <span className={textClassName}>{vehicle.vehicle_name}</span>
         </button>
       ) : (
         <span className="vehicle-cell-name" title={vehicle.vehicle_name}>
-          <span className="vcn-text">{vehicle.vehicle_name}</span>
+          <span className={textClassName}>{vehicle.vehicle_name}</span>
         </span>
       )}
     </div>
@@ -8594,10 +9001,6 @@ function moduleRequest(moduleKey, editTarget, payload) {
     return (editTarget && editTarget.id)
       ? { method: 'put', path: `/users/${editTarget.id}`, success: 'User updated.' }
       : { method: 'post', path: '/users', success: 'User added.' };
-  }
-
-  if (moduleKey === 'locations') {
-    return { method: 'post', path: '/locations', success: 'Location updated.' };
   }
 
   if (moduleKey === 'conditions') {
@@ -10290,14 +10693,31 @@ function TicketProfilePage({ ticketId, role, userId, ticketLookups, onBack, onDe
   );
 }
 
+// The four ways a ticket can be reported. Everything but 'inspection' means
+// the issue AND its repair type are already known — Repair Type used to
+// only live on the separate Maintenance Record form; it's captured here
+// instead so it isn't asked for twice. Shared with the Log Repairs step,
+// where the same repair type gets confirmed/corrected once work starts.
+const ENTRY_MODE_OPTIONS = [
+  { value: 'inspection', label: 'Needs Inspection' },
+  { value: 'in_house', label: 'In-House Repair' },
+  { value: 'cannibalized', label: 'Used Cannibalized Part' },
+  { value: 'external', label: 'Sent to External Shop' },
+];
+
 function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTicket, basePath, onDirty }) {
   // Stable across re-renders (only changes if prefilledTicketData itself
   // changes) — resetting on every render would wipe out whatever the user
   // already typed.
-  const initialTicketValues = useMemo(
-    () => ({ entry_mode: 'inspection', ...(prefilledTicketData ?? {}) }),
-    [prefilledTicketData]
-  );
+  const initialTicketValues = useMemo(() => {
+    const base = { entry_mode: 'inspection', ...(prefilledTicketData ?? {}) };
+    // 'prediagnosed' no longer exists as its own entry mode — the issue is
+    // known (carried over from an Issue Report/Condition Check) but WHICH
+    // repair type applies isn't, so leave the toggle unselected instead of
+    // guessing one, forcing an explicit pick before submit.
+    if (base.entry_mode === 'prediagnosed') base.entry_mode = null;
+    return base;
+  }, [prefilledTicketData]);
   const [liveValues, setLiveValues] = useState(initialTicketValues);
   const [subIssueRows, setSubIssueRows] = useState(() => {
     const seeded = (prefilledTicketData?.sub_issues_text ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
@@ -10315,6 +10735,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
   // originally reported.
   const [subIssueCategory, setSubIssueCategory] = useState(() => prefilledTicketData?.fault_category ?? '');
   const [submitting, setSubmitting] = useState(false);
+  const [validationLines, setValidationLines] = useState(null);
   const selectedVehicleId = liveValues.vehicle_id ?? null;
   const [openTicketsOnVehicle, setOpenTicketsOnVehicle] = useState([]);
   // Same reasoning as the open-tickets check above, for recurrence instead of
@@ -10347,7 +10768,21 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
   }, [selectedVehicleId, liveValues.fault_category, liveValues.ticket_title]);
 
   const setField = (name, value) => { setLiveValues((v) => ({ ...v, [name]: value })); onDirty?.(); };
-  const preDiagnosed = liveValues.entry_mode === 'prediagnosed';
+  // Any repair-type-specific entry mode means the issue (and how it'll be
+  // fixed) is already known — 'inspection' is the only mode where it isn't,
+  // and a null/unset mode (only reachable via the legacy prefill case above)
+  // means the choice hasn't been made yet.
+  const preDiagnosed = Boolean(liveValues.entry_mode) && liveValues.entry_mode !== 'inspection';
+  const isCannibalized = liveValues.entry_mode === 'cannibalized';
+  const isExternal = liveValues.entry_mode === 'external';
+  // Cannibalized/External each carry ONE shared context value (a single
+  // donor vehicle, or a single vendor+warranty) for every sub-issue on the
+  // ticket — a multi-item list would wrongly imply several distinct
+  // problems all used the same donor part or went to the same shop visit,
+  // when in practice each would need its own. In-House has no such
+  // per-ticket constraint, so a real list of independently assignable
+  // problems still makes sense there.
+  const isSingleIssueMode = isCannibalized || isExternal;
 
   // Same add/remove list pattern as Root Causes on the Inspect Ticket page —
   // one consistent way to build a list of findings anywhere in the app,
@@ -10355,9 +10790,40 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
   const updateSubIssue = (index, value) => { setSubIssueRows((rows) => rows.map((r, i) => (i === index ? value : r))); onDirty?.(); };
   const addSubIssueRow = () => setSubIssueRows((rows) => [...rows, '']);
   const removeSubIssueRow = (index) => setSubIssueRows((rows) => rows.filter((_, i) => i !== index));
+  // Switching INTO Cannibalized/External drops any extra rows already
+  // typed under In-House — those modes only ever submit one sub-issue (see
+  // isSingleIssueMode above), so a leftover second/third row would just be
+  // silently discarded on submit otherwise.
+  const selectEntryMode = (value) => {
+    setField('entry_mode', value);
+    if (value === 'cannibalized' || value === 'external') {
+      setSubIssueRows((rows) => rows.slice(0, 1));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // The submit button used to just stay disabled until every required
+    // field (entry mode included) was filled — silent and easy to miss,
+    // especially "How Is This Being Reported?", which isn't a native form
+    // control the browser could nudge about on its own. Clicking now
+    // always works; a toast spells out exactly what's still needed instead.
+    const errors = [];
+    if (!liveValues.entry_mode) errors.push('Pick how this is being reported, above.');
+    if (!liveValues.vehicle_id) errors.push('Vehicle is required.');
+    if (!liveValues.assigned_custodian_id) errors.push('Assign to Custodian is required.');
+    if (!(liveValues.ticket_title ?? '').trim()) errors.push('Ticket Title is required.');
+    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Description / Details is required.');
+    if (!liveValues.priority) errors.push('Priority is required.');
+    if (preDiagnosed && !subIssueRows.some((row) => row.trim())) {
+      errors.push(`At least one ${isSingleIssueMode ? 'issue' : 'sub-issue'} is required.`);
+    }
+    if (isCannibalized && !liveValues.source_vehicle_id) errors.push('Source Vehicle is required.');
+    if (errors.length) {
+      setValidationLines(errors);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const out = {
@@ -10373,6 +10839,11 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
       };
       if (preDiagnosed) {
         out.sub_issues = subIssueRows.map((t) => t.trim()).filter(Boolean).map((title) => ({ title, maintenance_type: subIssueCategory || null }));
+        if (isCannibalized) out.source_vehicle_id = liveValues.source_vehicle_id;
+        if (isExternal) {
+          out.external_vendor = liveValues.external_vendor || undefined;
+          out.warranty_until = liveValues.warranty_until || undefined;
+        }
       }
       const created = await onCreateTicket(out);
       if (created) onBack();
@@ -10387,6 +10858,8 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
   const priorityOptions = ticketLookups.priorities ?? [];
   const selectedVehicle = vehicleOptions.find((v) => String(v.vehicle_id) === String(liveValues.vehicle_id)) ?? null;
   const selectedCustodian = custodianOptions.find((c) => String(c.id) === String(liveValues.assigned_custodian_id)) ?? null;
+  // Can't cannibalize a part from the same vehicle the ticket is for.
+  const sourceVehicleOptions = vehicleOptions.filter((v) => String(v.vehicle_id) !== String(liveValues.vehicle_id));
 
   return (
     <ModulePanel description="Create a new maintenance ticket and assign it to a custodian.">
@@ -10452,37 +10925,91 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
           hand-built form. Reuses the .smart-form input/label styling so
           every field still looks consistent with the rest of the app. */}
       <form className="smart-form ticket-create-form" onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {validationLines && (
+          <div className="toast-notice-overlay" onClick={() => setValidationLines(null)}>
+            <div className="toast-notice toast-notice-validation error" role="alert" onClick={(e) => e.stopPropagation()}>
+              <Icon name="alert" size={17} className="toast-notice-icon" />
+              <div className="toast-notice-lines">
+                {validationLines.map((line, i) => <span key={i}>{line}</span>)}
+              </div>
+              <button type="button" className="toast-notice-close" onClick={() => setValidationLines(null)} aria-label="Dismiss">
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Entry mode comes first, not last — it decides what the rest of
-            the form even asks for, so it shouldn't be buried at the bottom. */}
+            the form even asks for, so it shouldn't be buried at the bottom.
+            Repair Type used to only exist on the separate Maintenance Record
+            form; it's folded in here now instead of asking for it twice —
+            "Pre-Diagnosed" as a generic option is gone, since picking a
+            specific repair type already implies the issue is diagnosed. */}
         <section className="veh-card">
           <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>How Is This Being Reported?</h4></div>
           <div style={{ padding: 18 }}>
             <div className="entry-mode-toggle" role="radiogroup" aria-label="Entry mode">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={!preDiagnosed}
-                className={!preDiagnosed ? 'primary-button' : 'ghost-button'}
-                onClick={() => setField('entry_mode', 'inspection')}
-              >
-                Needs Inspection
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={preDiagnosed}
-                className={preDiagnosed ? 'primary-button' : 'ghost-button'}
-                onClick={() => setField('entry_mode', 'prediagnosed')}
-              >
-                Pre-Diagnosed
-              </button>
+              {ENTRY_MODE_OPTIONS.map((opt) => {
+                const checked = liveValues.entry_mode === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    className={`entry-mode-btn entry-mode-btn--${opt.value} ${checked ? 'primary-button' : 'ghost-button'}`}
+                    onClick={() => selectEntryMode(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
             </div>
             <p className="muted" style={{ margin: '10px 0 0', fontSize: '0.82rem' }}>
-              {preDiagnosed
-                ? 'The problem is already known — this skips straight to a mechanic, no custodian inspection needed.'
-                : "Nobody has confirmed what's wrong yet — the assigned custodian will inspect the vehicle first."}
+              {liveValues.entry_mode == null
+                ? 'Pick whichever matches what you already know about this repair.'
+                : preDiagnosed
+                  ? 'The problem (and how it will be fixed) is already known — this skips straight to a mechanic, no custodian inspection needed.'
+                  : "Nobody has confirmed what's wrong yet — the assigned custodian will inspect the vehicle first."}
             </p>
+            {isCannibalized && (
+              <label style={{ marginTop: 12, maxWidth: 320 }}>
+                <span>Source Vehicle (donor) <span className="required-asterisk">*</span></span>
+                <select
+                  required
+                  value={liveValues.source_vehicle_id ?? ''}
+                  onChange={(e) => setField('source_vehicle_id', e.target.value)}
+                >
+                  <option value="">{' '}</option>
+                  {sourceVehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
+                </select>
+              </label>
+            )}
+            {/* Neither field is required here — the vendor may not be
+                picked yet, and there's no warranty to record until the
+                repair is actually done. Both stay editable later at Log
+                Repairs, once that's known for sure. */}
+            {isExternal && (
+              <div className="ticket-form-grid-2" style={{ padding: 0, marginTop: 12, maxWidth: 500 }}>
+                <label>
+                  <span>External Vendor / Shop Name</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Dela Cruz Auto Repair"
+                    value={liveValues.external_vendor ?? ''}
+                    onChange={(e) => setField('external_vendor', e.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Warranty Until</span>
+                  <input
+                    type="date"
+                    value={liveValues.warranty_until ?? ''}
+                    onChange={(e) => setField('warranty_until', e.target.value)}
+                  />
+                </label>
+              </div>
+            )}
           </div>
         </section>
 
@@ -10492,14 +11019,17 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
             <label>
               <span>Vehicle <span className="required-asterisk">*</span></span>
               <select required value={liveValues.vehicle_id ?? ''} onChange={(e) => setField('vehicle_id', e.target.value)}>
-                <option value="">Select</option>
+                <option value="">{' '}</option>
                 {vehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
               </select>
             </label>
             <label>
-              <span>Assign to Custodian (verifies the repair later) <span className="required-asterisk">*</span></span>
+              <span>
+                Assign to Custodian ({isExternal ? 'checks the vehicle when it returns' : 'verifies the repair later'})
+                {' '}<span className="required-asterisk">*</span>
+              </span>
               <select required value={liveValues.assigned_custodian_id ?? ''} onChange={(e) => setField('assigned_custodian_id', e.target.value)}>
-                <option value="">Select</option>
+                <option value="">{' '}</option>
                 {custodianOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </label>
@@ -10564,7 +11094,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
             <label style={{ maxWidth: 260 }}>
               <span>Priority <span className="required-asterisk">*</span></span>
               <select required value={liveValues.priority ?? ''} onChange={(e) => setField('priority', e.target.value)}>
-                <option value="">Select</option>
+                <option value="">{' '}</option>
                 {priorityOptions.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             </label>
@@ -10573,9 +11103,18 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
 
         {preDiagnosed && (
           <section className="veh-card">
-            <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Known Sub-Issues</h4></div>
+            <div className="veh-card-head">
+              <Icon name="wrench" size={16} />
+              <h4>{isSingleIssueMode ? 'Known Issue' : 'Known Sub-Issues'}</h4>
+            </div>
             <div style={{ padding: 18 }}>
-              <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>List each specific problem already found — a mechanic will be assigned to each one. All sub-issues here share one category.</p>
+              <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
+                {isCannibalized
+                  ? 'Describe the specific problem this cannibalized part fixes — one donor vehicle can only be tied to one problem here.'
+                  : isExternal
+                    ? 'Describe the problem being sent out. Everything the shop actually finds/fixes gets logged in detail later, once they report back.'
+                    : 'List each specific problem already found — a mechanic will be assigned to each one. All sub-issues here share one category.'}
+              </p>
 
               <label style={{ maxWidth: 320 }}>
                 <span>Category</span>
@@ -10592,27 +11131,31 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
               <div className="sub-issue-rows">
                 {subIssueRows.map((title, index) => (
                   <div key={index} className="sub-issue-row">
-                    <span className="sub-issue-row-index">{index + 1}</span>
+                    {!isSingleIssueMode && <span className="sub-issue-row-index">{index + 1}</span>}
                     <input
                       type="text"
                       placeholder="e.g. Low coolant level"
                       value={title}
                       onChange={(e) => updateSubIssue(index, e.target.value)}
                     />
-                    <button
-                      type="button"
-                      className="btn-delete-action icon-btn"
-                      onClick={() => removeSubIssueRow(index)}
-                      disabled={subIssueRows.length === 1}
-                      title="Remove sub-issue"
-                      aria-label="Remove sub-issue"
-                    >
-                      <Icon name="close" size={14} />
-                    </button>
+                    {!isSingleIssueMode && (
+                      <button
+                        type="button"
+                        className="btn-delete-action icon-btn"
+                        onClick={() => removeSubIssueRow(index)}
+                        disabled={subIssueRows.length === 1}
+                        title="Remove sub-issue"
+                        aria-label="Remove sub-issue"
+                      >
+                        <Icon name="close" size={14} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
-              <button type="button" className="primary-button" onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
+              {!isSingleIssueMode && (
+                <button type="button" className="primary-button" onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
+              )}
             </div>
           </section>
         )}
@@ -10625,7 +11168,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
                 <Icon name="gear" size={16} className="btn-gear-spinner" filled />
                 Creating…
               </span>
-            ) : (preDiagnosed ? 'Create Pre-Diagnosed Ticket' : 'Create Ticket & Assign')}
+            ) : (preDiagnosed ? 'Create Ticket & Assign Mechanic' : 'Create Ticket & Assign')}
           </button>
         </div>
       </form>
@@ -11954,7 +12497,7 @@ function InspectTicketPage({ ticket, onBack, onSubmit, ticketLookups, onDirty })
         <label>
           <span>Inspection Result</span>
           <select required value={resultValue} onChange={(e) => { setResultValue(e.target.value); onDirty?.(); }}>
-            <option value="">Select</option>
+            <option value="">{' '}</option>
             <option value="Needs Maintenance">Needs Maintenance</option>
             <option value="No Issues">No Issues</option>
           </select>
@@ -12319,12 +12862,23 @@ function MechanicWorkOrderModule({
   );
 }
 
-function LogRepairsPage({ ticket, onBack, onSubmit, onDirty }) {
+function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty }) {
   const [repairLogs, setRepairLogs] = useState('');
   const [parts, setParts] = useState([{ name: '', cost: '' }]);
   const [attachment, setAttachment] = useState(null);
   const [repairStartedAt, setRepairStartedAt] = useState('');
   const [repairCompletedAt, setRepairCompletedAt] = useState('');
+  // Pre-filled from whatever was chosen at ticket creation (if this was a
+  // pre-diagnosed sub-issue) — still editable here, since the actual repair
+  // sometimes ends up differing from the original plan. Sub-issues created
+  // via "Needs Inspection" arrive with this blank, since nobody could know
+  // it yet — this is the first point it's actually knowable.
+  const [repairType, setRepairType] = useState(ticket?.repair_type ?? '');
+  const [sourceVehicleId, setSourceVehicleId] = useState(ticket?.source_vehicle_id ?? '');
+  const [externalVendor, setExternalVendor] = useState(ticket?.external_vendor ?? '');
+  // date casts serialize with a time component (ISO datetime) — <input
+  // type="date"> needs exactly YYYY-MM-DD or it silently fails to populate.
+  const [warrantyUntil, setWarrantyUntil] = useState((ticket?.warranty_until ?? '').slice(0, 10));
 
   if (!ticket) {
     return (
@@ -12341,6 +12895,7 @@ function LogRepairsPage({ ticket, onBack, onSubmit, onDirty }) {
   // total would go stale the moment another row is added or edited after
   // pressing it. This always reflects exactly what's in the rows right now.
   const totalCost = parts.reduce((sum, p) => sum + (parseFloat(p.cost) || 0), 0);
+  const sourceVehicleOptions = vehicleOptions.filter((v) => String(v.vehicle_id) !== String(ticket.vehicle?.vehicle_id));
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -12352,6 +12907,10 @@ function LogRepairsPage({ ticket, onBack, onSubmit, onDirty }) {
       maintenance_cost: totalCost > 0 ? totalCost : undefined,
       repair_started_at: repairStartedAt || undefined,
       repair_completed_at: repairCompletedAt || undefined,
+      repair_type: repairType || undefined,
+      source_vehicle_id: repairType === 'cannibalized' ? sourceVehicleId : undefined,
+      external_vendor: repairType === 'external' ? (externalVendor || undefined) : undefined,
+      warranty_until: repairType === 'external' ? (warrantyUntil || undefined) : undefined,
     });
   };
 
@@ -12378,6 +12937,52 @@ function LogRepairsPage({ ticket, onBack, onSubmit, onDirty }) {
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
           <h4 style={{ margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', fontSize: '0.85rem' }}><Icon name="clipboard" size={14} /> Repair Log Entry</h4>
           <textarea required rows={2} value={repairLogs} onChange={(e) => { setRepairLogs(e.target.value); onDirty?.(); }} style={{ width: '100%' }} />
+        </div>
+
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+          <h4 style={{ margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', fontSize: '0.85rem' }}><Icon name="wrench" size={14} /> Repair Type</h4>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <select
+              required
+              value={repairType}
+              onChange={(e) => { setRepairType(e.target.value); onDirty?.(); }}
+              style={{ maxWidth: 260 }}
+            >
+              <option value="">Select</option>
+              <option value="in_house">In-House Repair</option>
+              <option value="cannibalized">Used Cannibalized Part</option>
+              <option value="external">Sent to External Shop</option>
+            </select>
+            {repairType === 'cannibalized' && (
+              <select
+                required
+                value={sourceVehicleId}
+                onChange={(e) => { setSourceVehicleId(e.target.value); onDirty?.(); }}
+                style={{ maxWidth: 260 }}
+              >
+                <option value="">Select source vehicle</option>
+                {sourceVehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
+              </select>
+            )}
+            {repairType === 'external' && (
+              <>
+                <input
+                  type="text"
+                  placeholder="Vendor / Shop name"
+                  value={externalVendor}
+                  onChange={(e) => { setExternalVendor(e.target.value); onDirty?.(); }}
+                  style={{ maxWidth: 220 }}
+                />
+                <input
+                  type="date"
+                  title="Warranty Until"
+                  value={warrantyUntil}
+                  onChange={(e) => { setWarrantyUntil(e.target.value); onDirty?.(); }}
+                  style={{ maxWidth: 180 }}
+                />
+              </>
+            )}
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 190px', gap: 8, marginBottom: 12, alignItems: 'start' }}>
@@ -12502,12 +13107,12 @@ function ticketTableColumns(unreadByTicket = {}) {
                 {unread > 9 ? '9+' : unread}
               </span>
             )}
-            {r.ticket_title}
+            <span className="row-title-text">{r.ticket_title}</span>
           </span>
         );
       },
     },
-    { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle} /> }, { label: 'Plate', render: (r) => r.vehicle?.plate_number ?? '-' },
+    { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle} isRowTitle={false} /> }, { label: 'Plate', render: (r) => r.vehicle?.plate_number ?? '-' },
     { label: 'Status', render: (r) => <TicketStatusBadge value={r.status} /> },
     { label: 'Next Step', render: (r) => <TicketStageBadge ticket={r} /> },
     { label: 'Priority', render: (r) => <TicketStatusBadge value={r.priority} /> },
@@ -12983,7 +13588,7 @@ function CreatableSelect({
                   value={addModalExtra[f.name] ?? ''}
                   onChange={(e) => setAddModalExtra((cur) => ({ ...cur, [f.name]: e.target.value }))}
                 >
-                  <option value="" disabled>Select {f.label}</option>
+                  <option value="" disabled>{' '}</option>
                   {f.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
               )}
@@ -13344,7 +13949,7 @@ function FilterBar({
   );
 }
 
-function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add" }) {
+function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add", columnChooser }) {
   return (
     <div className="local-search-bar">
       <div className="local-search-container">
@@ -13365,6 +13970,7 @@ function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport
           </button>
         )}
       </div>
+      {columnChooser && <ColumnChooserButton {...columnChooser} />}
       {onAdd && (
         <button className="icon-add-btn has-label" onClick={onAdd} type="button" title={addLabel} aria-label={addLabel}>
           <Icon name="plus" size={18} />
@@ -13375,6 +13981,189 @@ function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport
         <button className="export-btn" onClick={onExport} type="button" title="Export to CSV" aria-label="Export to CSV">
           <Icon name="download" size={15} />
         </button>
+      )}
+    </div>
+  );
+}
+
+// Persists which columns a table shows and in what order, per browser (one
+// localStorage entry per `storageKey`, so e.g. Vehicle Management's choices
+// don't bleed into a different table reusing this same hook later).
+// `allColumns` must be a stable array of {key, label, locked?, ...} — `key`
+// is the identity persisted to storage, `locked` (e.g. ID/Action) hides the
+// checkbox instead of letting a table lose its own row identifier or
+// actions. Returns the already order-applied, hidden-filtered array to pass
+// straight into DataTable/PaginatedTable's `columns` prop.
+function useColumnChooser(storageKey, allColumns) {
+  const columnKeys = allColumns.map((c) => c.key);
+  // Real deps for the effect below — a plain array literal would be a new
+  // reference (and re-run the effect) every render even when unchanged.
+  const columnKeysSignature = columnKeys.join('|');
+
+  const [order, setOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`${storageKey}_order`) ?? 'null');
+      if (Array.isArray(saved) && saved.length) {
+        const stillValid = saved.filter((k) => columnKeys.includes(k));
+        const newOnes = columnKeys.filter((k) => !stillValid.includes(k));
+        return [...stillValid, ...newOnes];
+      }
+    } catch { /* fall through to default order */ }
+    return columnKeys;
+  });
+  const [hidden, setHidden] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`${storageKey}_hidden`) ?? '[]');
+      return new Set(Array.isArray(saved) ? saved.filter((k) => columnKeys.includes(k)) : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  // Keeps a saved preference from a previous session in sync if the column
+  // set itself changes shape later (e.g. the role-gated Action column
+  // appearing/disappearing) — drops keys that no longer exist, appends any
+  // new ones at the end rather than silently hiding them.
+  useEffect(() => {
+    setOrder((prev) => {
+      const stillValid = prev.filter((k) => columnKeys.includes(k));
+      const newOnes = columnKeys.filter((k) => !stillValid.includes(k));
+      return newOnes.length || stillValid.length !== prev.length ? [...stillValid, ...newOnes] : prev;
+    });
+    setHidden((prev) => {
+      const next = new Set([...prev].filter((k) => columnKeys.includes(k)));
+      return next.size === prev.size ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnKeysSignature]);
+
+  useEffect(() => {
+    try { localStorage.setItem(`${storageKey}_order`, JSON.stringify(order)); } catch { /* storage unavailable */ }
+  }, [storageKey, order]);
+  useEffect(() => {
+    try { localStorage.setItem(`${storageKey}_hidden`, JSON.stringify([...hidden])); } catch { /* storage unavailable */ }
+  }, [storageKey, hidden]);
+
+  const toggleColumn = (key) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  // `side` ('before' | 'after') lets the table header's own drag handler
+  // place a column on whichever side of the drop target the cursor was
+  // actually over (matching the drop-line indicator DataTable draws there)
+  // — the popover's simpler row list never passes it, so it keeps its
+  // original "insert at the target's position" behavior.
+  const reorderColumn = (dragKey, dropKey, side = 'before') => {
+    if (dragKey === dropKey) return;
+    setOrder((prev) => {
+      const next = [...prev];
+      const from = next.indexOf(dragKey);
+      if (from === -1) return prev;
+      next.splice(from, 1);
+      let to = next.indexOf(dropKey);
+      if (to === -1) return prev;
+      if (side === 'after') to += 1;
+      next.splice(to, 0, dragKey);
+      return next;
+    });
+  };
+  const resetColumns = () => {
+    setOrder(columnKeys);
+    setHidden(new Set());
+  };
+
+  const byKey = new Map(allColumns.map((c) => [c.key, c]));
+  const visibleColumns = order.map((k) => byKey.get(k)).filter((c) => c && !hidden.has(c.key));
+
+  return { allColumns, order, hidden, toggleColumn, reorderColumn, resetColumns, visibleColumns };
+}
+
+// Toolbar trigger + popover for picking which columns a table shows and
+// reordering them by drag — spread straight from useColumnChooser's return
+// value as <ColumnChooserButton {...chooser} />.
+function ColumnChooserButton({ allColumns, order, hidden, toggleColumn, reorderColumn, resetColumns }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const dragKeyRef = useRef(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleOutsideClick = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [open]);
+
+  const byKey = new Map(allColumns.map((c) => [c.key, c]));
+  const orderedColumns = order.map((k) => byKey.get(k)).filter(Boolean);
+  const query = search.trim().toLowerCase();
+  const filtered = query ? orderedColumns.filter((c) => c.label.toLowerCase().includes(query)) : orderedColumns;
+  // Dragging to reorder only makes sense against the full, unfiltered list —
+  // disabled while a search is narrowing the rows shown, same reasoning
+  // CreatableSelect's own filtered list uses.
+  const dragEnabled = !query;
+
+  return (
+    <div className="column-chooser" ref={containerRef}>
+      <button
+        type="button"
+        className={`export-btn${open ? ' is-active' : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        title="Choose columns"
+        aria-label="Choose columns"
+      >
+        <Icon name="columns" size={16} />
+      </button>
+      {open && (
+        <div className="column-chooser-panel" role="dialog" aria-label="Choose columns">
+          <div className="column-chooser-head">
+            <h4>Choose Columns</h4>
+            <button type="button" className="toast-notice-close" onClick={() => setOpen(false)} aria-label="Close">
+              <Icon name="close" size={13} />
+            </button>
+          </div>
+          <div className="column-chooser-search">
+            <Icon name="search" size={13} />
+            <input type="text" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <div className="column-chooser-list">
+            {filtered.map((col) => (
+              <div
+                key={col.key}
+                className="column-chooser-row"
+                draggable={dragEnabled}
+                onDragStart={() => { dragKeyRef.current = col.key; }}
+                onDragOver={(e) => { if (dragEnabled) e.preventDefault(); }}
+                onDrop={() => {
+                  if (dragEnabled && dragKeyRef.current) reorderColumn(dragKeyRef.current, col.key);
+                  dragKeyRef.current = null;
+                }}
+              >
+                <span className={`column-chooser-grip${dragEnabled ? '' : ' is-disabled'}`} aria-hidden="true">
+                  <Icon name="gripVertical" size={14} />
+                </span>
+                <label className="column-chooser-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={!hidden.has(col.key)}
+                    disabled={col.locked}
+                    onChange={() => toggleColumn(col.key)}
+                  />
+                  <span>{col.label}</span>
+                </label>
+              </div>
+            ))}
+            {filtered.length === 0 && <p className="column-chooser-empty">No columns match &quot;{search}&quot;.</p>}
+          </div>
+          <div className="column-chooser-foot">
+            <button type="button" className="link-button" onClick={resetColumns}>Reset to default</button>
+          </div>
+        </div>
       )}
     </div>
   );

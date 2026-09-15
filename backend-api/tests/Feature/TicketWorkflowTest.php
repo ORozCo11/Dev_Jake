@@ -834,7 +834,7 @@ class TicketWorkflowTest extends TestCase
             'ticket_description' => 'From condition check.',
             'priority' => 'High',
             'assigned_custodian_id' => $this->custodian->id,
-            'entry_mode' => 'prediagnosed',
+            'entry_mode' => 'in_house',
             'condition_check_id' => $condition->condition_check_id,
             'sub_issues' => [['title' => 'Brakes feel soft.']],
         ])->assertCreated();

@@ -3435,21 +3435,77 @@ button.wizard-step-pill:hover {
 .smart-form .password-field-wrapper input {
   max-width: none;
 }
-/* Outlined "legend on the border" look — the label sits on top of the
-   input's border line (like a <fieldset><legend>) instead of stacked above
-   it, matching the realcore reference. Excludes file/checkbox fields, which
-   don't have a single-line box for a label to sit on. */
+/* Floating label — at rest it sits centered inside the field like a
+   placeholder; the moment the field is focused (or already holds a value,
+   via the .has-value class SmartForm adds per field), it floats up to sit
+   on the input's border line instead, like a <fieldset><legend>, matching
+   the realcore reference. Excludes file/checkbox fields, which don't have
+   a single-line box for a label to float onto. */
 .smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])) {
   position: relative;
   margin-top: 10px;
 }
 .smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])) > span {
   position: absolute;
-  top: -8px;
+  /* Fixed to half the input/select's own height (42px, set below) rather
+     than 50% of the <label> — the label's own box includes any trailing
+     .field-hint text under the input, so a percentage here centers against
+     that taller combined height instead of the input alone, landing the
+     caption low enough to visually collide with the hint line. */
+  top: 21px;
   left: 10px;
+  transform: translateY(-50%);
   z-index: 1;
   padding: 0 6px;
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: #94a3b8;
+  pointer-events: none;
+  transition: top 0.15s ease, font-size 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):focus-within > span,
+.smart-form label.has-value:not(:has(.checkbox-group)):not(:has(input[type="file"])) > span,
+/* CSS-only fallback for the many hand-built forms in this file that never
+   go through SmartForm's renderField (Create Ticket, Complete Inspection,
+   Log Repairs, the Add/Edit Location page, more likely to come) — those
+   don't compute the .has-value class above, so a field that mounts
+   pre-filled (e.g. prefilled from converting an Issue Report into a
+   Ticket) never floats its caption, leaving it sitting centered directly
+   on top of the real value: overlapping, garbled text. This mirrors
+   .has-value using only what the browser already tracks: an input/textarea
+   whose placeholder isn't currently showing (i.e. it has real content —
+   set by SmartForm's inputs already, worth adding to hand-written ones
+   too) is filled; a select failing :invalid means some option besides the
+   blank default one is chosen. Selects with no `required` and inputs with
+   no `placeholder` attribute fall back to always-floated rather than
+   risking the overlap again — a label sitting on the border the whole
+   time is a much smaller issue than one sitting on top of real text. */
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):has(input:not(:placeholder-shown)) > span,
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):has(textarea:not(:placeholder-shown)) > span,
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):has(select:not(:invalid)) > span {
+  top: -8px;
+  transform: translateY(0);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   background: var(--surface-2, #f8fafc);
+}
+/* Native placeholder mirrors the label text (SmartForm defaults it to
+   field.label) but stays invisible until focus, so it doesn't double up
+   with the centered label above it at rest — once the label floats away
+   on focus, the same words are revealed underneath in its old spot. */
+.smart-form input:not([type="file"]):not([type="checkbox"])::placeholder,
+.smart-form textarea::placeholder {
+  color: transparent;
+  transition: color 0.15s ease;
+}
+.smart-form input:not([type="file"]):not([type="checkbox"]):focus::placeholder,
+.smart-form textarea:focus::placeholder {
+  color: #94a3b8;
 }
 .smart-form input:not([type="file"]):not([type="checkbox"]),
 .smart-form select,
@@ -3502,12 +3558,10 @@ button.wizard-step-pill:hover {
   background-position: right 10px center;
   background-size: 16px;
 }
-/* Focus accent — while actually focused, tint the border-sitting caption
-   the accent color instead of its default neutral gray, so it's clear
-   which field currently has focus without needing an idle/floated state
-   switch (every label already sits on the border permanently via the
-   rule above). */
-.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):has(input:focus, textarea:focus, select:focus) > span {
+/* Focus accent — while actually focused, tint the floated caption the
+   accent color instead of the neutral gray it floats up with on value
+   alone, so it's clear at a glance which field currently has focus. */
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):focus-within > span {
   color: var(--primary, #2563eb);
 }
 /* Page-level title, sitting inside the card above the field legends — dark
@@ -5002,12 +5056,49 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
 
 .entry-mode-toggle {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .entry-mode-toggle button {
-  flex: 1;
+  flex: 1 1 160px;
   padding: 10px 16px;
 }
+/* Each of the four "How Is This Being Reported?" options gets its own
+   solid color, always — not just when selected — same visual language as
+   the app's solid stat cards (.metric-card-solid / .stat-filter-card):
+   solid fill, white text, and a white-gap + color ring for whichever one
+   is currently selected. !important throughout because later rules set
+   .ghost-button/.primary-button's own background/border with !important
+   too, at both plain and light-theme specificity — see the light-theme
+   duplicate of the "selected" rule further below in this file. */
+.entry-mode-btn.ghost-button,
+.entry-mode-btn.primary-button {
+  background: var(--entry-mode-color, #2563eb) !important;
+  border: none !important;
+  color: #ffffff !important;
+}
+.entry-mode-btn.ghost-button:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 14px var(--entry-mode-shadow, rgba(37, 99, 235, 0.35)) !important;
+}
+/* The selected tab's ring — a white gap + a ring in its own color, exactly
+   like .stat-filter-card.is-active's inline box-shadow recipe elsewhere in
+   the app. The .entry-mode-toggle ancestor class pushes this rule's
+   specificity above the generic .primary-button one (and its light-theme
+   duplicate below) so it wins regardless of position in the file. */
+.entry-mode-toggle .entry-mode-btn.primary-button {
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--entry-mode-color, #2563eb), 0 10px 20px var(--entry-mode-shadow, rgba(37, 99, 235, 0.35)) !important;
+}
+/* Hovering the already-selected tab: keep the ring (dropping it here would
+   make it flicker off on hover), just deepen the glow underneath it. */
+.entry-mode-toggle .entry-mode-btn.primary-button:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--entry-mode-color, #2563eb), 0 14px 28px var(--entry-mode-shadow, rgba(37, 99, 235, 0.45)) !important;
+}
+.entry-mode-btn--inspection { --entry-mode-color: #2563eb; --entry-mode-shadow: rgba(37, 99, 235, 0.35); }
+.entry-mode-btn--in_house { --entry-mode-color: #16a34a; --entry-mode-shadow: rgba(22, 163, 74, 0.35); }
+.entry-mode-btn--cannibalized { --entry-mode-color: #d97706; --entry-mode-shadow: rgba(217, 119, 6, 0.35); }
+.entry-mode-btn--external { --entry-mode-color: #7c3aed; --entry-mode-shadow: rgba(124, 58, 237, 0.35); }
 
 /* Photo on top, spec info stacked below it — the left-column "report photo"
    convention, and a much bigger photo than the old side-by-side thumbnail. */
@@ -5615,6 +5706,124 @@ button.file-card-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-
 @media (max-width: 640px) {
   .icon-add-btn.has-label { width: 38px; padding: 0; }
   .icon-add-btn-label { display: none; }
+}
+
+.export-btn.is-active {
+  background: #dbeafe;
+}
+
+/* Choose Columns toolbar button + popover — show/hide a table's columns
+   and drag to reorder them, matching the realcore reference. Currently
+   wired to the Vehicle Management table only (the pilot); other tables
+   can opt in later by passing a `columnChooser` prop through
+   LocalSearchInput the same way. */
+.column-chooser {
+  position: relative;
+}
+.column-chooser-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 260px;
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+}
+.column-chooser-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  flex-shrink: 0;
+}
+.column-chooser-head h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-strong, #0f172a);
+}
+.column-chooser-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 14px;
+  padding: 6px 10px;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 8px;
+  color: var(--text-muted, #64748b);
+  flex-shrink: 0;
+}
+.column-chooser-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  font-size: 0.8rem;
+  color: var(--text-strong, #0f172a);
+}
+.column-chooser-list {
+  overflow-y: auto;
+  padding: 0 6px 6px;
+}
+.column-chooser-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: grab;
+}
+.column-chooser-row:hover {
+  background: var(--surface-2, #f8fafc);
+}
+.column-chooser-row:active {
+  cursor: grabbing;
+}
+.column-chooser-grip {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint, #cbd5e1);
+  flex-shrink: 0;
+}
+.column-chooser-grip.is-disabled {
+  opacity: 0.4;
+}
+.column-chooser-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--text-strong, #0f172a);
+  cursor: pointer;
+}
+.column-chooser-checkbox input {
+  flex-shrink: 0;
+  width: auto;
+  margin: 0;
+}
+.column-chooser-checkbox span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.column-chooser-empty {
+  margin: 10px 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted, #64748b);
+}
+.column-chooser-foot {
+  flex-shrink: 0;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-subtle, #e2e8f0);
 }
 
 /* Filter Bar Styles */
@@ -7667,7 +7876,41 @@ table button,
 }
 
 .table-shell tbody tr.is-clickable { cursor: pointer; }
-.table-shell tbody tr.is-clickable:hover { background: rgba(37, 99, 235, 0.08); }
+/* Underline just the row's own title/name text on hover instead of washing
+   the whole row in a background tint — shading every cell (including ones
+   that aren't what gets clicked, e.g. a Reported By name in an
+   Issue-Reports row whose click target is the vehicle) read as "the whole
+   row is one link" and was easy to misread. .row-title-text marks the one
+   cell per row whose text actually matches what onRowClick opens. */
+.table-shell tbody tr.is-clickable:hover .row-title-text {
+  text-decoration: underline;
+  color: var(--primary-strong, #1d4ed8);
+}
+
+/* Header cells draggable straight from the table (DataTable's
+   onReorderColumn) — same reorder as Choose Columns' popover list, just
+   without opening it first. A locked/keyless column (e.g. ID, Action)
+   renders as a plain <th>, no affordance, since it was never draggable. */
+.table-shell th.is-draggable-column {
+  cursor: grab;
+  user-select: none;
+}
+.table-shell th.is-draggable-column:hover {
+  background: var(--surface-2, #f8fafc);
+}
+.table-shell th.is-draggable-column:active {
+  cursor: grabbing;
+}
+/* Drop-position line — drawn with an inset box-shadow (adds no extra width,
+   so the column grid doesn't jitter as the indicator moves from header to
+   header) right on whichever edge the dragged column would land against,
+   matching the realcore reference's line between columns. */
+.table-shell th.is-drop-before {
+  box-shadow: inset 3px 0 0 0 var(--primary, #2563eb);
+}
+.table-shell th.is-drop-after {
+  box-shadow: inset -3px 0 0 0 var(--primary, #2563eb);
+}
 
 .table-pagination {
   display: flex;
@@ -7775,7 +8018,7 @@ table button,
 }
 .table-shell.is-compact thead th {
   padding: 9px 10px;
-  font-size: 0.66rem;
+  font-size: 0.78rem;
   letter-spacing: 0.03em;
   white-space: normal;
   line-height: 1.25;
@@ -8502,19 +8745,56 @@ button.btn-view-action svg {
   flex: 1;
 }
 
-.location-form-panel {
+.location-edit-panel {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   padding: 20px;
-  margin-top: 16px;
 }
-
-.location-form-panel h3 {
+.location-edit-panel h3 {
   margin: 0 0 16px 0;
   font-size: 1rem;
   font-weight: 700;
   color: #0f172a;
+}
+
+/* Add Location page — a plain name/address form beside a live pick-a-point
+   map; either one drives the other (typing geocodes onto the map, clicking
+   the map reverse-geocodes into the address field). Fields take a fixed,
+   comfortable reading width; the map fills whatever's left. */
+.add-location-page {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.add-location-fields {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+}
+.add-location-map-shell {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 560px;
+  display: flex;
+}
+.add-location-map-canvas {
+  height: 100%;
+  width: 100%;
+  min-height: 560px;
+}
+@media (max-width: 900px) {
+  .add-location-page {
+    grid-template-columns: 1fr;
+  }
+  .add-location-map-shell,
+  .add-location-map-canvas {
+    min-height: 380px;
+  }
 }
 
 .location-snapshot-tag {
@@ -8847,6 +9127,29 @@ button.btn-view-action svg {
   font-size: 0.92rem;
   outline: none;
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  margin-bottom: 14px;
+}
+
+/* Latitude/Longitude side by side — the same width a single coordinate
+   value needs, so two fit the modal without feeling cramped. Stacks on
+   narrow viewports since the modal itself shrinks below ~340px there. */
+.hub-modal-coord-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.hub-modal-coord-fields .hub-modal-input {
+  margin-bottom: 0;
+}
+.hub-modal-coord-hint {
+  margin: 8px 0 0;
+  font-size: 0.74rem;
+  color: var(--danger, #dc2626);
+}
+@media (max-width: 360px) {
+  .hub-modal-coord-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .hub-modal-input::placeholder {
@@ -9607,10 +9910,9 @@ button.btn-view-action svg {
 
 /* Tables */
 [data-theme="light"] thead th {
-  background: #2563eb;
-  color: #ffffff;
-  border-bottom: 2px solid #2563eb;
-  border-right: 1px solid rgba(255, 255, 255, 0.25);
+  background: #ffffff;
+  color: #0f172a;
+  border-bottom: 2px solid #e2e8f0;
 }
 [data-theme="light"] tbody td {
   color: #334155;
@@ -10110,11 +10412,39 @@ html[data-theme="light"] .primary-link {
   padding: 6px 14px;
 }
 
+/* Higher specificity than the light-theme rule above (needed since both are
+   !important) — keeps each entry-mode option's own color, and its own
+   selected-ring, instead of every selected tab going uniformly blue and
+   flat under the light theme. */
+html[data-theme="light"] .entry-mode-btn.ghost-button,
+html[data-theme="light"] .entry-mode-btn.primary-button {
+  background: var(--entry-mode-color, #2f7de1) !important;
+  border: none !important;
+  color: #ffffff !important;
+}
+html[data-theme="light"] .entry-mode-toggle .entry-mode-btn.primary-button {
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--entry-mode-color, #2f7de1), 0 10px 20px var(--entry-mode-shadow, rgba(37, 99, 235, 0.35)) !important;
+}
+
 html[data-theme="light"] .primary-button:hover:not(:disabled),
 html[data-theme="light"] .primary-link:hover {
   background: #246cc8 !important;
   border-color: #246cc8 !important;
   box-shadow: none;
+}
+
+/* Same override needed for the light theme specifically — this file's
+   light-theme hover rule above otherwise wins on specificity (the "html"
+   type selector puts it ahead of the plain .entry-mode-toggle version). */
+html[data-theme="light"] .entry-mode-btn.ghost-button:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 6px 16px var(--entry-mode-shadow, rgba(37, 99, 235, 0.35)) !important;
+}
+/* Hovering the already-selected tab under the light theme — keep the ring,
+   just deepen the glow underneath it, same reasoning as the plain version. */
+html[data-theme="light"] .entry-mode-toggle .entry-mode-btn.primary-button:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--entry-mode-color, #2f7de1), 0 14px 28px var(--entry-mode-shadow, rgba(37, 99, 235, 0.45)) !important;
 }
 
 /* Match the "Filter" apply button to the solid blue Edit-action style
@@ -10258,8 +10588,8 @@ html[data-theme="light"] .filter-clear-btn:hover {
 
 html[data-theme="light"] .table-shell {
   background: #ffffff;
-  border: 3px solid #2563eb;
-  border-radius: 6px;
+  border: none;
+  border-radius: 10px;
   box-shadow: none;
   margin-bottom: 0;
   overflow: auto;
@@ -10273,14 +10603,13 @@ html[data-theme="light"] .table-shell table {
 }
 
 html[data-theme="light"] thead th {
-  background: #2563eb;
-  border-bottom: 1px solid #2563eb;
-  border-right: 1px solid rgba(255, 255, 255, 0.25);
-  color: #ffffff;
-  font-size: 0.7rem;
+  background: #ffffff;
+  border-bottom: 2px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 0.85rem;
   font-weight: 700;
-  line-height: 1.25;
-  padding: 8px 10px;
+  line-height: 1.3;
+  padding: 10px 12px;
   text-align: center;
   text-transform: none;
   white-space: normal;
@@ -10288,19 +10617,13 @@ html[data-theme="light"] thead th {
 
 html[data-theme="light"] tbody td {
   background: #ffffff;
-  border-bottom: 1px solid #dbe3ee;
-  border-right: 1px solid #e5ebf4;
+  border-bottom: 1px solid #edf1f7;
   color: #17243a;
   font-size: 0.72rem;
   font-weight: 500;
   line-height: 1.35;
   padding: 8px 10px;
   vertical-align: middle;
-}
-
-html[data-theme="light"] thead th:last-child,
-html[data-theme="light"] tbody td:last-child {
-  border-right: none;
 }
 
 html[data-theme="light"] tbody tr:nth-child(even) td {
@@ -10750,7 +11073,8 @@ html[data-theme="light"] .issue-id-badge {
   margin-top: 18px;
 }
 
-.dashboard-command-pills span {
+.dashboard-command-pills span,
+.dashboard-command-pills button {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
@@ -10758,6 +11082,17 @@ html[data-theme="light"] .issue-id-badge {
   font-size: 0.74rem;
   font-weight: 800;
   padding: 6px 10px;
+}
+
+.dashboard-command-pills button {
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.dashboard-command-pills button:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
 }
 
 .dashboard-hologram-core {
@@ -10907,6 +11242,19 @@ html[data-theme="light"] .issue-id-badge {
 .dashboard-micro-metric.is-ok > span { color: #86efac; }
 .dashboard-micro-metric.is-warn > span { color: #fbbf24; }
 .dashboard-micro-metric.is-alert > span { color: #fca5a5; }
+
+button.dashboard-micro-metric {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+button.dashboard-micro-metric:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
 
 .dashboard-signal-grid {
   display: grid;

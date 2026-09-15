@@ -172,12 +172,22 @@ class TicketController extends Controller
             // #3 — when the vehicle actually became unavailable (may be backdated).
             'down_since'            => ['nullable', 'date'],
             // #1 — entry mode. 'inspection' = today's flow (Custodian diagnoses
-            // first). 'prediagnosed' = the problem is already known, so the
-            // ticket is born Active with its sub-issues and skips inspection.
-            'entry_mode'            => ['nullable', Rule::in(['inspection', 'prediagnosed'])],
-            'sub_issues'                    => ['required_if:entry_mode,prediagnosed', 'array', 'min:1'],
+            // first). The other three mean the problem AND how it'll be fixed
+            // are already known, so the ticket is born Active with its
+            // sub-issues and skips inspection — replaces the old generic
+            // 'prediagnosed' value, since picking a specific repair type
+            // already implies the issue is diagnosed.
+            'entry_mode'            => ['nullable', Rule::in(['inspection', 'in_house', 'cannibalized', 'external'])],
+            'sub_issues'                    => ['required_if:entry_mode,in_house,cannibalized,external', 'array', 'min:1'],
             'sub_issues.*.title'            => ['required_with:sub_issues', 'string', 'max:255'],
             'sub_issues.*.maintenance_type' => ['nullable', 'string', 'max:150'],
+            // Only meaningful (and required) when the repair is already
+            // known to use a part cannibalized from another vehicle.
+            'source_vehicle_id'     => ['nullable', 'required_if:entry_mode,cannibalized', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
+            // Only meaningful when already known to be going to an external
+            // shop — the vendor may not be picked yet, so optional even then.
+            'external_vendor'       => ['nullable', 'string', 'max:255'],
+            'warranty_until'        => ['nullable', 'date'],
         ]);
 
         // Fault category / maintenance type are a growing catalog, not a
@@ -196,7 +206,11 @@ class TicketController extends Controller
         }
 
         $entryMode = $data['entry_mode'] ?? 'inspection';
-        $preDiagnosed = $entryMode === 'prediagnosed';
+        $preDiagnosed = $entryMode !== 'inspection';
+        // Only set on sub-issues when the repair type is already known —
+        // 'inspection' tickets genuinely don't know it yet, that's decided
+        // later at the Log Repairs step.
+        $repairType = $preDiagnosed ? $entryMode : null;
 
         // A retired/archived vehicle is out of the fleet — no new work on it.
         $vehicle = Vehicle::findOrFail($data['vehicle_id']);
@@ -242,7 +256,7 @@ class TicketController extends Controller
         $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $faultCategory, $data['ticket_title']);
         $recurrence = $recurrenceInfo['count'];
 
-        $ticket = DB::transaction(function () use ($data, $request, $recurrence, $recurrenceInfo, $preDiagnosed, $faultCategory, $normalizedIncomingTitle) {
+        $ticket = DB::transaction(function () use ($data, $request, $recurrence, $recurrenceInfo, $preDiagnosed, $repairType, $faultCategory, $normalizedIncomingTitle) {
             // Lock the vehicle row first — serializes concurrent createTicket
             // calls for the SAME vehicle so two requests can't both pass the
             // "no duplicate Main Issue" check before either has inserted.
@@ -293,11 +307,15 @@ class TicketController extends Controller
                 // stamp a skipped-inspection so the audit trail is honest.
                 foreach ($data['sub_issues'] as $sub) {
                     TicketSubIssue::create([
-                        'ticket_id'        => $ticket->ticket_id,
-                        'created_by'       => $request->user()->id,
-                        'title'            => $sub['title'],
-                        'maintenance_type' => $sub['maintenance_type'] ?? null,
-                        'status'           => 'Open',
+                        'ticket_id'          => $ticket->ticket_id,
+                        'created_by'         => $request->user()->id,
+                        'title'              => $sub['title'],
+                        'maintenance_type'   => $sub['maintenance_type'] ?? null,
+                        'repair_type'        => $repairType,
+                        'source_vehicle_id'  => $repairType === 'cannibalized' ? ($data['source_vehicle_id'] ?? null) : null,
+                        'external_vendor'    => $repairType === 'external' ? ($data['external_vendor'] ?? null) : null,
+                        'warranty_until'     => $repairType === 'external' ? ($data['warranty_until'] ?? null) : null,
+                        'status'             => 'Open',
                     ]);
                 }
                 $ticket->update([
@@ -325,13 +343,15 @@ class TicketController extends Controller
                 ]);
             }
 
-            $modeLabel = $preDiagnosed ? 'pre-diagnosed (inspection skipped)' : 'assigned to custodian for inspection';
+            $repairTypeLabels = ['in_house' => 'in-house repair', 'cannibalized' => 'cannibalized part', 'external' => 'external shop'];
+            $repairTypeLabel = $repairTypeLabels[$repairType] ?? $repairType;
+            $modeLabel = $preDiagnosed ? "pre-diagnosed as {$repairTypeLabel} (inspection skipped)" : 'assigned to custodian for inspection';
             $this->log($request, 'Create Ticket', "Ticket #{$ticket->ticket_id} ({$data['ticket_title']}) created for {$vehicle->vehicle_name} — {$modeLabel}.");
 
             if ($preDiagnosed) {
                 $this->notifyAdmins(
                     'Pre-Diagnosed Ticket Ready for Assignment',
-                    "Ticket #{$ticket->ticket_id} ({$data['ticket_title']}) on {$vehicle->vehicle_name} is pre-diagnosed and ready — assign a mechanic to each sub-issue.",
+                    "Ticket #{$ticket->ticket_id} ({$data['ticket_title']}) on {$vehicle->vehicle_name} is pre-diagnosed ({$repairTypeLabel}) and ready — assign a mechanic to each sub-issue.",
                     'ticket_prediagnosed',
                     $ticket->ticket_id,
                     $vehicle->barangay_id
@@ -740,6 +760,13 @@ class TicketController extends Controller
             'repair_completed_at'   => ['nullable', 'date'],
             'maintenance_cost'      => ['nullable', 'numeric', 'min:0'],
             'estimated_return_date' => ['nullable', 'date'],
+            // May already be set from ticket creation (pre-diagnosed) — this
+            // lets the mechanic confirm it, or correct it if the actual
+            // repair ended up differing from the original plan.
+            'repair_type'           => ['nullable', Rule::in(['in_house', 'cannibalized', 'external'])],
+            'source_vehicle_id'     => ['nullable', 'required_if:repair_type,cannibalized', 'exists:vehicles,vehicle_id'],
+            'external_vendor'       => ['nullable', 'string', 'max:255'],
+            'warranty_until'        => ['nullable', 'date'],
         ]);
 
         DB::transaction(function () use ($ticket, $subIssue, $data, $request) {
@@ -756,6 +783,16 @@ class TicketController extends Controller
                 'repair_started_at'         => $data['repair_started_at'] ?? $subIssue->repair_started_at,
                 'repair_completed_at'       => $data['repair_completed_at'] ?? null,
                 'maintenance_cost'          => $data['maintenance_cost'] ?? $subIssue->maintenance_cost,
+                'repair_type'               => $data['repair_type'] ?? $subIssue->repair_type,
+                'source_vehicle_id'         => ($data['repair_type'] ?? $subIssue->repair_type) === 'cannibalized'
+                    ? ($data['source_vehicle_id'] ?? $subIssue->source_vehicle_id)
+                    : null,
+                'external_vendor'           => ($data['repair_type'] ?? $subIssue->repair_type) === 'external'
+                    ? ($data['external_vendor'] ?? $subIssue->external_vendor)
+                    : null,
+                'warranty_until'            => ($data['repair_type'] ?? $subIssue->repair_type) === 'external'
+                    ? ($data['warranty_until'] ?? $subIssue->warranty_until)
+                    : null,
             ]);
 
             if (array_key_exists('estimated_return_date', $data) && $data['estimated_return_date']) {
@@ -1538,6 +1575,7 @@ class TicketController extends Controller
             'subIssues.deferredBy',
             'subIssues.createdBy',
             'subIssues.verificationAssignedTo',
+            'subIssues.sourceVehicle:vehicle_id,vehicle_name,plate_number',
         ];
     }
 
