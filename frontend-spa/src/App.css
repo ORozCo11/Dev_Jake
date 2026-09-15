@@ -2190,6 +2190,18 @@ table {
 .table-shell.is-fixed table {
   table-layout: fixed;
 }
+/* Opt-in vertical scroll for long lists (e.g. Maintenance Tickets) — the
+   table body scrolls in place while the page's filters/search/pagination
+   stay put, instead of the whole page growing with the row count. */
+.table-shell.has-scroll {
+  max-height: 620px;
+  overflow-y: auto;
+}
+.table-shell.has-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
 /* Let cells wrap long text instead of forcing horizontal scroll.
    Use overflow-wrap (not word-break) so short words like "Admin" never
    split mid-word — only over-long unbreakable tokens get broken. */
