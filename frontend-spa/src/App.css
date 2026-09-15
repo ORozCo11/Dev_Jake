@@ -137,6 +137,40 @@
   .auth-page-nav { gap: 16px; }
 }
 
+/* Developers page — FAQ / Report a Concern quick-action buttons in the header */
+.auth-header-extra-actions { display: flex; align-items: center; gap: 10px; }
+.dev-header-actions { display: flex; align-items: center; gap: 8px; }
+.dev-header-action-btn {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.08);
+  text-decoration: none;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.dev-header-action-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+/* About page — decorative vehicle silhouette in the hero background */
+.about-vehicle-bg {
+  position: absolute;
+  bottom: 0;
+  right: -40px;
+  width: 60%;
+  max-width: 700px;
+  height: auto;
+  color: #ffffff;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* A fixed dark, moody brand background (matching the reference) — deliberately
    independent of the in-app light/dark theme toggle, since that preference
    doesn't exist yet at the sign-in screen. The Aurora component supplies the

@@ -38,7 +38,20 @@ export default function About() {
     <div className="auth-page-shell">
       <AuthHeader />
 
-      <main className="auth-hero">
+      <main className="auth-hero" style={{ position: 'relative', overflow: 'hidden' }}>
+        {/* Decorative low-opacity vehicle silhouette background */}
+        <svg className="about-vehicle-bg" viewBox="0 0 800 300" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+          <rect x="80" y="130" width="580" height="110" rx="18" fill="currentColor" opacity="0.06"/>
+          <rect x="160" y="80" width="280" height="90" rx="14" fill="currentColor" opacity="0.06"/>
+          <circle cx="190" cy="248" r="42" fill="currentColor" opacity="0.07"/>
+          <circle cx="190" cy="248" r="22" fill="currentColor" opacity="0.06"/>
+          <circle cx="560" cy="248" r="42" fill="currentColor" opacity="0.07"/>
+          <circle cx="560" cy="248" r="22" fill="currentColor" opacity="0.06"/>
+          <rect x="660" y="150" width="60" height="60" rx="8" fill="currentColor" opacity="0.05"/>
+          <rect x="80" y="195" width="30" height="40" rx="4" fill="currentColor" opacity="0.05"/>
+          <rect x="670" y="110" width="18" height="28" rx="3" fill="currentColor" opacity="0.04"/>
+          <rect x="695" y="110" width="18" height="28" rx="3" fill="currentColor" opacity="0.04"/>
+        </svg>
         <div className="auth-hero-inner">
           <p className="auth-hero-eyebrow">Barangay VMS</p>
           <h1 className="auth-hero-title">About the System</h1>
