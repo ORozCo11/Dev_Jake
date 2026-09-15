@@ -8013,8 +8013,9 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
   const isAdmin = hasRole(currentUser, 'Admin');
   const currentUserId = currentUser?.id;
   return [
-    { label: 'ID', render: (row) => row.schedule_id },
-    { label: 'Vehicle', render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { label: 'Plate', render: (row) => row.vehicle?.plate_number ?? '-' },
+    { label: 'ID', align: 'center', render: (row) => row.schedule_id },
+    { label: 'Vehicle', render: (row) => <VehicleCell vehicle={row.vehicle} /> },
+    { label: 'Plate', align: 'center', render: (row) => row.vehicle?.plate_number ?? '-' },
     { label: 'Type', render: (row) => row.maintenance_type },
     {
       label: 'Assigned To',
@@ -8030,12 +8031,13 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
         );
       },
     },
-    { label: 'Date', render: (row) => <DateBadge value={row.scheduled_date} /> },
-    { label: 'Time', render: (row) => row.scheduled_time ?? '-' },
-    { label: 'Repeat', render: (row) => row.recurrence_months ? <StatusBadge value={RECURRENCE_LABEL[row.recurrence_months] ?? `Every ${row.recurrence_months} mo`} /> : <span className="muted">One-time</span> },
+    { label: 'Date', align: 'center', render: (row) => <DateBadge value={row.scheduled_date} /> },
+    { label: 'Time', align: 'center', render: (row) => row.scheduled_time ?? '-' },
+    { label: 'Repeat', align: 'center', render: (row) => row.recurrence_months ? <StatusBadge value={RECURRENCE_LABEL[row.recurrence_months] ?? `Every ${row.recurrence_months} mo`} /> : <span className="muted">One-time</span> },
     { label: 'Location', render: (row) => row.service_location ?? '-' },
     {
       label: 'Status',
+      align: 'center',
       render: (row) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <StatusBadge value={row.status} />
@@ -8072,6 +8074,7 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
     },
     {
       label: 'Action',
+      align: 'center',
       render: (row) => (
         <div className="row-actions" style={{ flexWrap: 'wrap' }}>
           {row.status === 'Scheduled' && onComplete && (isAdmin || (currentUserId != null && String(row.assigned_to) === String(currentUserId))) && (
