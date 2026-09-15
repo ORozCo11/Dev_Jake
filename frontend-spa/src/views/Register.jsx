@@ -31,17 +31,17 @@ const emptyForm = {
   password_confirmation: '',
 };
 
-// Letters, spaces, and the punctuation that legitimately shows up in PH
-// names (hyphenated surnames, "Ñ", "D'Angelo"-style apostrophes, "Jr.").
 const NAME_CHARS = /[^A-Za-zÀ-ÖØ-öø-ÿ.'\- ]/g;
 const NAME_PATTERN = /^[A-Za-zÀ-ÖØ-öø-ÿ.'\- ]+$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// PH mobile format: 09 + 9 digits = 11 digits total.
 const PHONE_PATTERN = /^09\d{9}$/;
+
+const STEP_LABELS = ['Personal Info', 'Location', 'Account'];
 
 function Register() {
   const { token, user } = useContext(AuthContext);
   const [form, setForm] = useState(emptyForm);
+  const [step, setStep] = useState(1);
   const [provinces, setProvinces] = useState([]);
   const [cities, setCities] = useState([]);
   const [barangays, setBarangays] = useState([]);
@@ -49,12 +49,6 @@ function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  // null = not checked yet. true/false once we know whether this barangay
-  // already has anyone registered — drives whether the role/staff-code
-  // fields even need to be shown, and doubles as the client-side hint for
-  // "you'll become this barangay's Administrator". The backend
-  // independently re-derives this at submit time regardless of what this
-  // says — this is purely a UX preview, never the source of truth.
   const [isFirstForBarangay, setIsFirstForBarangay] = useState(null);
 
   useEffect(() => {
@@ -63,7 +57,6 @@ function Register() {
       .catch(() => setProvinces([]));
   }, []);
 
-  // Cascading City/Municipality list, scoped to the chosen province.
   useEffect(() => {
     if (!form.province_id) return;
     api.get('/cities', { params: { province_id: form.province_id } })
@@ -71,8 +64,6 @@ function Register() {
       .catch(() => setCities([]));
   }, [form.province_id]);
 
-  // Only Mandaue City has a real barangay list today — everywhere else this
-  // comes back empty and the Barangay field falls back to free text.
   useEffect(() => {
     if (!form.city_id) return;
     api.get('/barangays', { params: { city_id: form.city_id } })
@@ -80,9 +71,6 @@ function Register() {
       .catch(() => setBarangays([]));
   }, [form.city_id]);
 
-  // Live "will I become this barangay's Admin?" preview. Instant for a
-  // dropdown pick (a discrete choice); debounced for free-typed names so it
-  // doesn't fire on every keystroke.
   useEffect(() => {
     if (!form.city_id || (!form.barangay_id && !form.barangay_name.trim())) {
       setIsFirstForBarangay(null);
@@ -111,39 +99,53 @@ function Register() {
 
   const handleProvinceChange = (event) => {
     const { value } = event.target;
-    setForm((current) => ({
-      ...current,
-      province_id: value,
-      city_id: '',
-      barangay_id: '',
-      barangay_name: '',
-    }));
+    setForm((current) => ({ ...current, province_id: value, city_id: '', barangay_id: '', barangay_name: '' }));
     setCities([]);
     setBarangays([]);
   };
 
   const handleCityChange = (event) => {
     const { value } = event.target;
-    setForm((current) => ({
-      ...current,
-      city_id: value,
-      barangay_id: '',
-      barangay_name: '',
-    }));
+    setForm((current) => ({ ...current, city_id: value, barangay_id: '', barangay_name: '' }));
     setBarangays([]);
   };
 
-  // Strips anything that isn't a letter/space/name-punctuation as the user
-  // types, instead of only complaining after they hit submit.
   const handleNameChange = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value.replace(NAME_CHARS, '') }));
   };
 
-  // Digits only, capped at 11 — the length of a PH mobile number.
   const handlePhoneChange = (event) => {
     const digits = event.target.value.replace(/\D/g, '').slice(0, 11);
     setForm((current) => ({ ...current, phone: digits }));
+  };
+
+  const validateStep1 = () => {
+    if (!NAME_PATTERN.test(form.first_name.trim())) { setError('First name may only contain letters.'); return false; }
+    if (form.middle_name.trim() && !NAME_PATTERN.test(form.middle_name.trim())) { setError('Middle name may only contain letters.'); return false; }
+    if (!NAME_PATTERN.test(form.last_name.trim())) { setError('Last name may only contain letters.'); return false; }
+    if (!EMAIL_PATTERN.test(form.email.trim())) { setError('Please enter a valid email address.'); return false; }
+    if (!PHONE_PATTERN.test(form.phone)) { setError('Phone number must be 11 digits starting with 09 (e.g. 09171234567).'); return false; }
+    return true;
+  };
+
+  const validateStep2 = () => {
+    if (!form.province_id) { setError('Please select your province.'); return false; }
+    if (!form.city_id) { setError('Please select your city/municipality.'); return false; }
+    if (!form.barangay_id && !form.barangay_name.trim()) { setError('Please enter or select your barangay.'); return false; }
+    if (!form.address.trim()) { setError('Street address is required.'); return false; }
+    return true;
+  };
+
+  const handleNext = () => {
+    setError('');
+    if (step === 1 && validateStep1()) setStep(2);
+    else if (step === 2 && validateStep2()) setStep(3);
+  };
+
+  const handleBack = () => {
+    setError('');
+    setStep((s) => s - 1);
   };
 
   const handleSubmit = async (event) => {
@@ -151,42 +153,6 @@ function Register() {
     if (submitting) return;
     setError('');
 
-    if (!NAME_PATTERN.test(form.first_name.trim())) {
-      setError('First name may only contain letters.');
-      return;
-    }
-    if (form.middle_name.trim() && !NAME_PATTERN.test(form.middle_name.trim())) {
-      setError('Middle name may only contain letters.');
-      return;
-    }
-    if (!NAME_PATTERN.test(form.last_name.trim())) {
-      setError('Last name may only contain letters.');
-      return;
-    }
-    if (!EMAIL_PATTERN.test(form.email.trim())) {
-      setError('Please enter a valid email address.');
-      return;
-    }
-    if (!PHONE_PATTERN.test(form.phone)) {
-      setError('Phone number must be 11 digits starting with 09 (e.g. 09171234567).');
-      return;
-    }
-    if (!form.province_id) {
-      setError('Please select your province.');
-      return;
-    }
-    if (!form.city_id) {
-      setError('Please select your city/municipality.');
-      return;
-    }
-    if (!form.barangay_id && !form.barangay_name.trim()) {
-      setError('Please enter or select your barangay.');
-      return;
-    }
-    if (!form.address.trim()) {
-      setError('Street address is required.');
-      return;
-    }
     if (!isFirstForBarangay && !form.requested_role) {
       setError('Please select whether you are a Custodian or Maintenance Personnel.');
       return;
@@ -205,7 +171,6 @@ function Register() {
     }
 
     setSubmitting(true);
-
     try {
       const name = [form.first_name, form.middle_name, form.last_name]
         .map((part) => part.trim())
@@ -215,13 +180,6 @@ function Register() {
       setSubmitted(true);
     } catch (requestError) {
       const messages = requestError.response?.data?.errors;
-
-      // If we thought we'd be the first (and so hid the role/staff-code
-      // requirement) but the backend disagrees, someone else just claimed
-      // that barangay's first-Admin slot while this form was open. Reveal
-      // the now-required fields instead of leaving the user stuck unable to
-      // fix an error on a field they can't even see, and re-check the real
-      // status rather than just assuming.
       if (isFirstForBarangay && messages && (messages.requested_role || messages.staff_code)) {
         setIsFirstForBarangay(false);
         setError('Someone else just registered as this barangay\'s first Administrator. Please select your role and enter the staff registration code below, then submit again.');
@@ -249,289 +207,215 @@ function Register() {
       <AuthHeader />
 
       <main className="auth-split-page">
-      <section className="auth-split-panel" aria-labelledby="register-title">
-        <div className="auth-logo-header">
-          <h1 id="register-title" className="auth-login-heading">Register</h1>
-        </div>
-
-        {submitted ? (
-          <div>
-            <p className="notice success">
-              Registration submitted. An administrator must approve your account before you can sign in.
-            </p>
-            <Link className="primary-button auth-submit-btn" to="/login" style={{ display: 'flex', textDecoration: 'none' }}>
-              Back to Login
-            </Link>
+        <section className="auth-split-panel" aria-labelledby="register-title">
+          <div className="auth-logo-header">
+            <h1 id="register-title" className="auth-login-heading">Register</h1>
           </div>
-        ) : (
-          <form className="auth-form auth-form-grid" autoComplete="off" onSubmit={handleSubmit} noValidate>
-            <label className="auth-field">
-              <span>First Name</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="off"
-                  maxLength={60}
-                  name="first_name"
-                  onChange={handleNameChange}
-                  placeholder="First name"
-                  required
-                  type="text"
-                  value={form.first_name}
-                />
-              </div>
-            </label>
 
-            <label className="auth-field">
-              <span>Middle Name</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="off"
-                  maxLength={60}
-                  name="middle_name"
-                  onChange={handleNameChange}
-                  placeholder="Middle name (optional)"
-                  type="text"
-                  value={form.middle_name}
-                />
-              </div>
-            </label>
-
-            <label className="auth-field auth-field-full">
-              <span>Last Name</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="off"
-                  maxLength={60}
-                  name="last_name"
-                  onChange={handleNameChange}
-                  placeholder="Last name"
-                  required
-                  type="text"
-                  value={form.last_name}
-                />
-              </div>
-            </label>
-
-            <label className="auth-field auth-field-full">
-              <span>Email Address</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="off"
-                  name="email"
-                  onChange={handleChange}
-                  placeholder="Email address"
-                  required
-                  type="email"
-                  value={form.email}
-                />
-              </div>
-            </label>
-
-            <label className="auth-field">
-              <span>Phone Number</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="off"
-                  inputMode="numeric"
-                  maxLength={11}
-                  name="phone"
-                  onChange={handlePhoneChange}
-                  placeholder="09XXXXXXXXX"
-                  required
-                  type="tel"
-                  value={form.phone}
-                />
-              </div>
-            </label>
-
-            <label className="auth-field">
-              <span>Province</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <select
-                  name="province_id"
-                  onChange={handleProvinceChange}
-                  required
-                  value={form.province_id}
-                >
-                  <option value="" disabled>Select your province</option>
-                  {provinces.map((province) => (
-                    <option key={province.id} value={province.id}>{province.name}</option>
-                  ))}
-                </select>
-              </div>
-            </label>
-
-            <label className="auth-field">
-              <span>City / Municipality</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <select
-                  disabled={!form.province_id}
-                  name="city_id"
-                  onChange={handleCityChange}
-                  required
-                  value={form.city_id}
-                >
-                  <option value="" disabled>
-                    {form.province_id ? 'Select your city/municipality' : 'Select a province first'}
-                  </option>
-                  {cities.map((city) => (
-                    <option key={city.id} value={city.id}>{city.name}</option>
-                  ))}
-                </select>
-              </div>
-            </label>
-
-            <label className="auth-field auth-field-full">
-              <span>Barangay</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                {barangays.length > 0 ? (
-                  <select
-                    name="barangay_id"
-                    onChange={handleChange}
-                    required
-                    value={form.barangay_id}
-                  >
-                    <option value="" disabled>Select your barangay</option>
-                    {barangays.map((barangay) => (
-                      <option key={barangay.id} value={barangay.id}>{barangay.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    autoComplete="off"
-                    disabled={!form.city_id}
-                    name="barangay_name"
-                    onChange={handleChange}
-                    placeholder={form.city_id ? 'Barangay name' : 'Select a city/municipality first'}
-                    required
-                    type="text"
-                    value={form.barangay_name}
-                  />
-                )}
-              </div>
-            </label>
-
-            {isFirstForBarangay === true && (
-              <p className="notice success auth-field-full">
-                You&apos;ll be the first to register here — you&apos;ll become this barangay&apos;s Administrator once your staff registration code is verified below.
+          {submitted ? (
+            <div>
+              <p className="notice success">
+                Registration submitted. An administrator must approve your account before you can sign in.
               </p>
-            )}
-
-            <label className="auth-field auth-field-full">
-              <span>Street Address</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="off"
-                  name="address"
-                  onChange={handleChange}
-                  placeholder="House no. / street / purok"
-                  required
-                  type="text"
-                  value={form.address}
-                />
+              <Link className="primary-button auth-submit-btn" to="/login" style={{ display: 'flex', textDecoration: 'none' }}>
+                Back to Login
+              </Link>
+            </div>
+          ) : (
+            <>
+              {/* Step indicator */}
+              <div className="register-wizard-steps">
+                {STEP_LABELS.map((label, i) => (
+                  <div key={label} className={`register-wizard-step${step === i + 1 ? ' is-active' : step > i + 1 ? ' is-done' : ''}`}>
+                    <div className="register-wizard-dot">
+                      {step > i + 1 ? <Icon name="checkCircle" size={14} /> : i + 1}
+                    </div>
+                    <span>{label}</span>
+                  </div>
+                ))}
               </div>
-            </label>
 
-            {isFirstForBarangay !== true && (
-              <label className="auth-field">
-                <span>I am a...</span>
-                <div className="auth-input-wrapper auth-input-plain">
-                  <select
-                    name="requested_role"
-                    onChange={handleChange}
-                    required
-                    value={form.requested_role}
-                  >
-                    <option value="" disabled>Select your role</option>
-                    <option value="Custodian">Custodian</option>
-                    <option value="Maintenance Personnel">Maintenance Personnel</option>
-                  </select>
+              {/* Step 1 — Personal Info */}
+              {step === 1 && (
+                <div className="auth-form auth-form-grid">
+                  <label className="auth-field">
+                    <span>First Name</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="off" maxLength={60} name="first_name" onChange={handleNameChange} placeholder="First name" type="text" value={form.first_name} />
+                    </div>
+                  </label>
+
+                  <label className="auth-field">
+                    <span>Middle Name</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="off" maxLength={60} name="middle_name" onChange={handleNameChange} placeholder="Optional" type="text" value={form.middle_name} />
+                    </div>
+                  </label>
+
+                  <label className="auth-field auth-field-full">
+                    <span>Last Name</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="off" maxLength={60} name="last_name" onChange={handleNameChange} placeholder="Last name" type="text" value={form.last_name} />
+                    </div>
+                  </label>
+
+                  <label className="auth-field auth-field-full">
+                    <span>Email Address</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="off" name="email" onChange={handleChange} placeholder="Email address" type="email" value={form.email} />
+                    </div>
+                  </label>
+
+                  <label className="auth-field auth-field-full">
+                    <span>Phone Number</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="off" inputMode="numeric" maxLength={11} name="phone" onChange={handlePhoneChange} placeholder="09XXXXXXXXX" type="tel" value={form.phone} />
+                    </div>
+                  </label>
+
+                  {error && <p className="notice error auth-field-full">{error}</p>}
+
+                  <button className="primary-button auth-submit-btn auth-field-full" type="button" onClick={handleNext}>
+                    Next <Icon name="chevronRight" size={16} />
+                  </button>
                 </div>
-              </label>
-            )}
+              )}
 
-            <label className="auth-field">
-              <span>Staff Registration Code</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="off"
-                  name="staff_code"
-                  onChange={handleChange}
-                  placeholder="Given to you by your barangay office"
-                  required
-                  type="text"
-                  value={form.staff_code}
-                />
-              </div>
-            </label>
+              {/* Step 2 — Location */}
+              {step === 2 && (
+                <div className="auth-form auth-form-grid">
+                  <label className="auth-field">
+                    <span>Province</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <select name="province_id" onChange={handleProvinceChange} value={form.province_id}>
+                        <option value="" disabled>Select province</option>
+                        {provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                  </label>
 
-            <label className="auth-field">
-              <span>Password</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="new-password"
-                  name="password"
-                  onChange={handleChange}
-                  placeholder="Password"
-                  required
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                />
-                <button
-                  type="button"
-                  className="password-toggle-btn"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  title={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  <Icon name={showPassword ? 'eyeOff' : 'eye'} size={18} />
-                </button>
-              </div>
-            </label>
+                  <label className="auth-field">
+                    <span>City / Municipality</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <select disabled={!form.province_id} name="city_id" onChange={handleCityChange} value={form.city_id}>
+                        <option value="" disabled>{form.province_id ? 'Select city/municipality' : 'Select province first'}</option>
+                        {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  </label>
 
-            <label className="auth-field">
-              <span>Confirm Password</span>
-              <div className="auth-input-wrapper auth-input-plain">
-                <input
-                  autoComplete="new-password"
-                  name="password_confirmation"
-                  onChange={handleChange}
-                  placeholder="Confirm password"
-                  required
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password_confirmation}
-                />
-              </div>
-            </label>
+                  <label className="auth-field auth-field-full">
+                    <span>Barangay</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      {barangays.length > 0 ? (
+                        <select name="barangay_id" onChange={handleChange} value={form.barangay_id}>
+                          <option value="" disabled>Select barangay</option>
+                          {barangays.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      ) : (
+                        <input autoComplete="off" disabled={!form.city_id} name="barangay_name" onChange={handleChange} placeholder={form.city_id ? 'Barangay name' : 'Select city first'} type="text" value={form.barangay_name} />
+                      )}
+                    </div>
+                  </label>
 
-            {error ? <p className="notice error auth-field-full">{error}</p> : null}
+                  {isFirstForBarangay === true && (
+                    <p className="notice success auth-field-full">
+                      You&apos;ll be the first to register here — you&apos;ll become this barangay&apos;s Administrator once your staff code is verified.
+                    </p>
+                  )}
 
-            <button className="primary-button auth-submit-btn auth-field-full" disabled={submitting} type="submit">
-              {submitting ? (
-                <span className="btn-loading">
-                  <span className="btn-spinner" aria-hidden="true" />
-                  Submitting…
-                </span>
-              ) : 'Create account'}
-            </button>
-          </form>
-        )}
+                  <label className="auth-field auth-field-full">
+                    <span>Street Address</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="off" name="address" onChange={handleChange} placeholder="House no. / street / purok" type="text" value={form.address} />
+                    </div>
+                  </label>
 
-        <p className="auth-legal">
-          Already have an account? <Link to="/login">Sign in</Link>
-        </p>
-      </section>
+                  {error && <p className="notice error auth-field-full">{error}</p>}
 
-      <div className="auth-split-hero">
-        <Aurora colorStops={['#0b1220', '#1e3a5f', '#0f172a']} amplitude={0.6} blend={0.55} />
-        <div className="auth-split-hero-content">
-          <h2>Join Your Barangay's Fleet Team</h2>
-          <p>
-            Create an account to help track vehicle readiness, report
-            issues, and coordinate maintenance for your barangay's fleet.
+                  <div className="auth-field-full register-wizard-nav">
+                    <button className="ghost-button" type="button" onClick={handleBack}>
+                      <Icon name="chevronLeft" size={16} /> Back
+                    </button>
+                    <button className="primary-button" type="button" onClick={handleNext}>
+                      Next <Icon name="chevronRight" size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3 — Account Details */}
+              {step === 3 && (
+                <form className="auth-form auth-form-grid" autoComplete="off" onSubmit={handleSubmit} noValidate>
+                  {isFirstForBarangay !== true && (
+                    <label className="auth-field auth-field-full">
+                      <span>I am a...</span>
+                      <div className="auth-input-wrapper auth-input-plain">
+                        <select name="requested_role" onChange={handleChange} value={form.requested_role}>
+                          <option value="" disabled>Select your role</option>
+                          <option value="Custodian">Custodian</option>
+                          <option value="Maintenance Personnel">Maintenance Personnel</option>
+                        </select>
+                      </div>
+                    </label>
+                  )}
+
+                  <label className="auth-field auth-field-full">
+                    <span>Staff Registration Code</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="off" name="staff_code" onChange={handleChange} placeholder="Given to you by your barangay office" type="text" value={form.staff_code} />
+                    </div>
+                  </label>
+
+                  <label className="auth-field">
+                    <span>Password</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="new-password" name="password" onChange={handleChange} placeholder="Password" type={showPassword ? 'text' : 'password'} value={form.password} />
+                      <button type="button" className="password-toggle-btn" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                        <Icon name={showPassword ? 'eyeOff' : 'eye'} size={18} />
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="auth-field">
+                    <span>Confirm Password</span>
+                    <div className="auth-input-wrapper auth-input-plain">
+                      <input autoComplete="new-password" name="password_confirmation" onChange={handleChange} placeholder="Confirm password" type={showPassword ? 'text' : 'password'} value={form.password_confirmation} />
+                    </div>
+                  </label>
+
+                  {error && <p className="notice error auth-field-full">{error}</p>}
+
+                  <div className="auth-field-full register-wizard-nav">
+                    <button className="ghost-button" type="button" onClick={handleBack} disabled={submitting}>
+                      <Icon name="chevronLeft" size={16} /> Back
+                    </button>
+                    <button className="primary-button" disabled={submitting} type="submit">
+                      {submitting ? (
+                        <span className="btn-loading"><span className="btn-spinner" aria-hidden="true" />Submitting…</span>
+                      ) : 'Create account'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </>
+          )}
+
+          <p className="auth-legal">
+            Already have an account? <Link to="/login">Sign in</Link>
           </p>
+        </section>
+
+        <div className="auth-split-hero">
+          <Aurora colorStops={['#0b1220', '#1e3a5f', '#0f172a']} amplitude={0.6} blend={0.55} />
+          <div className="auth-split-hero-content">
+            <h2>Join Your Barangay's Fleet Team</h2>
+            <p>
+              Create an account to help track vehicle readiness, report
+              issues, and coordinate maintenance for your barangay's fleet.
+            </p>
+          </div>
         </div>
-      </div>
       </main>
 
       <AuthFooter />

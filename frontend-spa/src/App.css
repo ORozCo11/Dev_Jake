@@ -378,6 +378,65 @@
   .auth-form-grid { grid-template-columns: 1fr; }
 }
 
+/* Multi-step wizard — step indicator and nav row */
+.register-wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 22px;
+}
+.register-wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #94a3b8;
+  position: relative;
+}
+.register-wizard-step:not(:last-child)::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: #e2e8f0;
+  margin: 0 8px;
+  border-radius: 2px;
+}
+.register-wizard-step.is-active { color: #2563eb; }
+.register-wizard-step.is-done { color: #16a34a; }
+.register-wizard-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: #fff;
+  color: #94a3b8;
+}
+.register-wizard-step.is-active .register-wizard-dot {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+.register-wizard-step.is-done .register-wizard-dot {
+  border-color: #16a34a;
+  background: #16a34a;
+  color: #fff;
+}
+.register-wizard-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
 /* Register page split layout — a left-docked white form panel (roughly
    half the viewport) beside a right-hand Aurora hero, instead of a small
    centered card. Reads like a typical signup screen rather than the
