@@ -47,7 +47,7 @@
 .auth-page-header-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   color: #ffffff;
   text-decoration: none;
   flex-shrink: 0;
@@ -57,16 +57,30 @@
   color: #ffffff;
   flex-shrink: 0;
   animation: vms-gear-spin 4s linear infinite;
-  /* White gear on the blue header — draw the center ring in the header's own
-     blue so the cutout hole actually shows instead of blending into the gear. */
   --gear-ring: #1d4ed8;
 }
-/* Big — matches the reference's prominent wordmark scale, sized well above
-   the app's usual small/medium wordmark variants. Scoped under the brand
-   link (2 classes) so it reliably beats the base .vms-wordmark's blue color
-   rule (1 class) regardless of which one is declared later in this file —
-   plain equal-specificity color:#fff here was losing that fight, rendering
-   invisible blue-on-blue against the header. */
+.auth-page-header-gear-img {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  animation: vms-gear-spin 6s linear infinite;
+  /* blue SVG on blue header → invert to white */
+  filter: brightness(0) invert(1);
+}
+.auth-page-header-vms-word {
+  height: 48px;
+  width: auto;
+  flex-shrink: 0;
+  display: block;
+  margin-left: -12px;
+  /* blue SVG on blue header → invert to white */
+  filter: brightness(0) invert(1);
+}
+/* On white/light backgrounds (e.g. print, sidebar), keep logos blue — no filter */
+.vms-logo-on-white .auth-page-header-gear-img,
+.vms-logo-on-white .auth-page-header-vms-word {
+  filter: none;
+}
 .auth-page-header-brand-text {
   display: flex;
   flex-direction: column;
@@ -108,8 +122,10 @@
 .auth-page-nav a:hover { color: yellowgreen; text-decoration: underline; }
 .auth-page-nav a:active { transform: scale(0.94); }
 .auth-page-header-brand { transition: color 0.15s ease; }
-.auth-page-header-brand:hover .vms-wordmark,
 .auth-page-header-brand:hover .auth-page-header-subtext { color: yellowgreen; }
+/* Keep the invert(1) in place during hover — just slightly brighten for feedback */
+.auth-page-header-brand:hover .auth-page-header-vms-word { filter: brightness(0) invert(1) opacity(0.8); }
+.auth-page-header-brand:hover .auth-page-header-gear-img { filter: brightness(0) invert(1) opacity(0.8); }
 .auth-page-header-login-btn {
   display: inline-flex;
   align-items: center;
