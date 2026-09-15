@@ -1611,6 +1611,7 @@ function Workspace() {
       Available: countByStatus('Available'),
       'Under Maintenance': countByStatus('Under Maintenance'),
       Inactive: countByStatus('Inactive'),
+      Decommissioned: countByStatus('Decommissioned'),
       ReadyToRespond: inServiceRows.filter((row) => row.readiness_state === 'ready').length,
       NotReady: inServiceRows.filter((row) => row.readiness_state !== 'ready').length,
     };
@@ -3623,7 +3624,7 @@ function Workspace() {
             </p>
           )}
 
-          <DataTable
+          <PaginatedTable
             columns={archiveColumnsWithAction}
             emptyMessage="No archived tickets yet — completed tickets are stored here automatically."
             rows={visibleRows}
@@ -7083,6 +7084,7 @@ const VEHICLE_STAT_CARDS = [
   { key: 'Available', label: 'Available', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
   { key: 'Under Maintenance', label: 'Under Maintenance', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
   { key: 'Inactive', label: 'Inactive', icon: 'archive', bg: '#fee2e2', color: '#dc2626' },
+  { key: 'Decommissioned', label: 'Decommissioned', icon: 'close', bg: '#f1f5f9', color: '#475569' },
   // Distinct from "Available" — a vehicle can be Available yet never (or no
   // longer) proven ready by an actual readiness check. See responseReadinessState().
   { key: 'ReadyToRespond', label: 'Ready to Respond', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
