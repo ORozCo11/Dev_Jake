@@ -2820,7 +2820,7 @@ function Workspace() {
               )}
             </div>
 
-            <DataTable
+            <PaginatedTable
               columns={conditionColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/conditions/${row.condition_check_id}/edit`), deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition, (ticketId) => navigate(`${roleRoutes[user.role]}/tickets/${ticketId}`))}
               emptyMessage="No condition checks logged yet — click the + button to record one."
               rows={visibleRows}
