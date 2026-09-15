@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import AuthHeader from '../components/AuthHeader';
 import AuthFooter from '../components/AuthFooter';
 
@@ -47,9 +48,16 @@ export default function Developers() {
   const totalPages = Math.max(1, Math.ceil(TEAM.length / PER_PAGE));
   const visible = TEAM.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
 
+  const pageActions = (
+    <div className="dev-header-actions">
+      <Link to="/support" className="dev-header-action-btn">Report a Concern</Link>
+      <a href="#faq" className="dev-header-action-btn">FAQ</a>
+    </div>
+  );
+
   return (
-    <div className="auth-page-shell">
-      <AuthHeader />
+    <div className="auth-page-shell" style={{ overflow: 'hidden', height: '100vh' }}>
+      <AuthHeader extraActions={pageActions} />
 
       <main className="auth-hero">
         <DecoArrow className="dev-team-deco-arrow dev-team-deco-arrow-left" gradientId="devArrowLeft" />

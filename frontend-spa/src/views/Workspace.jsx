@@ -1300,17 +1300,23 @@ function Workspace() {
         row.status === 'Completed' && row.resulting_maintenance && row.resulting_maintenance.progress_status !== 'Completed'
       ));
     } else if (activeModule === 'ticketInspections') {
-      result = result.filter((row) => (
-        filterStatus.includes('Inspected') ? row.status !== 'Open' : row.status === 'Open'
-      ));
+      if (filterStatus.includes('Inspected')) {
+        result = result.filter((row) => row.status !== 'Open');
+      } else if (filterStatus.includes('Pending')) {
+        result = result.filter((row) => row.status === 'Open');
+      }
+      // empty filterStatus = Total Assigned tab = show all records
     } else if (activeModule === 'ticketWorkOrders') {
       result = result.filter((row) => (
         filterStatus.includes('Submitted') ? row.status !== 'Under Repair' : row.status === 'Under Repair'
       ));
     } else if (activeModule === 'ticketVerifications') {
-      result = result.filter((row) => (
-        filterStatus.includes('Verified') ? row.status !== 'For Inspection' : row.status === 'For Inspection'
-      ));
+      if (filterStatus.includes('Verified')) {
+        result = result.filter((row) => row.status !== 'For Inspection');
+      } else if (filterStatus.includes('Pending')) {
+        result = result.filter((row) => row.status === 'For Inspection');
+      }
+      // empty filterStatus = Total Assigned tab = show all records
     } else if (activeModule === 'vehicles' && (filterStatus.includes('ReadyToRespond') || filterStatus.includes('NotReady'))) {
       // Retired vehicles are excluded from both buckets up in vehicleStats —
       // match that here too, or "Not Ready" would list units the card's own
@@ -1605,6 +1611,7 @@ function Workspace() {
       Available: countByStatus('Available'),
       'Under Maintenance': countByStatus('Under Maintenance'),
       Inactive: countByStatus('Inactive'),
+      Decommissioned: countByStatus('Decommissioned'),
       ReadyToRespond: inServiceRows.filter((row) => row.readiness_state === 'ready').length,
       NotReady: inServiceRows.filter((row) => row.readiness_state !== 'ready').length,
     };
@@ -2391,6 +2398,7 @@ function Workspace() {
           basePath={roleRoutes[user.role]}
           onNavigate={navigate}
           onGoToSchedules={() => returnToModule('schedules')}
+          onGoToIssues={hasRole(user, 'Custodian') ? () => returnToModule('issues') : undefined}
         />
       );
     }
@@ -2813,7 +2821,7 @@ function Workspace() {
               )}
             </div>
 
-            <DataTable
+            <PaginatedTable
               columns={conditionColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/conditions/${row.condition_check_id}/edit`), deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition, (ticketId) => navigate(`${roleRoutes[user.role]}/tickets/${ticketId}`))}
               emptyMessage="No condition checks logged yet — click the + button to record one."
               rows={visibleRows}
@@ -2848,6 +2856,15 @@ function Workspace() {
                   counts={issueStats}
                   activeFilter={filterStatus}
                   onFilterChange={setFilterStatus}
+                  onTotalClick={() => {
+                    setFilterStatus([]);
+                    setFilterCategory([]);
+                    setFilterCapacity([]);
+                    setFilterPriority([]);
+                    setFilterIssueType([]);
+                    setFilterDateStart('');
+                    setFilterDateEnd('');
+                  }}
                 />
               </div>
               <section className="panel module-filter-panel issue-summary-filters">
@@ -3415,6 +3432,7 @@ function Workspace() {
         ...ticketArchiveColumns,
         {
           label: 'Actions',
+          align: 'center',
           render: (row) => {
             if (row.final_status === 'Deleted') {
               return (
@@ -3606,7 +3624,7 @@ function Workspace() {
             </p>
           )}
 
-          <DataTable
+          <PaginatedTable
             columns={archiveColumnsWithAction}
             emptyMessage="No archived tickets yet — completed tickets are stored here automatically."
             rows={visibleRows}
@@ -3897,7 +3915,7 @@ function DashboardStatusStrip({ rows }) {
   );
 }
 
-function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedules }) {
+function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedules, onGoToIssues }) {
   const [weather, setWeather] = useState(null);
   const [greeting, setGreeting] = useState(() => buildLocalGreeting(user?.name));
   const [greetingRole, setGreetingRole] = useState(() => dashboardRoleLabel(user?.role));
@@ -4130,7 +4148,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           detail={primaryActionLabel}
           tone={criticalActionCount > 0 ? 'alert' : primaryActionCount > 0 ? 'warn' : 'ok'}
           meter={primaryActionCount > 0 ? Math.min(100, primaryActionCount * 18) : 100}
-          onClick={isAdminDashboard ? () => setOpenDashboardModal('actionQueue') : undefined}
+          onClick={isAdminDashboard ? () => setOpenDashboardModal('actionQueue') : onGoToIssues}
         />
         <DashboardSignalCard
           icon="checkCircle"
@@ -5979,7 +5997,7 @@ function PartsTags({ value }) {
   );
 }
 
-function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 'No records found.' }) {
+function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 'No records found.', scrollable = false }) {
   if (!rows?.length) {
     return <p className="empty-state">{emptyMessage}</p>;
   }
@@ -5987,7 +6005,7 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
   const hasWidths = columns.some((column) => column.width);
 
   return (
-    <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}`}>
+    <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}${scrollable ? ' has-scroll' : ''}`}>
       <table>
         {hasWidths && (
           <colgroup>
@@ -5999,7 +6017,7 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.label}>{column.label}</th>
+              <th key={column.label} className={column.align === 'center' ? 'text-center' : undefined}>{column.label}</th>
             ))}
           </tr>
         </thead>
@@ -6011,7 +6029,7 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
               onClick={onRowClick ? (e) => { if (!e.target.closest('button, a')) onRowClick(row); } : undefined}
             >
               {columns.map((column) => (
-                <td key={column.label} className={column.className}>{column.render ? column.render(row) : row[column.key]}</td>
+                <td key={column.label} className={[column.className, column.align === 'center' ? 'text-center' : ''].filter(Boolean).join(' ') || undefined}>{column.render ? column.render(row) : row[column.key]}</td>
               ))}
             </tr>
           ))}
@@ -7066,6 +7084,7 @@ const VEHICLE_STAT_CARDS = [
   { key: 'Available', label: 'Available', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
   { key: 'Under Maintenance', label: 'Under Maintenance', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
   { key: 'Inactive', label: 'Inactive', icon: 'archive', bg: '#fee2e2', color: '#dc2626' },
+  { key: 'Decommissioned', label: 'Decommissioned', icon: 'close', bg: '#f1f5f9', color: '#475569' },
   // Distinct from "Available" — a vehicle can be Available yet never (or no
   // longer) proven ready by an actual readiness check. See responseReadinessState().
   { key: 'ReadyToRespond', label: 'Ready to Respond', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
@@ -7148,10 +7167,24 @@ const USER_STAT_CARDS = [
 // module's table, matching the Vehicle Management stat cards exactly.
 // `cards` is [{ key, label, icon, bg, color }]; `counts` maps key -> number;
 // clicking a card toggles `activeFilter` via `onFilterChange`.
-function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange }) {
+function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange, onTotalClick }) {
+  const isTotalMulti = Array.isArray(activeFilter);
+  const isTotalActive = isTotalMulti ? activeFilter.length === 0 : !activeFilter;
   return (
     <section className="metric-grid" aria-label="Status summary" style={{ marginBottom: '16px' }}>
-      <article className="metric-card metric-card-iconic metric-card-solid" style={{ background: '#2563eb' }}>
+      <button
+        type="button"
+        className={`metric-card metric-card-iconic metric-card-solid stat-filter-card${isTotalActive ? ' is-active' : ''}`}
+        style={{
+          cursor: 'pointer',
+          background: '#2563eb',
+          boxShadow: isTotalActive
+            ? '0 0 0 3px #ffffff, 0 0 0 5px #2563eb, 0 10px 24px 2px color-mix(in srgb, #2563eb 55%, transparent)'
+            : undefined,
+        }}
+        onClick={() => onTotalClick ? onTotalClick() : onFilterChange(isTotalMulti ? [] : '')}
+        title={`Filter: ${totalLabel}`}
+      >
         <span className="metric-card-icon" style={{ background: 'rgba(255, 255, 255, 0.22)', color: '#ffffff' }}>
           <Icon name="grid" size={18} />
         </span>
@@ -7159,7 +7192,7 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
           <span style={{ color: 'rgba(255, 255, 255, 0.85)' }}>{totalLabel}</span>
           <strong style={{ color: '#ffffff' }}>{total}</strong>
         </div>
-      </article>
+      </button>
       {cards.map(({ key, label, icon, color }) => {
         // activeFilter is a plain string in some modules (a dedicated
         // single-purpose bucket filter) and an array in others (the shared
@@ -7198,7 +7231,7 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
 
 function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket) {
   const columns = [
-    { label: 'ID', render: (row) => row.vehicle_id },
+    { label: 'ID', align: 'center', render: (row) => row.vehicle_id },
     {
       label: 'Vehicle',
       render: (row) => (
@@ -7208,15 +7241,16 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
         </div>
       ),
     },
-    { label: 'Plate', render: (row) => row.plate_number },
+    { label: 'Plate', align: 'center', render: (row) => row.plate_number },
     { label: 'Type', render: (row) => row.category?.category_name ?? 'Unassigned' },
     { label: 'Brand / Model', render: (row) => `${row.brand} ${row.model}` },
-    { label: 'Capacity', render: (row) => row.capacity },
+    { label: 'Capacity', align: 'center', render: (row) => row.capacity },
     { label: 'Location', render: (row) => row.current_location },
     {
       label: 'Status',
+      align: 'center',
       render: (row) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
           <StatusBadge value={row.status} />
           {/* "Under Maintenance" alone doesn't say whether a mechanic is
               still actively working on it, or the ticket has nothing left
@@ -7235,9 +7269,10 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
         </div>
       ),
     },
-    { label: 'Condition', render: (row) => <StatusBadge value={row.condition} /> },
+    { label: 'Condition', align: 'center', render: (row) => <StatusBadge value={row.condition} /> },
     {
       label: 'Ready to Respond',
+      align: 'center',
       render: (row) => {
         const badge = READINESS_BADGE[row.readiness_state];
         if (!badge) return <span className="muted">—</span>;
@@ -7263,6 +7298,7 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
   if (role === 'Admin') {
     columns.push({
       label: 'Action',
+      align: 'center',
       render: (row) => (
         <div className="row-actions">
           {/* Jumps straight to whatever ticket is keeping this vehicle
@@ -7294,7 +7330,7 @@ function categoryColumns(onEdit, deleteRecord) {
     { label: 'ID', width: '6%', render: (row) => row.category_id },
     { label: 'Vehicle Type', width: '18%', render: (row) => row.category_name },
     { label: 'Domain', width: '10%', render: (row) => <StatusBadge value={row.domain ?? 'Land'} /> },
-    { label: 'Vehicles', width: '9%', render: (row) => row.vehicles_count ?? 0 },
+    { label: 'Vehicles', width: '9%', align: 'center', render: (row) => row.vehicles_count ?? 0 },
     { label: 'Description', width: '49%', render: (row) => row.description ?? '-' },
     {
       label: 'Action',
@@ -7992,8 +8028,9 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
   const isAdmin = hasRole(currentUser, 'Admin');
   const currentUserId = currentUser?.id;
   return [
-    { label: 'ID', render: (row) => row.schedule_id },
-    { label: 'Vehicle', render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { label: 'Plate', render: (row) => row.vehicle?.plate_number ?? '-' },
+    { label: 'ID', align: 'center', render: (row) => row.schedule_id },
+    { label: 'Vehicle', render: (row) => <VehicleCell vehicle={row.vehicle} /> },
+    { label: 'Plate', align: 'center', render: (row) => row.vehicle?.plate_number ?? '-' },
     { label: 'Type', render: (row) => row.maintenance_type },
     {
       label: 'Assigned To',
@@ -8009,12 +8046,13 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
         );
       },
     },
-    { label: 'Date', render: (row) => <DateBadge value={row.scheduled_date} /> },
-    { label: 'Time', render: (row) => row.scheduled_time ?? '-' },
-    { label: 'Repeat', render: (row) => row.recurrence_months ? <StatusBadge value={RECURRENCE_LABEL[row.recurrence_months] ?? `Every ${row.recurrence_months} mo`} /> : <span className="muted">One-time</span> },
+    { label: 'Date', align: 'center', render: (row) => <DateBadge value={row.scheduled_date} /> },
+    { label: 'Time', align: 'center', render: (row) => row.scheduled_time ?? '-' },
+    { label: 'Repeat', align: 'center', render: (row) => row.recurrence_months ? <StatusBadge value={RECURRENCE_LABEL[row.recurrence_months] ?? `Every ${row.recurrence_months} mo`} /> : <span className="muted">One-time</span> },
     { label: 'Location', render: (row) => row.service_location ?? '-' },
     {
       label: 'Status',
+      align: 'center',
       render: (row) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <StatusBadge value={row.status} />
@@ -8051,6 +8089,7 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
     },
     {
       label: 'Action',
+      align: 'center',
       render: (row) => (
         <div className="row-actions" style={{ flexWrap: 'wrap' }}>
           {row.status === 'Scheduled' && onComplete && (isAdmin || (currentUserId != null && String(row.assigned_to) === String(currentUserId))) && (
@@ -8235,7 +8274,7 @@ function logColumns(vehicles, onViewVehicle) {
   ];
 }
 
-function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = false, pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
+function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = false, scrollable = false, pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [page, setPage] = useState(1);
 
@@ -8254,7 +8293,7 @@ function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = fal
 
   return (
     <>
-      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} compact={compact} />
+      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} compact={compact} scrollable={scrollable} />
       <div className="table-pagination">
         <span className="muted">Showing {start + 1}-{Math.min(start + pageSize, rows.length)} of {rows.length}</span>
         <div className="table-pagination-controls">
@@ -9973,14 +10012,14 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                           in-house" is an external shop — jumps straight to
                           Add Maintenance Record with the follow-up issue and
                           vehicle already linked. */}
-                      {isAdmin && onSendToExternalShop && si.deferred_issue_report_id && (
+                      {isAdmin && onSendToExternalShop && (si.deferred_issue_report_id || si.status === 'Open') && (
                         <button
                           className="ghost-button btn-edit-action"
                           type="button"
                           style={{ marginTop: 8 }}
                           onClick={() => onSendToExternalShop({
                             vehicle_id: ticket.vehicle_id,
-                            issue_report_id: si.deferred_issue_report_id,
+                            issue_report_id: si.deferred_issue_report_id ?? null,
                             problem_reason: `${si.title}${si.deferred_reason ? ` — ${si.deferred_reason}` : ''}`,
                           })}
                         >
@@ -10608,7 +10647,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
                   </div>
                 ))}
               </div>
-              <button type="button" className="primary-button" onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
+              <button type="button" className="primary-button" style={{ marginTop: 12 }} onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
             </div>
           </section>
         )}
@@ -10711,6 +10750,14 @@ function TicketModule({
         counts={ticketStats}
         activeFilter={filterStatus}
         onFilterChange={setFilterStatus}
+        onTotalClick={() => {
+          setFilterStatus([]);
+          setFilterCategory([]);
+          setFilterCapacity([]);
+          setFilterPriority([]);
+          setFilterDateStart('');
+          setFilterDateEnd('');
+        }}
       />
       <section className="panel module-filter-panel">
         <FilterBar
@@ -10772,7 +10819,7 @@ function TicketModule({
         {tickets.length === 0
           ? <p className="empty-state">No tickets yet. Create one to begin the workflow.</p>
           : ticketViewMode === 'table'
-            ? <PaginatedTable columns={ticketTableColumns(unreadByTicket)} rows={tickets} onRowClick={onViewTicket} />
+            ? <PaginatedTable columns={ticketTableColumns(unreadByTicket)} rows={tickets} onRowClick={onViewTicket} scrollable />
             : (
               <div className="ticket-card-grid">
                 {tickets.map((t) => (
@@ -11806,7 +11853,13 @@ function CustodianInspectionModule({
   activeFilter,
   onFilterChange
 }) {
-  const isPendingView = activeFilter !== 'Inspected';
+  const activeKey = Array.isArray(activeFilter) ? (activeFilter[0] ?? '') : activeFilter;
+  const tableTitle = activeKey === 'Inspected' ? 'Diagnosed Inspections'
+    : activeKey === 'Pending' ? 'Pending Inspections'
+    : 'Total Assigned Inspections';
+  const emptyMsg = activeKey === 'Inspected' ? 'Nothing diagnosed yet.'
+    : activeKey === 'Pending' ? 'No inspection assignments pending.'
+    : 'No inspection assignments yet.';
 
   return (
     <div className="module-grid">
@@ -11839,24 +11892,26 @@ function CustodianInspectionModule({
               a Pre-Diagnosed ticket (or one reassigned to this Custodian
               after the fact) skips inspection entirely, so calling it
               "Already Inspected" claimed something that never happened. */}
-          <h3>{isPendingView ? 'Pending Inspections' : 'Diagnosed'} <span className="count-badge">{tickets.length}</span></h3>
+          <h3>{tableTitle} <span className="count-badge">{tickets.length}</span></h3>
         </div>
         <div style={{ height: '16px' }} />
         {tickets.length === 0
-          ? <p className="empty-state">{isPendingView ? 'No inspection assignments pending.' : 'Nothing diagnosed yet.'}</p>
+          ? <p className="empty-state">{emptyMsg}</p>
           : (
             <DataTable
               columns={[
-                { label: 'Ticket ID', render: (r) => r.ticket_id },
-                { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle} /> }, { label: 'Plate', render: (r) => r.vehicle?.plate_number ?? '-' },
+                { label: 'Ticket ID', align: 'center', render: (r) => r.ticket_id },
+                { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle} /> },
+                { label: 'Plate', align: 'center', render: (r) => r.vehicle?.plate_number ?? '-' },
                 { label: 'Title', render: (r) => r.ticket_title },
-                { label: 'Priority', render: (r) => <TicketStatusBadge value={r.priority} /> },
+                { label: 'Priority', align: 'center', render: (r) => <TicketStatusBadge value={r.priority} /> },
                 { label: 'Description', className: 'cell-text', render: (r) => <ExpandableText text={r.ticket_description} /> },
-                { label: 'Result', render: (r) => r.inspection_result ? <TicketStatusBadge value={r.inspection_result} /> : <span className="muted">—</span> },
-                { label: 'Assigned', render: (r) => <DateBadge value={r.assigned_at} /> },
-                { label: 'Time', render: (r) => formatTime(r.assigned_at) },
+                { label: 'Result', align: 'center', render: (r) => r.inspection_result ? <TicketStatusBadge value={r.inspection_result} /> : <span className="muted">—</span> },
+                { label: 'Date Assigned', align: 'center', render: (r) => <DateBadge value={r.assigned_at} /> },
+                { label: 'Time', align: 'center', render: (r) => formatTime(r.assigned_at) },
                 {
                   label: 'Action',
+                  align: 'center',
                   // "Submitted" implied THIS Custodian already did something —
                   // false for a Pre-Diagnosed ticket, or one reassigned to
                   // them after the fact. Reusing the same stage logic the
@@ -12041,7 +12096,14 @@ function CustodianVerificationModule({
   onFilterChange
 }) {
   const [viewLogsTarget, setViewLogsTarget] = useState(null);
-  const isPendingView = activeFilter !== 'Verified';
+  const activeKey = Array.isArray(activeFilter) ? (activeFilter[0] ?? '') : activeFilter;
+  const tableTitle = activeKey === 'Verified' ? 'Verified Repair Verifications'
+    : activeKey === 'Pending' ? 'Pending Repair Verifications'
+    : 'Total Assigned Repair Verifications';
+  const emptyMsg = activeKey === 'Verified' ? 'No repairs verified yet.'
+    : activeKey === 'Pending' ? 'No repairs pending your verification.'
+    : 'No repair verifications assigned yet.';
+
   return (
     <div className="module-grid">
       <DismissibleHint description="Phase 4 Tier 1 — Repair Integrity Verification. Review mechanic work, issue your inspection verdict before Admin confirmation, and check back here to see what you've already verified." />
@@ -12076,11 +12138,11 @@ function CustodianVerificationModule({
       </section>
       <section className="panel">
         <div className="panel-header-bar">
-          <h3>{isPendingView ? 'Pending Verifications' : 'Verified Repairs'} <span className="count-badge">{tickets.length}</span></h3>
+          <h3>{tableTitle} <span className="count-badge">{tickets.length}</span></h3>
         </div>
         <div style={{ height: '16px' }} />
         {tickets.length === 0
-          ? <p className="empty-state">{isPendingView ? 'No repairs pending your verification.' : 'No repairs verified yet.'}</p>
+          ? <p className="empty-state">{emptyMsg}</p>
           : (
             <DataTable
               columns={[
@@ -12517,16 +12579,16 @@ function ticketTableColumns(unreadByTicket = {}) {
 // =========================================================================
 
 const ticketArchiveColumns = [
-  { label: 'Archive ID', render: (r) => r.archive_id },
-  { label: 'Ticket ID', render: (r) => r.ticket_id },
+  { label: 'Archive ID', align: 'center', render: (r) => r.archive_id },
+  { label: 'Ticket ID', align: 'center', render: (r) => r.ticket_id },
   { label: 'Title', render: (r) => r.ticket_title },
   { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle ?? { vehicle_name: r.vehicle_name, plate_number: r.plate_number }} /> },
-  { label: 'Plate', render: (r) => (r.vehicle?.plate_number ?? r.plate_number) ?? '-' },
-  { label: 'Expenses', render: (r) => r.maintenance_cost ? `₱${Number(r.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00' },
-  { label: 'Final Status', render: (r) => <TicketStatusBadge value={r.final_status} /> },
+  { label: 'Plate', align: 'center', render: (r) => (r.vehicle?.plate_number ?? r.plate_number) ?? '-' },
+  { label: 'Expenses', align: 'center', render: (r) => r.maintenance_cost ? `₱${Number(r.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00' },
+  { label: 'Final Status', align: 'center', render: (r) => <TicketStatusBadge value={r.final_status} /> },
   { label: 'Archived By', render: (r) => <UserAvatarName user={r.archived_by} fallback="—" /> },
-  { label: 'Archived At', render: (r) => <DateBadge value={r.archived_at} /> },
-  { label: 'Time', render: (r) => formatTime(r.archived_at) },
+  { label: 'Archived At', align: 'center', render: (r) => <DateBadge value={r.archived_at} /> },
+  { label: 'Time', align: 'center', render: (r) => formatTime(r.archived_at) },
 ];
 
 // =========================================================================
@@ -13219,123 +13281,127 @@ function FilterBar({
 
   return (
     <div className="filter-bar-container">
-      <div className="filter-label">
-        <span>Filters:</span>
+      <div className="filter-bar-fields">
+        <div className="filter-label">
+          <span>Filters:</span>
+        </div>
+
+        {/* Category Dropdown */}
+        <MultiSelectDropdown
+          placeholder="All Categories"
+          options={categories.map((cat) => ({ value: String(cat.category_id), label: cat.category_name }))}
+          selected={draft.category}
+          onChange={(vals) => setDraft((d) => ({ ...d, category: vals }))}
+        />
+
+        {/* Capacity Dropdown */}
+        <MultiSelectDropdown
+          placeholder="All Capacities"
+          options={capacities}
+          selected={draft.capacity}
+          onChange={(vals) => setDraft((d) => ({ ...d, capacity: vals }))}
+        />
+
+        {/* Status Dropdown */}
+        {statusOptions && statusOptions.length > 0 && (
+          <MultiSelectDropdown
+            placeholder={`All ${pluralizeLabel(statusLabel)}`}
+            options={statusOptions}
+            selected={draft.status}
+            onChange={(vals) => setDraft((d) => ({ ...d, status: vals }))}
+          />
+        )}
+
+        {/* Priority / Severity / Condition Dropdown */}
+        {priorityOptions && priorityOptions.length > 0 && (
+          <MultiSelectDropdown
+            placeholder={`All ${pluralizeLabel(priorityLabel)}`}
+            options={priorityOptions}
+            selected={draft.priority}
+            onChange={(vals) => setDraft((d) => ({ ...d, priority: vals }))}
+          />
+        )}
+
+        {/* Advanced filters — merged directly into the main filter row */}
+        {showAdvanced && (
+          <>
+            <MultiSelectDropdown
+              placeholder="All Locations"
+              options={locations}
+              selected={draft.location}
+              onChange={(vals) => setDraft((d) => ({ ...d, location: vals }))}
+            />
+            <MultiSelectDropdown
+              placeholder="All Domains (Land/Water)"
+              options={domains}
+              selected={draft.domain}
+              onChange={(vals) => setDraft((d) => ({ ...d, domain: vals }))}
+            />
+          </>
+        )}
+
+        {/* Extra module-specific dropdowns — apply immediately, not staged. */}
+        {extraFilters.map((f) => (
+          <MultiSelectDropdown
+            key={f.key}
+            placeholder={`All ${f.label}`}
+            options={f.options}
+            selected={f.selected}
+            onChange={f.setSelected}
+          />
+        ))}
+
+        {/* Date range — also applies immediately as typed. */}
+        {dateRange && (
+          <>
+            <div className="filter-date-group">
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', fontWeight: 'bold' }}>From:</span>
+              <input
+                type="date"
+                className="filter-select"
+                style={{ minWidth: 'auto' }}
+                value={dateRange.start}
+                onChange={(e) => dateRange.setStart(e.target.value)}
+              />
+            </div>
+            <div className="filter-date-group">
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', fontWeight: 'bold' }}>To:</span>
+              <input
+                type="date"
+                className="filter-select"
+                style={{ minWidth: 'auto' }}
+                value={dateRange.end}
+                onChange={(e) => dateRange.setEnd(e.target.value)}
+              />
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Category Dropdown */}
-      <MultiSelectDropdown
-        placeholder="All Categories"
-        options={categories.map((cat) => ({ value: String(cat.category_id), label: cat.category_name }))}
-        selected={draft.category}
-        onChange={(vals) => setDraft((d) => ({ ...d, category: vals }))}
-      />
-
-      {/* Capacity Dropdown */}
-      <MultiSelectDropdown
-        placeholder="All Capacities"
-        options={capacities}
-        selected={draft.capacity}
-        onChange={(vals) => setDraft((d) => ({ ...d, capacity: vals }))}
-      />
-
-      {/* Status Dropdown */}
-      {statusOptions && statusOptions.length > 0 && (
-        <MultiSelectDropdown
-          placeholder={`All ${pluralizeLabel(statusLabel)}`}
-          options={statusOptions}
-          selected={draft.status}
-          onChange={(vals) => setDraft((d) => ({ ...d, status: vals }))}
-        />
-      )}
-
-      {/* Priority / Severity / Condition Dropdown */}
-      {priorityOptions && priorityOptions.length > 0 && (
-        <MultiSelectDropdown
-          placeholder={`All ${pluralizeLabel(priorityLabel)}`}
-          options={priorityOptions}
-          selected={draft.priority}
-          onChange={(vals) => setDraft((d) => ({ ...d, priority: vals }))}
-        />
-      )}
-
-      {/* Advanced filters — merged directly into the main filter row */}
-      {showAdvanced && (
-        <>
-          <MultiSelectDropdown
-            placeholder="All Locations"
-            options={locations}
-            selected={draft.location}
-            onChange={(vals) => setDraft((d) => ({ ...d, location: vals }))}
-          />
-          <MultiSelectDropdown
-            placeholder="All Domains (Land/Water)"
-            options={domains}
-            selected={draft.domain}
-            onChange={(vals) => setDraft((d) => ({ ...d, domain: vals }))}
-          />
-        </>
-      )}
-
-      {/* Extra module-specific dropdowns — apply immediately, not staged. */}
-      {extraFilters.map((f) => (
-        <MultiSelectDropdown
-          key={f.key}
-          placeholder={`All ${f.label}`}
-          options={f.options}
-          selected={f.selected}
-          onChange={f.setSelected}
-        />
-      ))}
-
-      {/* Date range — also applies immediately as typed. */}
-      {dateRange && (
-        <>
-          <div className="filter-date-group">
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', fontWeight: 'bold' }}>From:</span>
-            <input
-              type="date"
-              className="filter-select"
-              style={{ minWidth: 'auto' }}
-              value={dateRange.start}
-              onChange={(e) => dateRange.setStart(e.target.value)}
-            />
-          </div>
-          <div className="filter-date-group">
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', fontWeight: 'bold' }}>To:</span>
-            <input
-              type="date"
-              className="filter-select"
-              style={{ minWidth: 'auto' }}
-              value={dateRange.end}
-              onChange={(e) => dateRange.setEnd(e.target.value)}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Apply Filter button */}
-      <button
-        type="button"
-        className="filter-apply-btn"
-        onClick={applyFilters}
-        disabled={!isDirty}
-      >
-        Filter
-      </button>
-
-      {/* Clear Filters button */}
-      {(hasActiveFilters || isDirty) && (
+      <div className="filter-bar-actions">
+        {/* Apply Filter button */}
         <button
           type="button"
-          className="filter-clear-btn"
-          onClick={clearFilters}
+          className="filter-apply-btn"
+          onClick={applyFilters}
+          disabled={!isDirty}
         >
-          Clear Filters
+          Filter
         </button>
-      )}
 
-      {trailing && <div className="filter-bar-trailing">{trailing}</div>}
+        {/* Clear Filters button */}
+        {(hasActiveFilters || isDirty) && (
+          <button
+            type="button"
+            className="filter-clear-btn"
+            onClick={clearFilters}
+          >
+            Clear Filters
+          </button>
+        )}
+
+        {trailing && <div className="filter-bar-trailing">{trailing}</div>}
+      </div>
     </div>
   );
 }
