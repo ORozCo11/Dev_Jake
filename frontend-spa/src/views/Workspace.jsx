@@ -1311,9 +1311,12 @@ function Workspace() {
         filterStatus.includes('Submitted') ? row.status !== 'Under Repair' : row.status === 'Under Repair'
       ));
     } else if (activeModule === 'ticketVerifications') {
-      result = result.filter((row) => (
-        filterStatus.includes('Verified') ? row.status !== 'For Inspection' : row.status === 'For Inspection'
-      ));
+      if (filterStatus.includes('Verified')) {
+        result = result.filter((row) => row.status !== 'For Inspection');
+      } else if (filterStatus.includes('Pending')) {
+        result = result.filter((row) => row.status === 'For Inspection');
+      }
+      // empty filterStatus = Total Assigned tab = show all records
     } else if (activeModule === 'vehicles' && (filterStatus.includes('ReadyToRespond') || filterStatus.includes('NotReady'))) {
       // Retired vehicles are excluded from both buckets up in vehicleStats —
       // match that here too, or "Not Ready" would list units the card's own
@@ -12067,7 +12070,14 @@ function CustodianVerificationModule({
   onFilterChange
 }) {
   const [viewLogsTarget, setViewLogsTarget] = useState(null);
-  const isPendingView = activeFilter !== 'Verified';
+  const activeKey = Array.isArray(activeFilter) ? (activeFilter[0] ?? '') : activeFilter;
+  const tableTitle = activeKey === 'Verified' ? 'Verified Repair Verifications'
+    : activeKey === 'Pending' ? 'Pending Repair Verifications'
+    : 'Total Assigned Repair Verifications';
+  const emptyMsg = activeKey === 'Verified' ? 'No repairs verified yet.'
+    : activeKey === 'Pending' ? 'No repairs pending your verification.'
+    : 'No repair verifications assigned yet.';
+
   return (
     <div className="module-grid">
       <DismissibleHint description="Phase 4 Tier 1 — Repair Integrity Verification. Review mechanic work, issue your inspection verdict before Admin confirmation, and check back here to see what you've already verified." />
@@ -12102,11 +12112,11 @@ function CustodianVerificationModule({
       </section>
       <section className="panel">
         <div className="panel-header-bar">
-          <h3>{isPendingView ? 'Pending Verifications' : 'Verified Repairs'} <span className="count-badge">{tickets.length}</span></h3>
+          <h3>{tableTitle} <span className="count-badge">{tickets.length}</span></h3>
         </div>
         <div style={{ height: '16px' }} />
         {tickets.length === 0
-          ? <p className="empty-state">{isPendingView ? 'No repairs pending your verification.' : 'No repairs verified yet.'}</p>
+          ? <p className="empty-state">{emptyMsg}</p>
           : (
             <DataTable
               columns={[
