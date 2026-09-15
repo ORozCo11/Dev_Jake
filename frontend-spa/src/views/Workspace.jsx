@@ -7317,7 +7317,7 @@ function categoryColumns(onEdit, deleteRecord) {
     { label: 'ID', width: '6%', render: (row) => row.category_id },
     { label: 'Vehicle Type', width: '18%', render: (row) => row.category_name },
     { label: 'Domain', width: '10%', render: (row) => <StatusBadge value={row.domain ?? 'Land'} /> },
-    { label: 'Vehicles', width: '9%', render: (row) => row.vehicles_count ?? 0 },
+    { label: 'Vehicles', width: '9%', align: 'center', render: (row) => row.vehicles_count ?? 0 },
     { label: 'Description', width: '49%', render: (row) => row.description ?? '-' },
     {
       label: 'Action',
