@@ -1300,9 +1300,12 @@ function Workspace() {
         row.status === 'Completed' && row.resulting_maintenance && row.resulting_maintenance.progress_status !== 'Completed'
       ));
     } else if (activeModule === 'ticketInspections') {
-      result = result.filter((row) => (
-        filterStatus.includes('Inspected') ? row.status !== 'Open' : row.status === 'Open'
-      ));
+      if (filterStatus.includes('Inspected')) {
+        result = result.filter((row) => row.status !== 'Open');
+      } else if (filterStatus.includes('Pending')) {
+        result = result.filter((row) => row.status === 'Open');
+      }
+      // empty filterStatus = Total Assigned tab = show all records
     } else if (activeModule === 'ticketWorkOrders') {
       result = result.filter((row) => (
         filterStatus.includes('Submitted') ? row.status !== 'Under Repair' : row.status === 'Under Repair'
@@ -11821,7 +11824,13 @@ function CustodianInspectionModule({
   activeFilter,
   onFilterChange
 }) {
-  const isPendingView = activeFilter !== 'Inspected';
+  const activeKey = Array.isArray(activeFilter) ? (activeFilter[0] ?? '') : activeFilter;
+  const tableTitle = activeKey === 'Inspected' ? 'Diagnosed Inspections'
+    : activeKey === 'Pending' ? 'Pending Inspections'
+    : 'Total Assigned Inspections';
+  const emptyMsg = activeKey === 'Inspected' ? 'Nothing diagnosed yet.'
+    : activeKey === 'Pending' ? 'No inspection assignments pending.'
+    : 'No inspection assignments yet.';
 
   return (
     <div className="module-grid">
@@ -11854,11 +11863,11 @@ function CustodianInspectionModule({
               a Pre-Diagnosed ticket (or one reassigned to this Custodian
               after the fact) skips inspection entirely, so calling it
               "Already Inspected" claimed something that never happened. */}
-          <h3>{isPendingView ? 'Pending Inspections' : 'Diagnosed'} <span className="count-badge">{tickets.length}</span></h3>
+          <h3>{tableTitle} <span className="count-badge">{tickets.length}</span></h3>
         </div>
         <div style={{ height: '16px' }} />
         {tickets.length === 0
-          ? <p className="empty-state">{isPendingView ? 'No inspection assignments pending.' : 'Nothing diagnosed yet.'}</p>
+          ? <p className="empty-state">{emptyMsg}</p>
           : (
             <DataTable
               columns={[
