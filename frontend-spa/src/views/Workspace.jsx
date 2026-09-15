@@ -2391,6 +2391,7 @@ function Workspace() {
           basePath={roleRoutes[user.role]}
           onNavigate={navigate}
           onGoToSchedules={() => returnToModule('schedules')}
+          onGoToIssues={hasRole(user, 'Custodian') ? () => returnToModule('issues') : undefined}
         />
       );
     }
@@ -3897,7 +3898,7 @@ function DashboardStatusStrip({ rows }) {
   );
 }
 
-function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedules }) {
+function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedules, onGoToIssues }) {
   const [weather, setWeather] = useState(null);
   const [greeting, setGreeting] = useState(() => buildLocalGreeting(user?.name));
   const [greetingRole, setGreetingRole] = useState(() => dashboardRoleLabel(user?.role));
@@ -4130,7 +4131,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           detail={primaryActionLabel}
           tone={criticalActionCount > 0 ? 'alert' : primaryActionCount > 0 ? 'warn' : 'ok'}
           meter={primaryActionCount > 0 ? Math.min(100, primaryActionCount * 18) : 100}
-          onClick={isAdminDashboard ? () => setOpenDashboardModal('actionQueue') : undefined}
+          onClick={isAdminDashboard ? () => setOpenDashboardModal('actionQueue') : onGoToIssues}
         />
         <DashboardSignalCard
           icon="checkCircle"
@@ -5979,7 +5980,7 @@ function PartsTags({ value }) {
   );
 }
 
-function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 'No records found.' }) {
+function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 'No records found.', scrollable = false }) {
   if (!rows?.length) {
     return <p className="empty-state">{emptyMessage}</p>;
   }
@@ -5987,7 +5988,7 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
   const hasWidths = columns.some((column) => column.width);
 
   return (
-    <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}`}>
+    <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}${scrollable ? ' has-scroll' : ''}`}>
       <table>
         {hasWidths && (
           <colgroup>
@@ -8249,7 +8250,7 @@ function logColumns(vehicles, onViewVehicle) {
   ];
 }
 
-function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = false, pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
+function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = false, scrollable = false, pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [page, setPage] = useState(1);
 
@@ -8268,7 +8269,7 @@ function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = fal
 
   return (
     <>
-      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} compact={compact} />
+      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} compact={compact} scrollable={scrollable} />
       <div className="table-pagination">
         <span className="muted">Showing {start + 1}-{Math.min(start + pageSize, rows.length)} of {rows.length}</span>
         <div className="table-pagination-controls">
@@ -10786,7 +10787,7 @@ function TicketModule({
         {tickets.length === 0
           ? <p className="empty-state">No tickets yet. Create one to begin the workflow.</p>
           : ticketViewMode === 'table'
-            ? <PaginatedTable columns={ticketTableColumns(unreadByTicket)} rows={tickets} onRowClick={onViewTicket} />
+            ? <PaginatedTable columns={ticketTableColumns(unreadByTicket)} rows={tickets} onRowClick={onViewTicket} scrollable />
             : (
               <div className="ticket-card-grid">
                 {tickets.map((t) => (
