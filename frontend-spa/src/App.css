@@ -2753,7 +2753,7 @@ button.vehicle-cell-name.cell-link { font-weight: 600; }
 .form-context-layout {
   display: grid;
   grid-template-columns: minmax(300px, 380px) 1fr;
-  gap: 16px;
+  gap: 20px;
   align-items: start;
 }
 @media (max-width: 980px) {
@@ -2774,7 +2774,7 @@ button.vehicle-cell-name.cell-link { font-weight: 600; }
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 36px 22px;
+  padding: 24px 18px;
   gap: 12px;
 }
 .form-context-empty svg { stroke: var(--primary, #2563eb); opacity: 0.55; }
@@ -3630,8 +3630,14 @@ button.wizard-step-pill:hover {
 .form-grid-2col {
   border: 1px solid var(--border-subtle, #e2e8f0);
   border-radius: 10px;
-  padding: 16px 18px;
+  padding: 20px 22px;
   background: var(--surface-2, #f8fafc);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.07);
+}
+.form-grid-2col .form-actions {
+  border-top: 1px solid var(--border-subtle, #e2e8f0);
+  padding-top: 16px;
+  margin-top: 16px;
 }
 .modal-box-wide .smart-form > h3:empty,
 .form-grid-2col .smart-form > h3:empty {
@@ -4930,6 +4936,13 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
 .veh-card-head > svg,
 .veh-files-head-title > svg {
   display: none;
+}
+/* Re-show icons in form sidebar cards — the vehicle profile hides them for
+   a flat look, but the form preview panel benefits from the context icons. */
+.form-context-side .veh-card-head > svg {
+  display: block;
+  opacity: 0.75;
+  color: var(--primary, #2563eb);
 }
 .veh-card-head .veh-seeall { color: var(--primary, #2563eb); }
 .veh-seeall {
