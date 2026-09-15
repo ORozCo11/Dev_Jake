@@ -7237,8 +7237,9 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
     { label: 'Location', render: (row) => row.current_location },
     {
       label: 'Status',
+      align: 'center',
       render: (row) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
           <StatusBadge value={row.status} />
           {/* "Under Maintenance" alone doesn't say whether a mechanic is
               still actively working on it, or the ticket has nothing left
