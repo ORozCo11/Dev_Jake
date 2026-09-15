@@ -7155,7 +7155,7 @@ const USER_STAT_CARDS = [
 // module's table, matching the Vehicle Management stat cards exactly.
 // `cards` is [{ key, label, icon, bg, color }]; `counts` maps key -> number;
 // clicking a card toggles `activeFilter` via `onFilterChange`.
-function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange }) {
+function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange, onTotalClick }) {
   const isTotalMulti = Array.isArray(activeFilter);
   const isTotalActive = isTotalMulti ? activeFilter.length === 0 : !activeFilter;
   return (
@@ -7170,7 +7170,7 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
             ? '0 0 0 3px #ffffff, 0 0 0 5px #2563eb, 0 10px 24px 2px color-mix(in srgb, #2563eb 55%, transparent)'
             : undefined,
         }}
-        onClick={() => onFilterChange(isTotalMulti ? [] : '')}
+        onClick={() => onTotalClick ? onTotalClick() : onFilterChange(isTotalMulti ? [] : '')}
         title={`Filter: ${totalLabel}`}
       >
         <span className="metric-card-icon" style={{ background: 'rgba(255, 255, 255, 0.22)', color: '#ffffff' }}>
@@ -10735,6 +10735,14 @@ function TicketModule({
         counts={ticketStats}
         activeFilter={filterStatus}
         onFilterChange={setFilterStatus}
+        onTotalClick={() => {
+          setFilterStatus([]);
+          setFilterCategory([]);
+          setFilterCapacity([]);
+          setFilterPriority([]);
+          setFilterDateStart('');
+          setFilterDateEnd('');
+        }}
       />
       <section className="panel module-filter-panel">
         <FilterBar
