@@ -13234,123 +13234,127 @@ function FilterBar({
 
   return (
     <div className="filter-bar-container">
-      <div className="filter-label">
-        <span>Filters:</span>
+      <div className="filter-bar-fields">
+        <div className="filter-label">
+          <span>Filters:</span>
+        </div>
+
+        {/* Category Dropdown */}
+        <MultiSelectDropdown
+          placeholder="All Categories"
+          options={categories.map((cat) => ({ value: String(cat.category_id), label: cat.category_name }))}
+          selected={draft.category}
+          onChange={(vals) => setDraft((d) => ({ ...d, category: vals }))}
+        />
+
+        {/* Capacity Dropdown */}
+        <MultiSelectDropdown
+          placeholder="All Capacities"
+          options={capacities}
+          selected={draft.capacity}
+          onChange={(vals) => setDraft((d) => ({ ...d, capacity: vals }))}
+        />
+
+        {/* Status Dropdown */}
+        {statusOptions && statusOptions.length > 0 && (
+          <MultiSelectDropdown
+            placeholder={`All ${pluralizeLabel(statusLabel)}`}
+            options={statusOptions}
+            selected={draft.status}
+            onChange={(vals) => setDraft((d) => ({ ...d, status: vals }))}
+          />
+        )}
+
+        {/* Priority / Severity / Condition Dropdown */}
+        {priorityOptions && priorityOptions.length > 0 && (
+          <MultiSelectDropdown
+            placeholder={`All ${pluralizeLabel(priorityLabel)}`}
+            options={priorityOptions}
+            selected={draft.priority}
+            onChange={(vals) => setDraft((d) => ({ ...d, priority: vals }))}
+          />
+        )}
+
+        {/* Advanced filters — merged directly into the main filter row */}
+        {showAdvanced && (
+          <>
+            <MultiSelectDropdown
+              placeholder="All Locations"
+              options={locations}
+              selected={draft.location}
+              onChange={(vals) => setDraft((d) => ({ ...d, location: vals }))}
+            />
+            <MultiSelectDropdown
+              placeholder="All Domains (Land/Water)"
+              options={domains}
+              selected={draft.domain}
+              onChange={(vals) => setDraft((d) => ({ ...d, domain: vals }))}
+            />
+          </>
+        )}
+
+        {/* Extra module-specific dropdowns — apply immediately, not staged. */}
+        {extraFilters.map((f) => (
+          <MultiSelectDropdown
+            key={f.key}
+            placeholder={`All ${f.label}`}
+            options={f.options}
+            selected={f.selected}
+            onChange={f.setSelected}
+          />
+        ))}
+
+        {/* Date range — also applies immediately as typed. */}
+        {dateRange && (
+          <>
+            <div className="filter-date-group">
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', fontWeight: 'bold' }}>From:</span>
+              <input
+                type="date"
+                className="filter-select"
+                style={{ minWidth: 'auto' }}
+                value={dateRange.start}
+                onChange={(e) => dateRange.setStart(e.target.value)}
+              />
+            </div>
+            <div className="filter-date-group">
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', fontWeight: 'bold' }}>To:</span>
+              <input
+                type="date"
+                className="filter-select"
+                style={{ minWidth: 'auto' }}
+                value={dateRange.end}
+                onChange={(e) => dateRange.setEnd(e.target.value)}
+              />
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Category Dropdown */}
-      <MultiSelectDropdown
-        placeholder="All Categories"
-        options={categories.map((cat) => ({ value: String(cat.category_id), label: cat.category_name }))}
-        selected={draft.category}
-        onChange={(vals) => setDraft((d) => ({ ...d, category: vals }))}
-      />
-
-      {/* Capacity Dropdown */}
-      <MultiSelectDropdown
-        placeholder="All Capacities"
-        options={capacities}
-        selected={draft.capacity}
-        onChange={(vals) => setDraft((d) => ({ ...d, capacity: vals }))}
-      />
-
-      {/* Status Dropdown */}
-      {statusOptions && statusOptions.length > 0 && (
-        <MultiSelectDropdown
-          placeholder={`All ${pluralizeLabel(statusLabel)}`}
-          options={statusOptions}
-          selected={draft.status}
-          onChange={(vals) => setDraft((d) => ({ ...d, status: vals }))}
-        />
-      )}
-
-      {/* Priority / Severity / Condition Dropdown */}
-      {priorityOptions && priorityOptions.length > 0 && (
-        <MultiSelectDropdown
-          placeholder={`All ${pluralizeLabel(priorityLabel)}`}
-          options={priorityOptions}
-          selected={draft.priority}
-          onChange={(vals) => setDraft((d) => ({ ...d, priority: vals }))}
-        />
-      )}
-
-      {/* Advanced filters — merged directly into the main filter row */}
-      {showAdvanced && (
-        <>
-          <MultiSelectDropdown
-            placeholder="All Locations"
-            options={locations}
-            selected={draft.location}
-            onChange={(vals) => setDraft((d) => ({ ...d, location: vals }))}
-          />
-          <MultiSelectDropdown
-            placeholder="All Domains (Land/Water)"
-            options={domains}
-            selected={draft.domain}
-            onChange={(vals) => setDraft((d) => ({ ...d, domain: vals }))}
-          />
-        </>
-      )}
-
-      {/* Extra module-specific dropdowns — apply immediately, not staged. */}
-      {extraFilters.map((f) => (
-        <MultiSelectDropdown
-          key={f.key}
-          placeholder={`All ${f.label}`}
-          options={f.options}
-          selected={f.selected}
-          onChange={f.setSelected}
-        />
-      ))}
-
-      {/* Date range — also applies immediately as typed. */}
-      {dateRange && (
-        <>
-          <div className="filter-date-group">
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', fontWeight: 'bold' }}>From:</span>
-            <input
-              type="date"
-              className="filter-select"
-              style={{ minWidth: 'auto' }}
-              value={dateRange.start}
-              onChange={(e) => dateRange.setStart(e.target.value)}
-            />
-          </div>
-          <div className="filter-date-group">
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', fontWeight: 'bold' }}>To:</span>
-            <input
-              type="date"
-              className="filter-select"
-              style={{ minWidth: 'auto' }}
-              value={dateRange.end}
-              onChange={(e) => dateRange.setEnd(e.target.value)}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Apply Filter button */}
-      <button
-        type="button"
-        className="filter-apply-btn"
-        onClick={applyFilters}
-        disabled={!isDirty}
-      >
-        Filter
-      </button>
-
-      {/* Clear Filters button */}
-      {(hasActiveFilters || isDirty) && (
+      <div className="filter-bar-actions">
+        {/* Apply Filter button */}
         <button
           type="button"
-          className="filter-clear-btn"
-          onClick={clearFilters}
+          className="filter-apply-btn"
+          onClick={applyFilters}
+          disabled={!isDirty}
         >
-          Clear Filters
+          Filter
         </button>
-      )}
 
-      {trailing && <div className="filter-bar-trailing">{trailing}</div>}
+        {/* Clear Filters button */}
+        {(hasActiveFilters || isDirty) && (
+          <button
+            type="button"
+            className="filter-clear-btn"
+            onClick={clearFilters}
+          >
+            Clear Filters
+          </button>
+        )}
+
+        {trailing && <div className="filter-bar-trailing">{trailing}</div>}
+      </div>
     </div>
   );
 }
