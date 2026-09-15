@@ -7231,7 +7231,7 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
 
 function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket) {
   const columns = [
-    { label: 'ID', render: (row) => row.vehicle_id },
+    { label: 'ID', align: 'center', render: (row) => row.vehicle_id },
     {
       label: 'Vehicle',
       render: (row) => (
@@ -7241,10 +7241,10 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
         </div>
       ),
     },
-    { label: 'Plate', render: (row) => row.plate_number },
+    { label: 'Plate', align: 'center', render: (row) => row.plate_number },
     { label: 'Type', render: (row) => row.category?.category_name ?? 'Unassigned' },
     { label: 'Brand / Model', render: (row) => `${row.brand} ${row.model}` },
-    { label: 'Capacity', render: (row) => row.capacity },
+    { label: 'Capacity', align: 'center', render: (row) => row.capacity },
     { label: 'Location', render: (row) => row.current_location },
     {
       label: 'Status',
@@ -7269,9 +7269,10 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
         </div>
       ),
     },
-    { label: 'Condition', render: (row) => <StatusBadge value={row.condition} /> },
+    { label: 'Condition', align: 'center', render: (row) => <StatusBadge value={row.condition} /> },
     {
       label: 'Ready to Respond',
+      align: 'center',
       render: (row) => {
         const badge = READINESS_BADGE[row.readiness_state];
         if (!badge) return <span className="muted">—</span>;
@@ -7297,6 +7298,7 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
   if (role === 'Admin') {
     columns.push({
       label: 'Action',
+      align: 'center',
       render: (row) => (
         <div className="row-actions">
           {/* Jumps straight to whatever ticket is keeping this vehicle
@@ -10010,14 +10012,14 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                           in-house" is an external shop — jumps straight to
                           Add Maintenance Record with the follow-up issue and
                           vehicle already linked. */}
-                      {isAdmin && onSendToExternalShop && si.deferred_issue_report_id && (
+                      {isAdmin && onSendToExternalShop && (si.deferred_issue_report_id || si.status === 'Open') && (
                         <button
                           className="ghost-button btn-edit-action"
                           type="button"
                           style={{ marginTop: 8 }}
                           onClick={() => onSendToExternalShop({
                             vehicle_id: ticket.vehicle_id,
-                            issue_report_id: si.deferred_issue_report_id,
+                            issue_report_id: si.deferred_issue_report_id ?? null,
                             problem_reason: `${si.title}${si.deferred_reason ? ` — ${si.deferred_reason}` : ''}`,
                           })}
                         >
