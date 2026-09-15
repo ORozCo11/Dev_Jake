@@ -2228,6 +2228,12 @@ tbody td:has(> .status-badge) {
   justify-content: center;
 }
 
+/* Opt-in center alignment for table headers and data cells */
+th.text-center,
+td.text-center {
+  text-align: center;
+}
+
 /* Long free-text columns: cap width and wrap so the table stays readable
    and doesn't stretch into a wide horizontal scroll. */
 td.cell-text {

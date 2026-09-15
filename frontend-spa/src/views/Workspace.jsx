@@ -6003,7 +6003,7 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.label}>{column.label}</th>
+              <th key={column.label} className={column.align === 'center' ? 'text-center' : undefined}>{column.label}</th>
             ))}
           </tr>
         </thead>
@@ -6015,7 +6015,7 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
               onClick={onRowClick ? (e) => { if (!e.target.closest('button, a')) onRowClick(row); } : undefined}
             >
               {columns.map((column) => (
-                <td key={column.label} className={column.className}>{column.render ? column.render(row) : row[column.key]}</td>
+                <td key={column.label} className={[column.className, column.align === 'center' ? 'text-center' : ''].filter(Boolean).join(' ') || undefined}>{column.render ? column.render(row) : row[column.key]}</td>
               ))}
             </tr>
           ))}
@@ -11871,16 +11871,18 @@ function CustodianInspectionModule({
           : (
             <DataTable
               columns={[
-                { label: 'Ticket ID', render: (r) => r.ticket_id },
-                { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle} /> }, { label: 'Plate', render: (r) => r.vehicle?.plate_number ?? '-' },
+                { label: 'Ticket ID', align: 'center', render: (r) => r.ticket_id },
+                { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle} /> },
+                { label: 'Plate', align: 'center', render: (r) => r.vehicle?.plate_number ?? '-' },
                 { label: 'Title', render: (r) => r.ticket_title },
-                { label: 'Priority', render: (r) => <TicketStatusBadge value={r.priority} /> },
+                { label: 'Priority', align: 'center', render: (r) => <TicketStatusBadge value={r.priority} /> },
                 { label: 'Description', className: 'cell-text', render: (r) => <ExpandableText text={r.ticket_description} /> },
-                { label: 'Result', render: (r) => r.inspection_result ? <TicketStatusBadge value={r.inspection_result} /> : <span className="muted">—</span> },
-                { label: 'Assigned', render: (r) => <DateBadge value={r.assigned_at} /> },
-                { label: 'Time', render: (r) => formatTime(r.assigned_at) },
+                { label: 'Result', align: 'center', render: (r) => r.inspection_result ? <TicketStatusBadge value={r.inspection_result} /> : <span className="muted">—</span> },
+                { label: 'Date Assigned', align: 'center', render: (r) => <DateBadge value={r.assigned_at} /> },
+                { label: 'Time', align: 'center', render: (r) => formatTime(r.assigned_at) },
                 {
                   label: 'Action',
+                  align: 'center',
                   // "Submitted" implied THIS Custodian already did something —
                   // false for a Pre-Diagnosed ticket, or one reassigned to
                   // them after the fact. Reusing the same stage logic the
