@@ -2855,6 +2855,15 @@ function Workspace() {
                   counts={issueStats}
                   activeFilter={filterStatus}
                   onFilterChange={setFilterStatus}
+                  onTotalClick={() => {
+                    setFilterStatus([]);
+                    setFilterCategory([]);
+                    setFilterCapacity([]);
+                    setFilterPriority([]);
+                    setFilterIssueType([]);
+                    setFilterDateStart('');
+                    setFilterDateEnd('');
+                  }}
                 />
               </div>
               <section className="panel module-filter-panel issue-summary-filters">
