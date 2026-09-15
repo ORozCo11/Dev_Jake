@@ -3422,6 +3422,7 @@ function Workspace() {
         ...ticketArchiveColumns,
         {
           label: 'Actions',
+          align: 'center',
           render: (row) => {
             if (row.final_status === 'Deleted') {
               return (
@@ -12564,16 +12565,16 @@ function ticketTableColumns(unreadByTicket = {}) {
 // =========================================================================
 
 const ticketArchiveColumns = [
-  { label: 'Archive ID', render: (r) => r.archive_id },
-  { label: 'Ticket ID', render: (r) => r.ticket_id },
+  { label: 'Archive ID', align: 'center', render: (r) => r.archive_id },
+  { label: 'Ticket ID', align: 'center', render: (r) => r.ticket_id },
   { label: 'Title', render: (r) => r.ticket_title },
   { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle ?? { vehicle_name: r.vehicle_name, plate_number: r.plate_number }} /> },
-  { label: 'Plate', render: (r) => (r.vehicle?.plate_number ?? r.plate_number) ?? '-' },
-  { label: 'Expenses', render: (r) => r.maintenance_cost ? `₱${Number(r.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00' },
-  { label: 'Final Status', render: (r) => <TicketStatusBadge value={r.final_status} /> },
+  { label: 'Plate', align: 'center', render: (r) => (r.vehicle?.plate_number ?? r.plate_number) ?? '-' },
+  { label: 'Expenses', align: 'center', render: (r) => r.maintenance_cost ? `₱${Number(r.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00' },
+  { label: 'Final Status', align: 'center', render: (r) => <TicketStatusBadge value={r.final_status} /> },
   { label: 'Archived By', render: (r) => <UserAvatarName user={r.archived_by} fallback="—" /> },
-  { label: 'Archived At', render: (r) => <DateBadge value={r.archived_at} /> },
-  { label: 'Time', render: (r) => formatTime(r.archived_at) },
+  { label: 'Archived At', align: 'center', render: (r) => <DateBadge value={r.archived_at} /> },
+  { label: 'Time', align: 'center', render: (r) => formatTime(r.archived_at) },
 ];
 
 // =========================================================================
