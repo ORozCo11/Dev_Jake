@@ -10643,7 +10643,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
                   </div>
                 ))}
               </div>
-              <button type="button" className="primary-button" onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
+              <button type="button" className="primary-button" style={{ marginTop: 12 }} onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
             </div>
           </section>
         )}
