@@ -1716,32 +1716,39 @@ function Workspace() {
     }
   };
 
-  // Vehicle Location map boundary selector — lets an Admin swap which
-  // barangay outline the map draws. Scoped to Province + Barangay only
-  // (no City/Municipality step) since Mandaue City is the only city with
-  // real per-barangay boundary data today — defaults to Cebu so the
-  // Barangay dropdown is immediately usable. This is purely cosmetic:
-  // hubs/vehicles aren't scoped by barangay, so switching only changes the
-  // drawn outline + camera framing, not which hubs/vehicles show.
+  // Vehicle Location map boundary selector — lets an Admin swap which area
+  // outline the map draws: Province -> City/Municipality -> Barangay
+  // (optional). City-level boundary data is seeded nationwide (~1,610 of
+  // 1,634 PH cities/municipalities, from PSA PSGC shapefiles), while
+  // barangay-level boundary data only exists for Mandaue City today — so
+  // Barangay is an optional finer override, not a required step. This is
+  // purely cosmetic: hubs/vehicles aren't scoped by area, so switching only
+  // changes the drawn outline + camera framing, not which hubs/vehicles show.
   const [mapProvinces, setMapProvinces] = useState([]);
   const [mapProvinceId, setMapProvinceId] = useState('');
+  const [mapCities, setMapCities] = useState([]);
+  const [mapCityId, setMapCityId] = useState('');
+  // Caches the selected city's own boundary separately from
+  // mapBoundaryOverride so toggling the Barangay dropdown back to "Whole
+  // city" can restore it without a refetch.
+  const [mapCityBoundary, setMapCityBoundary] = useState(null);
   const [mapBarangays, setMapBarangays] = useState([]);
   const [mapBarangayId, setMapBarangayId] = useState('');
   const [mapBoundaryOverride, setMapBoundaryOverride] = useState(null);
-  // Guards the one-time "default to Paknaan" seed below from re-firing on a
-  // second effect invocation (React's dev-only StrictMode double-invokes
-  // effects on mount) — without this, a second run would call
-  // loadBarangaysForProvince(cebu.id, 'Paknaan') again.
+  // Guards the one-time "default to Mandaue/Paknaan" seed below from
+  // re-firing on a second effect invocation (React's dev-only StrictMode
+  // double-invokes effects on mount).
   const mapDefaultAppliedRef = useRef(false);
-  // The bigger race: that seed is 2 sequential API calls deep (province ->
-  // barangay list -> boundary fetch), slow enough on the local dev server
-  // that an admin can pick a real barangay from the dropdown WHILE it's
-  // still in flight. When it finally resolves, it must not overwrite a
-  // selection made in the meantime — this ref is the source of truth for
-  // "has the admin touched this dropdown themselves".
-  const userPickedBarangayRef = useRef(false);
+  // The bigger race: that seed is several sequential/parallel API calls
+  // deep, slow enough on the local dev server that an admin can pick a real
+  // province/city/barangay from the dropdowns WHILE it's still in flight.
+  // When it finally resolves, it must not overwrite a selection made in the
+  // meantime — this ref is the source of truth for "has the admin touched
+  // any of these dropdowns themselves". Every default-application site
+  // re-checks it as late as possible, right before writing state.
+  const userPickedRef = useRef(false);
 
-  // DEV-only: the same two dropdowns also drive Impersonate below, so a
+  // DEV-only: the Barangay dropdown also drives Impersonate below, so a
   // barangay with registered staff but no boundary polygon (anything other
   // than Paknaan today) still needs to show up here, not just barangays
   // the map can actually draw. Merged in, never replacing the boundary-
@@ -1755,10 +1762,20 @@ function Workspace() {
     });
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [mapProvinces, impersonateCandidates]);
+  // Cities aren't merged with impersonateCandidates: candidates only carry
+  // city_name (no city_id) to key a synthetic option on, and /cities
+  // already returns the complete nationwide list for a province (unlike
+  // the curated /barangays/registered), so there's no orphaned-selection
+  // case to guard against here.
+  const cityOptions = useMemo(
+    () => [...mapCities].sort((a, b) => a.name.localeCompare(b.name)),
+    [mapCities],
+  );
   const barangayOptions = useMemo(() => {
     const byId = new Map(mapBarangays.map((b) => [String(b.id), b]));
+    const selectedCityName = mapCities.find((c) => String(c.id) === String(mapCityId))?.name;
     impersonateCandidates.forEach((u) => {
-      if (u.barangay_id && String(u.province_id) === String(mapProvinceId) && !byId.has(String(u.barangay_id))) {
+      if (u.barangay_id && u.city_name === selectedCityName && !byId.has(String(u.barangay_id))) {
         byId.set(String(u.barangay_id), { id: u.barangay_id, name: u.barangay_name });
       }
     });
@@ -1772,7 +1789,7 @@ function Workspace() {
       byId.set(String(mapBarangayId), { id: mapBarangayId, name: mapBoundaryOverride.label });
     }
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [mapBarangays, impersonateCandidates, mapProvinceId, mapBarangayId, mapBoundaryOverride]);
+  }, [mapBarangays, impersonateCandidates, mapCities, mapCityId, mapBarangayId, mapBoundaryOverride]);
   // Keeps the Impersonate staff dropdown valid for whichever barangay is
   // currently selected above — re-runs whenever the barangay changes or the
   // candidate list itself first loads.
@@ -1795,34 +1812,62 @@ function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapBarangayId, impersonateCandidates]);
 
-  // Fetches one barangay's boundary and sets it as the map override.
-  const selectBarangayBoundary = useCallback(async (barangayId) => {
-    if (!barangayId) { setMapBoundaryOverride(null); return; }
+  // Fetches one city's boundary — pure, no state writes, so it can be
+  // reused both to show it immediately and to just cache it.
+  const fetchCityBoundary = useCallback(async (cityId) => {
+    if (!cityId) return null;
     try {
-      const res = await api.get(`/barangays/${barangayId}`);
-      // Always carry the picked barangay's own name, even when it has no
-      // boundary polygon on file (only Mandaue City barangays do today) —
-      // otherwise the map silently falls back to Paknaan's shape AND label,
-      // which reads as "the dropdown did nothing" instead of "no data yet".
-      setMapBoundaryOverride({ geometry: res.data.boundary ?? null, label: res.data.name });
+      const res = await api.get(`/cities/${cityId}`);
+      return { geometry: res.data.boundary ?? null, label: res.data.name, level: 'city', fallback: false };
     } catch {
-      setMapBoundaryOverride(null);
+      return null;
     }
   }, []);
 
+  // Fetches one city's boundary and sets it as the map override — the
+  // "whole city" view.
+  const selectCityBoundary = useCallback(async (cityId) => {
+    const boundary = await fetchCityBoundary(cityId);
+    setMapCityBoundary(boundary);
+    setMapBoundaryOverride(boundary);
+  }, [fetchCityBoundary]);
+
+  // Fetches one barangay's boundary and sets it as the map override. A
+  // barangay with no polygon on file (only Mandaue City barangays have one
+  // today) falls back to its city's outline plus a notice explaining the
+  // swap, rather than leaving the map blank.
+  const selectBarangayBoundary = useCallback(async (barangayId) => {
+    if (!barangayId) { setMapBoundaryOverride(mapCityBoundary); return; }
+    try {
+      const res = await api.get(`/barangays/${barangayId}`);
+      if (res.data.boundary) {
+        setMapBoundaryOverride({
+          geometry: res.data.boundary,
+          label: res.data.name,
+          level: 'barangay',
+          fallback: false,
+        });
+        return;
+      }
+      setMapBoundaryOverride({
+        geometry: mapCityBoundary?.geometry ?? null,
+        label: mapCityBoundary?.label ?? res.data.name,
+        level: 'city',
+        fallback: true,
+        requestedLabel: res.data.name,
+        requestedLevel: 'barangay',
+      });
+    } catch {
+      setMapBoundaryOverride(mapCityBoundary);
+    }
+  }, [mapCityBoundary]);
+
   // Loads the barangays that actually have a registered user (plus Paknaan,
-  // always included — the system's built-in home barangay) for the one
-  // city within a province that has a registered barangay list. Which city
-  // that is comes straight from `/provinces/with-barangays`'
-  // `city_with_barangays_id` (see ProvinceController::withBarangays) rather
-  // than being re-derived here — this used to search the province's city
-  // list for one literally named "Mandaue City", which only worked because
-  // that was the sole seeded example; a second city with real barangay data
-  // in any province would have silently produced an empty dropdown. A
-  // province with no such city (falsy `cityId`) simply ends up with an
-  // empty Barangay dropdown. `defaultBarangayName` pre-selects a barangay
+  // always included — the system's built-in home barangay) for one city.
+  // Optional: most cities have none, in which case the Barangay dropdown
+  // just offers "Whole city". `defaultBarangayName` pre-selects a barangay
   // once the list loads — used to land on Paknaan on first load.
-  const loadBarangaysForProvince = useCallback(async (cityId, defaultBarangayName) => {
+  const loadBarangaysForCity = useCallback(async (cityId, defaultBarangayName) => {
     if (!cityId) {
       setMapBarangays([]);
       return;
@@ -1831,11 +1876,11 @@ function Workspace() {
       const barangaysRes = await api.get('/barangays/registered', { params: { city_id: cityId } });
       setMapBarangays(barangaysRes.data);
 
-      // Skip applying the default if the admin has already picked a real
-      // barangay themselves while this chain was still in flight — this
-      // check happens as late as possible (right before acting on it) so
-      // it catches a pick made at any point during the 3-call chain above.
-      const defaultBarangay = defaultBarangayName && !userPickedBarangayRef.current
+      // Skip applying the default if the admin has already picked something
+      // themselves while this chain was still in flight — this check
+      // happens as late as possible (right before acting on it) so it
+      // catches a pick made at any point during the call chain above.
+      const defaultBarangay = defaultBarangayName && !userPickedRef.current
         ? barangaysRes.data.find((b) => b.name === defaultBarangayName)
         : null;
       if (defaultBarangay) {
@@ -1847,56 +1892,118 @@ function Workspace() {
     }
   }, [selectBarangayBoundary]);
 
+  // Loads every city/municipality in a province (the full list — unlike
+  // /barangays/registered this isn't curated, so no synthetic-fallback
+  // entry is ever needed for a programmatically-selected city).
+  // `defaultCityId` seeds the City dropdown + its boundary cache + its
+  // Barangay list once the list loads, without ever touching
+  // mapBoundaryOverride directly here (see the mount effect below for why).
+  const loadCitiesForProvince = useCallback(async (provinceId, defaultCityId) => {
+    if (!provinceId) {
+      setMapCities([]);
+      return;
+    }
+    try {
+      const citiesRes = await api.get('/cities', { params: { province_id: provinceId } });
+      setMapCities(citiesRes.data);
+
+      const defaultCity = defaultCityId && !userPickedRef.current
+        ? citiesRes.data.find((c) => String(c.id) === String(defaultCityId))
+        : null;
+      if (defaultCity) {
+        setMapCityId(String(defaultCity.id));
+        fetchCityBoundary(defaultCity.id).then((boundary) => {
+          if (!userPickedRef.current) setMapCityBoundary(boundary);
+        });
+        loadBarangaysForCity(defaultCity.id, null);
+      }
+    } catch {
+      setMapCities([]);
+    }
+  }, [fetchCityBoundary, loadBarangaysForCity]);
+
   useEffect(() => {
-    // Narrower than the registration form's /provinces — only provinces
-    // that actually have registered barangay/boundary data, so the
-    // dropdown doesn't list 80+ provinces with nothing behind them.
-    api.get('/provinces/with-barangays').then((response) => {
+    // Full nationwide list — same endpoint the registration form uses.
+    api.get('/provinces').then((response) => {
       setMapProvinces(response.data);
+    }).catch(() => {});
+
+    // Narrower helper, used once here just to resolve which city within
+    // Cebu has real barangay-level data (Mandaue City) without hardcoding
+    // its name.
+    api.get('/provinces/with-barangays').then((response) => {
       const cebu = response.data.find((p) => p.name === 'Cebu');
-      if (cebu) {
-        setMapProvinceId(String(cebu.id));
-        if (!mapDefaultAppliedRef.current) {
-          mapDefaultAppliedRef.current = true;
-          // Land every admin on THEIR OWN barangay by default, not always
-          // Paknaan — that hardcoded default only ever made sense back when
-          // Paknaan was the only barangay in the system. Falls back to
-          // Paknaan only for an account with no barangay of its own (there
-          // isn't one today, but this keeps old behavior as the fallback).
-          if (user.barangay_id && !userPickedBarangayRef.current) {
-            setMapBarangayId(String(user.barangay_id));
-            selectBarangayBoundary(user.barangay_id);
-            loadBarangaysForProvince(cebu.city_with_barangays_id, null);
-          } else {
-            loadBarangaysForProvince(cebu.city_with_barangays_id, 'Paknaan');
-          }
+      if (!cebu) return;
+      setMapProvinceId(String(cebu.id));
+      const defaultCityId = cebu.city_with_barangays_id;
+
+      if (!mapDefaultAppliedRef.current) {
+        mapDefaultAppliedRef.current = true;
+        // Land every admin on THEIR OWN barangay by default, not always
+        // Paknaan — that hardcoded default only ever made sense back when
+        // Paknaan was the only barangay in the system. Falls back to the
+        // city's own boundary + Paknaan only for an account with no
+        // barangay of its own.
+        if (user.barangay_id && !userPickedRef.current) {
+          setMapBarangayId(String(user.barangay_id));
+          selectBarangayBoundary(user.barangay_id);
+          // Cache-only: populates the City/Barangay dropdowns without ever
+          // overwriting the boundary we just set above, even if the admin
+          // picks something new before this resolves.
+          loadCitiesForProvince(cebu.id, defaultCityId);
         } else {
-          // Still populate the barangay list for this province — just
-          // don't re-seed the default selection over a real one.
-          loadBarangaysForProvince(cebu.city_with_barangays_id, null);
+          selectCityBoundary(defaultCityId);
+          loadCitiesForProvince(cebu.id, defaultCityId);
+          loadBarangaysForCity(defaultCityId, 'Paknaan');
         }
+      } else {
+        // Still populate the City dropdown for this province — just don't
+        // re-seed the default selection over a real one.
+        loadCitiesForProvince(cebu.id, null);
       }
     }).catch(() => {});
-  }, [loadBarangaysForProvince, selectBarangayBoundary, user.barangay_id]);
+  }, [loadCitiesForProvince, loadBarangaysForCity, selectBarangayBoundary, selectCityBoundary, user.barangay_id]);
 
   const handleMapProvinceChange = (e) => {
-    userPickedBarangayRef.current = true;
+    userPickedRef.current = true;
     const provinceId = e.target.value;
     setMapProvinceId(provinceId);
+    setMapCityId('');
+    setMapCityBoundary(null);
     setMapBarangayId('');
     setMapBoundaryOverride(null);
+    setMapCities([]);
     setMapBarangays([]);
     if (provinceId) {
-      const province = mapProvinces.find((p) => String(p.id) === String(provinceId));
-      loadBarangaysForProvince(province?.city_with_barangays_id ?? null);
+      loadCitiesForProvince(provinceId, null);
+    }
+  };
+
+  const handleMapCityChange = (e) => {
+    userPickedRef.current = true;
+    const cityId = e.target.value;
+    setMapCityId(cityId);
+    setMapBarangayId('');
+    setMapBarangays([]);
+    if (cityId) {
+      selectCityBoundary(cityId);
+      loadBarangaysForCity(cityId, null);
+    } else {
+      setMapCityBoundary(null);
+      setMapBoundaryOverride(null);
     }
   };
 
   const handleMapBarangayChange = (e) => {
-    userPickedBarangayRef.current = true;
+    userPickedRef.current = true;
     const barangayId = e.target.value;
     setMapBarangayId(barangayId);
-    selectBarangayBoundary(barangayId);
+    if (barangayId) {
+      selectBarangayBoundary(barangayId);
+    } else {
+      // "Whole city" — no network call, uses the cache from selectCityBoundary.
+      setMapBoundaryOverride(mapCityBoundary);
+    }
   };
 
 
@@ -1918,7 +2025,7 @@ function Workspace() {
             <Icon name="gear" size={28} className="topbar-gear-icon" filled />
             <span className="vms-wordmark vms-wordmark-sm">vms</span>
           </div>
-          <div className="map-boundary-selector" title="Choose which registered barangay outline the Vehicle Location map draws.">
+          <div className="map-boundary-selector" title="Choose which area's outline the Vehicle Location map draws.">
             <select
               aria-label="Map boundary province"
               onChange={handleMapProvinceChange}
@@ -1929,18 +2036,26 @@ function Workspace() {
               ))}
             </select>
             <select
+              aria-label="Map boundary city"
+              disabled={cityOptions.length === 0}
+              onChange={handleMapCityChange}
+              value={mapCityId}
+            >
+              <option value="" disabled>Select city/municipality</option>
+              {cityOptions.map((city) => (
+                <option key={city.id} value={city.id}>{city.name}</option>
+              ))}
+            </select>
+            <select
               aria-label="Map boundary barangay"
-              disabled={barangayOptions.length === 0}
+              disabled={!mapCityId}
               onChange={handleMapBarangayChange}
               value={mapBarangayId}
             >
-              {barangayOptions.length > 0 ? (
-                barangayOptions.map((barangay) => (
-                  <option key={barangay.id} value={barangay.id}>{barangay.name}</option>
-                ))
-              ) : (
-                <option value="">No registered barangay</option>
-              )}
+              <option value="">Whole city</option>
+              {barangayOptions.map((barangay) => (
+                <option key={barangay.id} value={barangay.id}>{barangay.name}</option>
+              ))}
             </select>
           </div>
           {import.meta.env.DEV && impersonateGroupUsers.length > 0 && (

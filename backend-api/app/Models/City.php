@@ -11,10 +11,13 @@ class City extends Model
         'code',
         'name',
         'boundary',
+        'boundary_source',
+        'boundary_verified_at',
     ];
 
     protected $casts = [
         'boundary' => 'array',
+        'boundary_verified_at' => 'datetime',
     ];
 
     public function province()

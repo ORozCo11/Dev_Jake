@@ -378,9 +378,12 @@ function LocationDensityMap({
   onClearSelectedVehicle = null,
   onHubsChange = null,
   canManageHubs = false,
-  // { geometry: GeoJSON Polygon|MultiPolygon, label: string } | null — set
-  // by the admin topbar's barangay/city selector. Falls back to the
-  // hardcoded Paknaan outline below when nothing is selected.
+  // { geometry: GeoJSON Polygon|MultiPolygon, label, level: 'city'|'barangay',
+  //   fallback: bool, requestedLabel?, requestedLevel? } | null — set by the
+  // admin topbar's city/barangay selector. Falls back to the hardcoded
+  // Paknaan outline below when nothing is selected. `fallback` marks a shape
+  // standing in for a narrower one that has no outline on file (a barangay
+  // showing its city); `requestedLabel` is what was actually asked for.
   boundaryOverride = null,
 }) {
   const [hubRecords, setHubRecords] = useState([]);
@@ -718,6 +721,13 @@ function LocationDensityMap({
       {hasBoundarySelection && !hasBoundaryGeometry && (
         <div className="location-density-notice info" role="status">
           <span>No boundary outline on file for {boundaryLabel} yet — only Mandaue City barangays have one today. Hubs and vehicles below aren't affected.</span>
+        </div>
+      )}
+      {hasBoundarySelection && hasBoundaryGeometry && boundaryOverride?.fallback && (
+        <div className="location-density-notice info" role="status">
+          <span>
+            No boundary on file yet for {boundaryOverride.requestedLabel} — showing {boundaryLabel} instead.
+          </span>
         </div>
       )}
       {mapNotice && (

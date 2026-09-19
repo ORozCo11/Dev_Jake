@@ -8,6 +8,10 @@ class DatabaseSeeder extends Seeder
 {
     /**
      * Seed the application's database.
+     *
+     * Seeding stays offline. Barangay outlines come from `boundaries:import`,
+     * a separate setup step that reaches the network — run it after seeding
+     * (see docs/MAP_BOUNDARIES.md).
      */
     public function run(): void
     {
@@ -17,7 +21,6 @@ class DatabaseSeeder extends Seeder
             CitySeeder::class,
             CityBoundarySeeder::class,
             BarangaySeeder::class,
-            BarangayBoundarySeeder::class,
             UserSeeder::class,
             FleetReferenceSeeder::class,
             MockDataSeeder::class,
