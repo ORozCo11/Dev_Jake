@@ -32,7 +32,11 @@ class CityBoundarySeeder extends Seeder
             }
 
             $updated += City::where('code', $entry['code'])
-                ->update(['boundary' => $entry['geometry']]);
+                ->update([
+                    'boundary' => $entry['geometry'],
+                    'boundary_source' => 'philippines-json-maps',
+                    'boundary_verified_at' => now(),
+                ]);
         }
 
         $this->command?->info("City boundaries linked: {$updated}");

@@ -45,6 +45,7 @@ function Register() {
   const [provinces, setProvinces] = useState([]);
   const [cities, setCities] = useState([]);
   const [barangays, setBarangays] = useState([]);
+  const [barangaysLoading, setBarangaysLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -66,9 +67,14 @@ function Register() {
 
   useEffect(() => {
     if (!form.city_id) return;
+    // Tracked separately from an empty list: until this resolves we don't yet
+    // know whether the city has a barangay list, and treating "still loading"
+    // as "no list" flashes the free-text fallback into view.
+    setBarangaysLoading(true);
     api.get('/barangays', { params: { city_id: form.city_id } })
       .then((response) => setBarangays(response.data))
-      .catch(() => setBarangays([]));
+      .catch(() => setBarangays([]))
+      .finally(() => setBarangaysLoading(false));
   }, [form.city_id]);
 
   useEffect(() => {
@@ -307,15 +313,22 @@ function Register() {
                   <label className="auth-field auth-field-full">
                     <span>Barangay</span>
                     <div className="auth-input-wrapper auth-input-plain">
-                      {barangays.length > 0 ? (
-                        <select name="barangay_id" onChange={handleChange} value={form.barangay_id}>
-                          <option value="" disabled>Select barangay</option>
+                      {barangays.length > 0 || barangaysLoading ? (
+                        <select disabled={barangaysLoading || !form.city_id} name="barangay_id" onChange={handleChange} value={form.barangay_id}>
+                          <option value="" disabled>
+                            {!form.city_id ? 'Select city first' : barangaysLoading ? 'Loading barangays…' : 'Select barangay'}
+                          </option>
                           {barangays.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                         </select>
                       ) : (
                         <input autoComplete="off" disabled={!form.city_id} name="barangay_name" onChange={handleChange} placeholder={form.city_id ? 'Barangay name' : 'Select city first'} type="text" value={form.barangay_name} />
                       )}
                     </div>
+                    {form.city_id && !barangaysLoading && barangays.length === 0 && (
+                      <p className="notice warning">
+                        No barangay list for this city yet — type the name and we&apos;ll add it.
+                      </p>
+                    )}
                   </label>
 
                   {isFirstForBarangay === true && (
