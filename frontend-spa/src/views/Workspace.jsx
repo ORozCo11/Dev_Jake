@@ -9231,6 +9231,15 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
         counts={counts}
         activeFilter={activeFilter}
         onFilterChange={setActiveFilter}
+        onTotalClick={() => {
+          setActiveFilter('');
+          setFilterCategory([]);
+          setFilterCapacity([]);
+          setFilterStatus([]);
+          setFilterRole([]);
+          setFilterOutcome([]);
+          setSearch('');
+        }}
       />
       <section className="panel module-filter-panel">
         <FilterBar
