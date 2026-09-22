@@ -11279,6 +11279,7 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
   const [readiness, setReadiness] = useState(null);
   const [checkingReadiness, setCheckingReadiness] = useState(false);
   const [reliability, setReliability] = useState(null);
+  const [mapOpen, setMapOpen] = useState(false);
   // Live-tracks the Edit form's Vehicle Type select so switching a vehicle
   // to a Water category shows Hull Material/Engine Type immediately,
   // instead of only after saving and reloading. Reset whenever a different
@@ -11520,43 +11521,30 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
         </section>
       ) : (
       <>
-      <div className="veh-dash">
-        <div className="veh-dash-left">
-          <section className="veh-card veh-info">
-            <div className="veh-card-head"><Icon name={vehicleIconName(vehicle.category?.domain)} size={16} /><h4>Vehicle Information</h4></div>
-            <div className="veh-info-body">
+      {!canManage ? (
+        <>
+          {/* Compact horizontal overview for custodian */}
+          <div className="veh-compact-overview">
+            {vehicle.photo_url && (
+              <div className="veh-compact-photo">
+                <PhotoCell alt={vehicle.vehicle_name} url={vehicle.photo_url} />
+              </div>
+            )}
+            <div className="veh-compact-details">
               <div className="veh-info-identity">
                 <h3>{vehicle.vehicle_name}</h3>
                 <span>{vehicle.category?.domain ?? 'Land'}.{vehicle.plate_number}</span>
               </div>
-              {vehicle.photo_url && (
-                <div className="veh-info-photo"><PhotoCell alt={vehicle.vehicle_name} url={vehicle.photo_url} /></div>
-              )}
               <dl className="veh-kv">
                 <div><dt>Vehicle Type</dt><dd>{vehicle.category?.category_name ?? 'Unassigned'}</dd></div>
-                <div><dt>Brand / Model</dt><dd>{`${vehicle.brand ?? '-'} ${vehicle.model ?? ''}`.trim() || '-'}</dd></div>
+                <div><dt>Brand / Model</dt><dd>{(`${vehicle.brand ?? '-'} ${vehicle.model ?? ''}`).trim() || '-'}</dd></div>
                 <div><dt>Year Model</dt><dd>{vehicle.year_model ?? '-'}</dd></div>
                 <div><dt>Capacity</dt><dd>{vehicle.capacity ?? '-'}</dd></div>
                 <div><dt>Color</dt><dd>{vehicle.vehicle_color ?? '-'}</dd></div>
-                {isWater && (
-                  <>
-                    <div><dt>Hull Material</dt><dd>{vehicle.hull_material ?? '-'}</dd></div>
-                    <div><dt>Engine Type</dt><dd>{vehicle.engine_type ?? '-'}</dd></div>
-                  </>
-                )}
                 <div><dt>Fuel Type</dt><dd>{vehicle.fuel_type ?? '-'}</dd></div>
               </dl>
             </div>
-            {vehicle.remarks && (
-              <div className="veh-remarks"><span className="veh-remarks-label">Remarks</span><p>{vehicle.remarks}</p></div>
-            )}
-          </section>
-        </div>
-
-        <div className="veh-dash-right">
-          <div className="veh-status-row">
-            <section className="veh-card veh-keydates">
-              <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Status &amp; Key Dates</h4></div>
+            <div className="veh-compact-status">
               <dl className="veh-kv">
                 <div><dt>Availability</dt><dd><StatusBadge value={vehicle.status} /></dd></div>
                 <div><dt>Condition</dt><dd><StatusBadge value={vehicle.condition} /></dd></div>
@@ -11569,36 +11557,13 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                   </dd></div>
                 )}
                 <div><dt>Current Location</dt><dd>{vehicle.current_location ?? '-'}</dd></div>
-                {vehicle.estimated_return_date && (
-                  <div><dt>Est. Return Date</dt><dd>{formatForecastDate(vehicle.estimated_return_date)}</dd></div>
-                )}
-                <div><dt>Date Added</dt><dd>{vehicle.created_at ? <QuietDate value={vehicle.created_at} /> : '-'}</dd></div>
                 <div><dt>Last Updated</dt><dd>{vehicle.updated_at ? <QuietDate value={vehicle.updated_at} /> : '-'}</dd></div>
               </dl>
-            </section>
-
-            <div className="veh-square-col">
-              <section className="veh-card veh-reports">
-                <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Reports</h4></div>
-                <div className="veh-reports-body">
-                  <select className="veh-reports-select" defaultValue="summary">
-                    <option value="summary">Vehicle Summary Report</option>
-                  </select>
-                  <button type="button" className="veh-reports-print-btn" onClick={() => window.print()} title="Print report" aria-label="Print report">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M6 9V3h12v6" />
-                      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                      <rect x="6" y="14" width="12" height="8" />
-                    </svg>
-                  </button>
-                </div>
-              </section>
-
-              <VehicleFiles vehicleId={vehicle.vehicle_id} canManage={canManageDocuments} onRequestConfirmation={onRequestConfirmation} />
             </div>
           </div>
 
-          <section className="veh-card veh-analytics">
+          {/* Analytics cards */}
+          <section className="veh-card veh-analytics" style={{ marginTop: 16 }}>
             <div className="veh-card-head"><Icon name="grid" size={16} /><h4>Analytics</h4></div>
             <div className="veh-stat-grid">
               <div className="veh-stat veh-stat-blue"><span>{vehMaintenance.length}</span><small>Maintenance Records</small></div>
@@ -11606,86 +11571,214 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
               <div className="veh-stat veh-stat-red"><span>{reliability?.failures_6mo ?? '—'}</span><small>Failures (6 mo)</small></div>
               <div className="veh-stat veh-stat-green"><span>₱{totalCost.toLocaleString()}</span><small>Total Maint. Cost</small></div>
             </div>
-            {costRows.length > 0 && (
-              <>
-                <p className="veh-mini-label">Maintenance cost by record</p>
-                <HorizontalBarChart rows={costRows} />
-              </>
+          </section>
+
+          {/* Collapsible map */}
+          <section className="veh-card" style={{ marginTop: 16 }}>
+            <div className="veh-card-head" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setMapOpen((o) => !o)}>
+              <Icon name="pin" size={16} />
+              <h4>Current Location — {vehicle.current_location ?? 'Unknown'}</h4>
+              <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--text-muted, #64748b)' }}>{mapOpen ? '▲ Hide Map' : '▼ View Map'}</span>
+            </div>
+            {mapOpen && (
+              <div className="veh-map-wrap">
+                <VehicleLocationMap lat={hub?.lat} lng={hub?.lng} label={vehicle.current_location} scrollWheelZoom />
+              </div>
             )}
           </section>
-        </div>
-      </div>
 
-      <section className="veh-card veh-map veh-map-wide">
-        <div className="veh-card-head"><Icon name="pin" size={16} /><h4>Current Location — {vehicle.current_location ?? 'Unknown'}</h4></div>
-        <div className="veh-map-wrap">
-          <VehicleLocationMap lat={hub?.lat} lng={hub?.lng} label={vehicle.current_location} scrollWheelZoom />
-        </div>
-      </section>
-
-      {/* Print-only — kept off-screen (see .veh-print-report), shown by the
-          Reports card's print button via window.print(). Portaled straight
-          to <body> so it never inherits the app shell's own responsive
-          collapse (that grid narrows unpredictably once Chromium's print
-          engine evaluates media queries against the paper width instead of
-          the screen viewport) and so normal document flow — not
-          position:fixed — is what lands on the page: a fixed element
-          gets reprinted on every page, which was duplicating this whole
-          report onto page 2. Reuses the report band/grid look so a
-          printed page still reads as a formal document: vehicle identity
-          on the left, VMS mark on the right, blue bands. */}
-      {createPortal(
-        <div className="veh-print-report">
-          <div className="veh-print-header">
-            <div className="veh-print-header-left">
-              <h2>{vehicle.vehicle_name}</h2>
-              <p>{vehicle.category?.domain ?? 'Land'}.{vehicle.plate_number}</p>
-            </div>
-            <div className="veh-print-header-right">
-              <Icon name="gear" size={48} className="topbar-gear-icon" filled />
-              <span className="vms-wordmark">vms</span>
+          {/* Reports and Files */}
+          <div className="veh-status-row" style={{ marginTop: 16 }}>
+            <section className="veh-card veh-reports" style={{ flex: 1 }}>
+              <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Reports</h4></div>
+              <div className="veh-reports-body">
+                <select className="veh-reports-select" defaultValue="summary">
+                  <option value="summary">Vehicle Summary Report</option>
+                </select>
+                <button type="button" className="veh-reports-print-btn" onClick={() => window.print()} title="Print report" aria-label="Print report">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 9V3h12v6" />
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                    <rect x="6" y="14" width="12" height="8" />
+                  </svg>
+                </button>
+              </div>
+            </section>
+            <div style={{ flex: 1 }}>
+              <VehicleFiles vehicleId={vehicle.vehicle_id} canManage={canManageDocuments} onRequestConfirmation={onRequestConfirmation} />
             </div>
           </div>
-          <div className="veh-print-body">
-            <div className="veh-print-media">
-              {vehicle.photo_url && (
-                <div className="veh-print-photo"><PhotoCell alt={vehicle.vehicle_name} url={vehicle.photo_url} /></div>
-              )}
-            </div>
-            <div className="veh-print-info">
-              <div className="veh-report-band">Vehicle Information</div>
-              <dl className="veh-report-grid">
-                <div><dt>{plateFieldLabel(vehicle.category?.domain)}</dt><dd>{vehicle.plate_number}</dd></div>
-                <div><dt>Vehicle Name</dt><dd>{vehicle.vehicle_name}</dd></div>
-                <div><dt>Vehicle Type</dt><dd>{vehicle.category?.category_name ?? 'Unassigned'}</dd></div>
-                <div><dt>Brand / Model</dt><dd>{`${vehicle.brand ?? '-'} ${vehicle.model ?? ''}`.trim() || '-'}</dd></div>
-                <div><dt>Year Model</dt><dd>{vehicle.year_model ?? '-'}</dd></div>
-                <div><dt>Capacity</dt><dd>{vehicle.capacity ?? '-'}</dd></div>
-                <div><dt>Color</dt><dd>{vehicle.vehicle_color ?? '-'}</dd></div>
-                <div><dt>Fuel Type</dt><dd>{vehicle.fuel_type ?? '-'}</dd></div>
-                {isWater && (
-                  <>
-                    <div><dt>Hull Material</dt><dd>{vehicle.hull_material ?? '-'}</dd></div>
-                    <div><dt>Engine Type</dt><dd>{vehicle.engine_type ?? '-'}</dd></div>
-                  </>
+        </>
+      ) : (
+        <>
+        <div className="veh-dash">
+          <div className="veh-dash-left">
+            <section className="veh-card veh-info">
+              <div className="veh-card-head"><Icon name={vehicleIconName(vehicle.category?.domain)} size={16} /><h4>Vehicle Information</h4></div>
+              <div className="veh-info-body">
+                <div className="veh-info-identity">
+                  <h3>{vehicle.vehicle_name}</h3>
+                  <span>{vehicle.category?.domain ?? 'Land'}.{vehicle.plate_number}</span>
+                </div>
+                {vehicle.photo_url && (
+                  <div className="veh-info-photo"><PhotoCell alt={vehicle.vehicle_name} url={vehicle.photo_url} /></div>
                 )}
-                <div><dt>Acquisition Cost</dt><dd>{vehicle.acquisition_cost != null ? `₱${Number(vehicle.acquisition_cost).toLocaleString()}` : '-'}</dd></div>
-                <div><dt>Status</dt><dd>{vehicle.status}</dd></div>
-                <div><dt>Condition</dt><dd>{vehicle.condition}</dd></div>
-                <div><dt>Current Location</dt><dd>{vehicle.current_location ?? '-'}</dd></div>
-                <div><dt>Date Added</dt><dd>{vehicle.created_at ? <QuietDate value={vehicle.created_at} /> : '-'}</dd></div>
-                <div><dt>Last Updated</dt><dd>{vehicle.updated_at ? <QuietDate value={vehicle.updated_at} /> : '-'}</dd></div>
-              </dl>
-            </div>
+                <dl className="veh-kv">
+                  <div><dt>Vehicle Type</dt><dd>{vehicle.category?.category_name ?? 'Unassigned'}</dd></div>
+                  <div><dt>Brand / Model</dt><dd>{`${vehicle.brand ?? '-'} ${vehicle.model ?? ''}`.trim() || '-'}</dd></div>
+                  <div><dt>Year Model</dt><dd>{vehicle.year_model ?? '-'}</dd></div>
+                  <div><dt>Capacity</dt><dd>{vehicle.capacity ?? '-'}</dd></div>
+                  <div><dt>Color</dt><dd>{vehicle.vehicle_color ?? '-'}</dd></div>
+                  {isWater && (
+                    <>
+                      <div><dt>Hull Material</dt><dd>{vehicle.hull_material ?? '-'}</dd></div>
+                      <div><dt>Engine Type</dt><dd>{vehicle.engine_type ?? '-'}</dd></div>
+                    </>
+                  )}
+                  <div><dt>Fuel Type</dt><dd>{vehicle.fuel_type ?? '-'}</dd></div>
+                </dl>
+              </div>
+              {vehicle.remarks && (
+                <div className="veh-remarks"><span className="veh-remarks-label">Remarks</span><p>{vehicle.remarks}</p></div>
+              )}
+            </section>
           </div>
-          <div className="veh-print-map-wide">
-            <div className="veh-report-band">Current Location — {vehicle.current_location ?? 'Unknown'}</div>
-            <div className="veh-print-map">
-              <VehicleLocationMap lat={hub?.lat} lng={hub?.lng} label={vehicle.current_location} />
+
+          <div className="veh-dash-right">
+            <div className="veh-status-row">
+              <section className="veh-card veh-keydates">
+                <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Status &amp; Key Dates</h4></div>
+                <dl className="veh-kv">
+                  <div><dt>Availability</dt><dd><StatusBadge value={vehicle.status} /></dd></div>
+                  <div><dt>Condition</dt><dd><StatusBadge value={vehicle.condition} /></dd></div>
+                  {readiness && READINESS_BADGE[readiness.state] && (
+                    <div><dt>Response Readiness</dt><dd>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.76rem', fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: READINESS_BADGE[readiness.state].bg, color: READINESS_BADGE[readiness.state].color, border: `1px solid ${READINESS_BADGE[readiness.state].border}` }}>
+                        <Icon name={READINESS_BADGE[readiness.state].icon} size={11} /> {READINESS_BADGE[readiness.state].label}
+                      </span>
+                      {readiness.last_checked && <div className="muted" style={{ fontSize: '0.72rem', marginTop: 3 }}>Last checked {formatDate(readiness.last_checked)}</div>}
+                    </dd></div>
+                  )}
+                  <div><dt>Current Location</dt><dd>{vehicle.current_location ?? '-'}</dd></div>
+                  {vehicle.estimated_return_date && (
+                    <div><dt>Est. Return Date</dt><dd>{formatForecastDate(vehicle.estimated_return_date)}</dd></div>
+                  )}
+                  <div><dt>Date Added</dt><dd>{vehicle.created_at ? <QuietDate value={vehicle.created_at} /> : '-'}</dd></div>
+                  <div><dt>Last Updated</dt><dd>{vehicle.updated_at ? <QuietDate value={vehicle.updated_at} /> : '-'}</dd></div>
+                </dl>
+              </section>
+
+              <div className="veh-square-col">
+                <section className="veh-card veh-reports">
+                  <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Reports</h4></div>
+                  <div className="veh-reports-body">
+                    <select className="veh-reports-select" defaultValue="summary">
+                      <option value="summary">Vehicle Summary Report</option>
+                    </select>
+                    <button type="button" className="veh-reports-print-btn" onClick={() => window.print()} title="Print report" aria-label="Print report">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 9V3h12v6" />
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                        <rect x="6" y="14" width="12" height="8" />
+                      </svg>
+                    </button>
+                  </div>
+                </section>
+
+                <VehicleFiles vehicleId={vehicle.vehicle_id} canManage={canManageDocuments} onRequestConfirmation={onRequestConfirmation} />
+              </div>
             </div>
+
+            <section className="veh-card veh-analytics">
+              <div className="veh-card-head"><Icon name="grid" size={16} /><h4>Analytics</h4></div>
+              <div className="veh-stat-grid">
+                <div className="veh-stat veh-stat-blue"><span>{vehMaintenance.length}</span><small>Maintenance Records</small></div>
+                <div className="veh-stat veh-stat-amber"><span>{openTickets + openIssues}</span><small>Open Items</small></div>
+                <div className="veh-stat veh-stat-red"><span>{reliability?.failures_6mo ?? '—'}</span><small>Failures (6 mo)</small></div>
+                <div className="veh-stat veh-stat-green"><span>₱{totalCost.toLocaleString()}</span><small>Total Maint. Cost</small></div>
+              </div>
+              {costRows.length > 0 && (
+                <>
+                  <p className="veh-mini-label">Maintenance cost by record</p>
+                  <HorizontalBarChart rows={costRows} />
+                </>
+              )}
+            </section>
           </div>
-        </div>,
-        document.body
+        </div>
+
+        <section className="veh-card veh-map veh-map-wide">
+          <div className="veh-card-head"><Icon name="pin" size={16} /><h4>Current Location — {vehicle.current_location ?? 'Unknown'}</h4></div>
+          <div className="veh-map-wrap">
+            <VehicleLocationMap lat={hub?.lat} lng={hub?.lng} label={vehicle.current_location} scrollWheelZoom />
+          </div>
+        </section>
+
+        {/* Print-only — kept off-screen (see .veh-print-report), shown by the
+            Reports card's print button via window.print(). Portaled straight
+            to <body> so it never inherits the app shell's own responsive
+            collapse (that grid narrows unpredictably once Chromium's print
+            engine evaluates media queries against the paper width instead of
+            the screen viewport) and so normal document flow — not
+            position:fixed — is what lands on the page: a fixed element
+            gets reprinted on every page, which was duplicating this whole
+            report onto page 2. Reuses the report band/grid look so a
+            printed page still reads as a formal document: vehicle identity
+            on the left, VMS mark on the right, blue bands. */}
+        {createPortal(
+          <div className="veh-print-report">
+            <div className="veh-print-header">
+              <div className="veh-print-header-left">
+                <h2>{vehicle.vehicle_name}</h2>
+                <p>{vehicle.category?.domain ?? 'Land'}.{vehicle.plate_number}</p>
+              </div>
+              <div className="veh-print-header-right">
+                <Icon name="gear" size={48} className="topbar-gear-icon" filled />
+                <span className="vms-wordmark">vms</span>
+              </div>
+            </div>
+            <div className="veh-print-body">
+              <div className="veh-print-media">
+                {vehicle.photo_url && (
+                  <div className="veh-print-photo"><PhotoCell alt={vehicle.vehicle_name} url={vehicle.photo_url} /></div>
+                )}
+              </div>
+              <div className="veh-print-info">
+                <div className="veh-report-band">Vehicle Information</div>
+                <dl className="veh-report-grid">
+                  <div><dt>{plateFieldLabel(vehicle.category?.domain)}</dt><dd>{vehicle.plate_number}</dd></div>
+                  <div><dt>Vehicle Name</dt><dd>{vehicle.vehicle_name}</dd></div>
+                  <div><dt>Vehicle Type</dt><dd>{vehicle.category?.category_name ?? 'Unassigned'}</dd></div>
+                  <div><dt>Brand / Model</dt><dd>{`${vehicle.brand ?? '-'} ${vehicle.model ?? ''}`.trim() || '-'}</dd></div>
+                  <div><dt>Year Model</dt><dd>{vehicle.year_model ?? '-'}</dd></div>
+                  <div><dt>Capacity</dt><dd>{vehicle.capacity ?? '-'}</dd></div>
+                  <div><dt>Color</dt><dd>{vehicle.vehicle_color ?? '-'}</dd></div>
+                  <div><dt>Fuel Type</dt><dd>{vehicle.fuel_type ?? '-'}</dd></div>
+                  {isWater && (
+                    <>
+                      <div><dt>Hull Material</dt><dd>{vehicle.hull_material ?? '-'}</dd></div>
+                      <div><dt>Engine Type</dt><dd>{vehicle.engine_type ?? '-'}</dd></div>
+                    </>
+                  )}
+                  <div><dt>Acquisition Cost</dt><dd>{vehicle.acquisition_cost != null ? `₱${Number(vehicle.acquisition_cost).toLocaleString()}` : '-'}</dd></div>
+                  <div><dt>Status</dt><dd>{vehicle.status}</dd></div>
+                  <div><dt>Condition</dt><dd>{vehicle.condition}</dd></div>
+                  <div><dt>Current Location</dt><dd>{vehicle.current_location ?? '-'}</dd></div>
+                  <div><dt>Date Added</dt><dd>{vehicle.created_at ? <QuietDate value={vehicle.created_at} /> : '-'}</dd></div>
+                  <div><dt>Last Updated</dt><dd>{vehicle.updated_at ? <QuietDate value={vehicle.updated_at} /> : '-'}</dd></div>
+                </dl>
+              </div>
+            </div>
+            <div className="veh-print-map-wide">
+              <div className="veh-report-band">Current Location — {vehicle.current_location ?? 'Unknown'}</div>
+              <div className="veh-print-map">
+                <VehicleLocationMap lat={hub?.lat} lng={hub?.lng} label={vehicle.current_location} />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+        </>
       )}
       </>
       )}
