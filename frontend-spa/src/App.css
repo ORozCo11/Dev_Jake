@@ -4959,11 +4959,16 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
 .vehicle-profile-header {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 20px;
+  gap: 12px;
+  margin-bottom: 16px;
   padding-bottom: 18px;
   border-bottom: 1px solid #e2e8f0;
   flex-wrap: wrap;
+}
+.vehicle-profile-header-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .vehicle-profile-photo {
   width: 88px;
@@ -4998,7 +5003,7 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   gap: 16px;
 }
 .veh-dash-left {
-  flex: 0 0 380px;
+  flex: 0 0 440px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -5285,6 +5290,7 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
 
 .veh-kv { margin: 0; padding: 16px 18px; display: grid; gap: 11px; flex: 1; min-width: 180px; }
 .veh-info-body .veh-kv { padding: 0; }
+.veh-keydates .veh-kv { grid-template-columns: 1fr 1fr; align-items: start; }
 .veh-kv > div { display: flex; flex-direction: column; gap: 2px; }
 .veh-kv dt {
   font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
@@ -5327,6 +5333,7 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   letter-spacing: 0.06em; color: var(--text-muted, #64748b);
 }
 .veh-analytics .horizontal-bars, .veh-analytics .empty-state { padding: 0 18px 16px; }
+.veh-analytics { overflow: visible; }
 
 .veh-map-wrap, .issue-view-map-wrap { height: 300px; width: 100%; }
 .veh-map-canvas { height: 100%; width: 100%; }
@@ -5419,7 +5426,7 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   min-width: 0;
 }
 .veh-square-col {
-  flex: 0 0 300px;
+  flex: 0 0 340px;
   display: flex;
   flex-direction: column;
   gap: 16px;

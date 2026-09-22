@@ -11433,6 +11433,10 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
   return (
     <ModulePanel description="Full profile, maintenance, and tickets for this vehicle.">
       <div className="vehicle-profile-header">
+        <div className="vehicle-profile-header-identity">
+          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>{vehicle.vehicle_name}</h3>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted, #64748b)' }}>{vehicle.category?.domain ?? 'Land'}.{vehicle.plate_number}</span>
+        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
           {canManage && vehicle.status !== 'Decommissioned' && !editing && (
             <button className="btn-sm primary-button" type="button" onClick={() => setEditing(true)}>
