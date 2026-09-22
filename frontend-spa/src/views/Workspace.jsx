@@ -7622,11 +7622,12 @@ function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, 
 
 function maintenanceColumns(role, setEditTarget, updateRecord, onViewRecord) {
   const columns = [
-    { label: 'ID', width: '4%', render: (row) => row.maintenance_id },
-    { label: 'Vehicle', width: '15%', render: (row) => <VehicleCell vehicle={row.vehicle} /> },
-    { label: 'Plate', width: '8%', render: (row) => row.vehicle?.plate_number ?? '-' },
+    { label: 'ID', align: 'center', width: '4%', render: (row) => row.maintenance_id },
+    { label: 'Vehicle', align: 'center', width: '15%', render: (row) => <VehicleCell vehicle={row.vehicle} /> },
+    { label: 'Plate', align: 'center', width: '8%', render: (row) => row.vehicle?.plate_number ?? '-' },
     {
       label: 'Type',
+      align: 'center',
       width: '9%',
       render: (row) => (
         <div>
@@ -7651,15 +7652,16 @@ function maintenanceColumns(role, setEditTarget, updateRecord, onViewRecord) {
         </div>
       ),
     },
-    { label: 'Source', width: '9%', render: (row) => <StatusBadge value={row.source} /> },
-    { label: 'Problem / Reason', width: '14%', className: 'cell-text', render: (row) => <ExpandableText text={row.problem_reason} /> },
-    { label: 'Personnel', width: '10%', render: (row) => <UserAvatarName user={row.maintenance_personnel} fallback={row.performed_by_other ?? '-'} /> },
-    { label: 'Progress', width: '8%', render: (row) => <StatusBadge value={row.progress_status} /> },
-    { label: 'Verification', width: '8%', render: (row) => row.verification_result ? <StatusBadge value={row.verification_result} /> : '-' },
-    { label: 'Date Started', width: '5%', render: (row) => <DateBadge value={row.date_started} /> },
-    { label: 'Date Completed', width: '5%', render: (row) => <DateBadge value={row.date_completed} /> },
+    { label: 'Source', align: 'center', width: '9%', render: (row) => <StatusBadge value={row.source} /> },
+    { label: 'Problem / Reason', width: '10%', className: 'cell-text', render: (row) => <ExpandableText text={row.problem_reason} /> },
+    { label: 'Personnel', align: 'center', width: '10%', render: (row) => <UserAvatarName user={row.maintenance_personnel} fallback={row.performed_by_other ?? '-'} /> },
+    { label: 'Progress', align: 'center', width: '8%', render: (row) => <StatusBadge value={row.progress_status} /> },
+    { label: 'Verification', align: 'center', width: '8%', render: (row) => row.verification_result ? <StatusBadge value={row.verification_result} /> : '-' },
+    { label: 'Date Started', align: 'center', width: '8%', render: (row) => <DateBadge value={row.date_started} /> },
+    { label: 'Date Completed', align: 'center', width: '8%', render: (row) => <DateBadge value={row.date_completed} /> },
     {
       label: 'Action',
+      align: 'center',
       width: '8%',
       render: (row) => (
         <div className="row-actions" style={{ flexWrap: 'wrap' }}>
