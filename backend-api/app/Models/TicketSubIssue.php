@@ -30,6 +30,9 @@ class TicketSubIssue extends Model
         'title',
         'status',
         'assigned_mechanic_id',
+        // A Custodian's proposed mechanic, before an Admin has approved the
+        // ticket — see the 2026_09_28_000002 migration's docblock.
+        'suggested_mechanic_id',
         'maintenance_type',
         // How this sub-issue's repair was/will be carried out — in_house,
         // cannibalized, or external. Set at ticket creation when already
@@ -108,6 +111,11 @@ class TicketSubIssue extends Model
     public function assignedMechanic()
     {
         return $this->belongsTo(User::class, 'assigned_mechanic_id');
+    }
+
+    public function suggestedMechanic()
+    {
+        return $this->belongsTo(User::class, 'suggested_mechanic_id');
     }
 
     public function sourceVehicle()

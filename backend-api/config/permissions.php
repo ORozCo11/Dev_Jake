@@ -1,0 +1,167 @@
+<?php
+
+// Single source of truth for role -> ability grants (VMS-IMPROVEMENT-PLAN.md
+// Phase B1). Each ability maps to the roles allowed to perform it; ownership
+// and live-state conditions (e.g. "only your own Pending report", "not the
+// mechanic who logged this repair", "not the barangay's last active Admin")
+// are NOT expressed here — they stay as separate guard calls in the
+// controller, the same way GuardsLastAdmin already works, because they
+// depend on a database record, not just the actor's role.
+//
+// This file reflected CURRENT (Phase A) behavior when it was first written
+// for Phase B1. Phase B4 has since tightened the role lists below to match
+// the target role model in VMS-IMPROVEMENT-PLAN.md — see the comments next
+// to each changed ability for what moved and why.
+
+return [
+    // Vehicle types
+    'vehicle_type.create' => ['Admin'],
+    'vehicle_type.edit' => ['Admin'],
+    'vehicle_type.delete' => ['Admin'],
+
+    // Vehicles
+    'vehicle.create' => ['Admin'],
+    'vehicle.edit' => ['Admin'],
+    'vehicle.archive' => ['Admin'],
+    'vehicle.restore' => ['Admin'],
+    'vehicle.decommission' => ['Admin'],
+    'vehicle.readiness_check' => ['Admin', 'Custodian'],
+    'vehicle.mark_available' => ['Admin', 'Custodian'],
+    'vehicle.update_location' => ['Admin'],
+    'vehicle.view_history' => ['Admin'],
+
+    // Hubs
+    'hub.create' => ['Admin'],
+    'hub.edit' => ['Admin'],
+    'hub.delete' => ['Admin'],
+
+    // Condition checks
+    'condition.create' => ['Admin', 'Custodian'],
+    // Custodian may still edit, but only their OWN check (FleetController
+    // enforces the ownership half via checked_by) — Admin edits any.
+    'condition.edit' => ['Admin', 'Custodian'],
+    // Phase B4 — delete narrowed to Admin only (was Admin+Custodian, any row).
+    'condition.delete' => ['Admin'],
+
+    // Issue reports
+    'issue.view' => ['Admin', 'Custodian', 'Maintenance Personnel'],
+    'issue.create' => ['Admin', 'Custodian', 'Maintenance Personnel'],
+    // Phase B4 — Maintenance Personnel no longer edits issue reports (their
+    // Status+Remarks form and the whole module are removed); Custodian's
+    // existing own-report-while-Pending narrowing is unaffected.
+    'issue.edit' => ['Admin', 'Custodian'],
+    'issue.delete' => ['Admin'],
+
+    // Vehicle documents — Phase B4: Maintenance Personnel is view-only
+    // (dropped from all three); Custodian may upload and edit their OWN
+    // upload (FleetController enforces the ownership half via added_by),
+    // but delete is Admin-only.
+    'document.create' => ['Admin', 'Custodian'],
+    'document.edit' => ['Admin', 'Custodian'],
+    'document.delete' => ['Admin'],
+
+    // Maintenance records (standalone ledger) — Phase B4: only Admin makes
+    // manual/historical entries now; Custodian is read-only and Maintenance
+    // Personnel has no involvement at all outside the auto-generated ledger
+    // line a confirmed ticket sub-issue creates.
+    'record.create' => ['Admin'],
+    'record.edit' => ['Admin'],
+    'record.verify' => ['Custodian'],
+    'record.confirm' => ['Admin'],
+    'record.decision_close' => ['Admin'],
+
+    // Maintenance schedules — REVERSED after Phase B4: the original code's
+    // own reasoning (Custodian has the day-to-day visibility into a
+    // vehicle's condition; booking a date isn't a cost/risk decision the
+    // way completing it is) turned out to be right. Custodian owns
+    // creation; Admin keeps oversight (edit/cancel/reassign any of them,
+    // not just their own) without originating new ones. `schedule.suggest`
+    // is now redundant — Custodian can just create directly — kept only
+    // because SOMETHING still calls it; safe to retire once nothing does.
+    'schedule.create' => ['Custodian'],
+    'schedule.suggest' => ['Admin', 'Custodian'],
+    // Custodian may edit their OWN created entry (ownership enforced in
+    // FleetController::updateSchedule, same pattern as condition.edit);
+    // Admin edits any.
+    'schedule.edit' => ['Admin', 'Custodian'],
+    'schedule.reassign' => ['Admin'],
+    'schedule.complete' => ['Admin', 'Maintenance Personnel'],
+    'schedule.delete' => ['Admin'],
+    'schedule.restore' => ['Admin'],
+
+    // Reports & fleet-operational activity log
+    'report.generate' => ['Admin'],
+    'activity_log.view' => ['Admin'],
+
+    // Tickets
+    'ticket.view_open_for_vehicle' => ['Admin'],
+    'ticket.view_archives' => ['Admin'],
+    'ticket.check_recurrence' => ['Admin', 'Custodian'],
+    'ticket.create' => ['Admin'],
+    // Custodian's own path in — a proposal that needs Admin's approve/
+    // decline before it's a real, live ticket. Admin keeps ticket.create
+    // for when they spot something themselves; this is additive, not a
+    // replacement.
+    'ticket.propose' => ['Custodian'],
+    'ticket.approve' => ['Admin'],
+    'ticket.decline' => ['Admin'],
+    'ticket.inspect' => ['Custodian'],
+    'ticket.reassign_custodian' => ['Admin'],
+    'ticket.close' => ['Admin'],
+    'ticket.cancel' => ['Admin'],
+    'ticket.uncancel' => ['Admin'],
+    'ticket.delete' => ['Admin'],
+    'ticket.reopen_archived' => ['Admin'],
+
+    // Sub-issues
+    'subissue.create' => ['Custodian', 'Maintenance Personnel'],
+    'subissue.assign_mechanic' => ['Admin'],
+    'subissue.reassign_mechanic' => ['Admin'],
+    'subissue.log_repair' => ['Maintenance Personnel'],
+    'subissue.verify' => ['Custodian', 'Admin'],
+    'subissue.confirm' => ['Admin'],
+    'subissue.reopen_confirmed' => ['Admin'],
+    'subissue.defer' => ['Admin'],
+
+    // Cannibalized-repair approval
+    'repair.approve_cannibalized' => ['Admin'],
+    'repair.reject_cannibalized' => ['Admin'],
+
+    // Catalogs (fault categories, maintenance types — same two rules today,
+    // deliberately collapsed from 6 checks into 3 abilities). Phase B4:
+    // create narrowed to Admin only — everyone else picks "Other" + a note
+    // instead of minting a new global catalog value.
+    'catalog.create' => ['Admin'],
+    'catalog.edit' => ['Admin'],
+    'catalog.delete' => ['Admin'],
+
+    // Users (barangay-scoped, managed by that barangay's Admin)
+    'user.view' => ['Admin'],
+    'user.create' => ['Admin'],
+    'user.edit' => ['Admin'],
+    'user.deactivate' => ['Admin'],
+    'user.activate' => ['Admin'],
+    'registration_code.view' => ['Admin'],
+    'registration_code.regenerate' => ['Admin'],
+
+    // Impersonation
+    'impersonation.start' => ['Admin', 'Super Admin'],
+
+    // Super Admin platform administration
+    'barangay.view_all' => ['Super Admin'],
+    'barangay.create' => ['Super Admin'],
+    'barangay.refresh_boundary' => ['Super Admin'],
+    'barangay.view_registration_code' => ['Super Admin'],
+    'barangay.regenerate_registration_code' => ['Super Admin'],
+    'user.view_all_platform' => ['Super Admin'],
+    'user.activate_platform' => ['Super Admin'],
+    'user.deactivate_platform' => ['Super Admin'],
+    'user.reject' => ['Super Admin'],
+    'user.view_pending' => ['Super Admin'],
+    'user.change_role_platform' => ['Super Admin'],
+    'activity_log.view_platform' => ['Super Admin'],
+    'concern_report.view' => ['Super Admin'],
+    'concern_report.resolve' => ['Super Admin'],
+    'concern_report.reopen' => ['Super Admin'],
+    'concern_report.delete' => ['Super Admin'],
+];

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesAbilities;
 use App\Http\Controllers\Concerns\ChecksRecurrence;
 use App\Http\Controllers\Concerns\GuardsLastAdmin;
 use App\Http\Controllers\Concerns\UploadsImages;
@@ -33,6 +34,7 @@ class FleetController extends Controller
     use UploadsImages;
     use ChecksRecurrence;
     use GuardsLastAdmin;
+    use AuthorizesAbilities;
 
     private const HULL_MATERIAL_OPTIONS = ['Fiberglass', 'Aluminum', 'Steel', 'Wood', 'Rubber/Inflatable'];
 
@@ -197,6 +199,11 @@ class FleetController extends Controller
                 'ticketWorkOrders' => TicketSubIssue::where('assigned_mechanic_id', $request->user()->id)
                     ->where('status', 'Under Repair')
                     ->count(),
+                // Admin's queue of Custodian-proposed tickets awaiting
+                // approve/decline (TicketController::proposeTicket).
+                'ticketProposals' => $user->hasRole('Admin')
+                    ? MaintenanceTicket::where('status', 'Pending Approval')->count()
+                    : 0,
             ],
             'vehicles_by_type' => Vehicle::query()
                 ->join('vehicle_categories', 'vehicles.category_id', '=', 'vehicle_categories.category_id')
@@ -693,7 +700,7 @@ class FleetController extends Controller
 
     public function storeCategory(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle_type.create');
 
         $data = $request->validate([
             'category_name' => ['required', 'string', 'max:255', 'unique:vehicle_categories,category_name'],
@@ -709,7 +716,7 @@ class FleetController extends Controller
 
     public function updateCategory(Request $request, VehicleCategory $category)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle_type.edit');
 
         $data = $request->validate([
             'category_name' => [
@@ -730,7 +737,7 @@ class FleetController extends Controller
 
     public function deleteCategory(Request $request, VehicleCategory $category)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle_type.delete');
 
         // VehicleCategory is a global/shared table (categories.category_id
         // has a RESTRICT FK from vehicles.category_id), but Vehicle itself is
@@ -754,7 +761,20 @@ class FleetController extends Controller
     public function vehicles(Request $request)
     {
         $this->syncVehicleStatuses();
+        $user = $request->user();
         $query = Vehicle::with(['category', 'archivedBy']);
+
+        // A pure Maintenance Personnel account only sees vehicles tied to
+        // their own assigned sub-issues or schedules — not the whole
+        // barangay fleet (VMS-IMPROVEMENT-PLAN.md Phase B3). No status filter on
+        // the assignment itself: they should still see a vehicle's past
+        // repairs after their work on it is done.
+        if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
+            $query->where(function ($scoped) use ($user) {
+                $scoped->orWhereHas('tickets.subIssues', fn ($q) => $q->where('assigned_mechanic_id', $user->id))
+                    ->orWhereHas('schedules', fn ($q) => $q->where('assigned_to', $user->id));
+            });
+        }
 
         if ($request->filled('q')) {
             $search = $request->string('q');
@@ -806,7 +826,7 @@ class FleetController extends Controller
 
     public function storeVehicle(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle.create');
 
         $data = $this->validateVehicle($request);
 
@@ -833,7 +853,7 @@ class FleetController extends Controller
 
     public function updateVehicle(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle.edit');
 
         $data = $this->validateVehicle($request, $vehicle);
 
@@ -874,7 +894,7 @@ class FleetController extends Controller
 
     public function archiveVehicle(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle.archive');
 
         $openTickets = MaintenanceTicket::where('vehicle_id', $vehicle->vehicle_id)
             ->whereNotIn('status', ['Closed', 'Cancelled'])
@@ -899,7 +919,7 @@ class FleetController extends Controller
 
     public function restoreVehicle(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle.restore');
 
         // Restore reverses either a temporary archive OR a decommission (an
         // Admin undoing a mistaken write-off) — both bring the unit back to
@@ -939,7 +959,7 @@ class FleetController extends Controller
      */
     public function decommissionVehicle(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle.decommission');
 
         abort_if($vehicle->status === 'Decommissioned', 422, 'This vehicle is already decommissioned.');
 
@@ -980,7 +1000,7 @@ class FleetController extends Controller
      */
     public function storeReadinessCheck(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin', 'Custodian']);
+        $this->requireAbility($request, 'vehicle.readiness_check');
         abort_if(
             in_array($vehicle->status, ['Inactive', 'Decommissioned'], true),
             422,
@@ -1036,7 +1056,7 @@ class FleetController extends Controller
      */
     public function markVehicleAvailable(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin', 'Custodian']);
+        $this->requireAbility($request, 'vehicle.mark_available');
 
         abort_if(
             in_array($vehicle->status, ['Inactive', 'Decommissioned'], true),
@@ -1115,7 +1135,7 @@ class FleetController extends Controller
 
     public function storeLocation(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle.update_location');
 
         $data = $request->validate([
             'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
@@ -1140,6 +1160,13 @@ class FleetController extends Controller
 
     public function conditions(Request $request)
     {
+        // Condition checks are an Admin/Custodian tool; Maintenance Personnel
+        // never performs or needs to browse them (VMS-IMPROVEMENT-PLAN.md Phase B3).
+        $user = $request->user();
+        if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
+            return collect();
+        }
+
         $query = VehicleConditionCheck::with(['vehicle.category', 'checkedBy', 'resultingTicket:ticket_id,status,ticket_title']);
 
         $query->when($request->filled('vehicle_id'), fn ($q) => $q->where('vehicle_id', $request->vehicle_id))
@@ -1150,7 +1177,7 @@ class FleetController extends Controller
 
     public function storeCondition(Request $request)
     {
-        $this->requireRole($request, ['Admin', 'Custodian']);
+        $this->requireAbility($request, 'condition.create');
 
         $data = $request->validate([
             'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
@@ -1187,7 +1214,13 @@ class FleetController extends Controller
 
     public function updateCondition(Request $request, VehicleConditionCheck $condition)
     {
-        $this->requireRole($request, ['Admin', 'Custodian']);
+        $this->requireAbility($request, 'condition.edit');
+
+        // Phase B4 — Admin edits any check; a Custodian may only edit the
+        // one they themselves performed.
+        if (!$request->user()->hasRole('Admin')) {
+            abort_unless($condition->checked_by === $request->user()->id, 403, 'You can only edit a condition check you performed yourself.');
+        }
 
         $data = $request->validate([
             'vehicle_id' => ['sometimes', 'exists:vehicles,vehicle_id'],
@@ -1222,7 +1255,7 @@ class FleetController extends Controller
 
     public function deleteCondition(Request $request, VehicleConditionCheck $condition)
     {
-        $this->requireRole($request, ['Admin', 'Custodian']);
+        $this->requireAbility($request, 'condition.delete');
 
         DB::transaction(function () use ($condition, $request) {
             $vehicle = $condition->vehicle;
@@ -1268,7 +1301,7 @@ class FleetController extends Controller
      */
     public function showIssue(Request $request, VehicleIssueReport $issue)
     {
-        $this->requireRole($request, ['Admin', 'Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'issue.view');
 
         return $issue->load(['vehicle.category', 'reportedBy', 'maintenanceTicket']);
     }
@@ -1283,7 +1316,7 @@ class FleetController extends Controller
      */
     public function checkVehicleRecurrence(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin', 'Custodian']);
+        $this->requireAbility($request, 'ticket.check_recurrence');
 
         $data = $request->validate([
             'fault_category' => ['nullable', 'string'],
@@ -1297,6 +1330,15 @@ class FleetController extends Controller
 
     public function issues(Request $request)
     {
+        $user = $request->user();
+
+        // Maintenance Personnel report a fault they find through a sub-issue
+        // on their own assigned ticket instead — they have no reason to
+        // browse anyone else's filed reports (VMS-IMPROVEMENT-PLAN.md Phase B3).
+        if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
+            return collect();
+        }
+
         // Issues on retired (Inactive/Decommissioned) vehicles are excluded —
         // a retired vehicle is out of the fleet, so its reports shouldn't
         // clutter the list.
@@ -1332,7 +1374,7 @@ class FleetController extends Controller
         // they found themselves while self-filing a standalone maintenance
         // record (the emergency/field-repair path) — not a general-purpose
         // reporting permission for them elsewhere.
-        $this->requireRole($request, ['Admin', 'Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'issue.create');
 
         $data = $request->validate([
             'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
@@ -1382,7 +1424,7 @@ class FleetController extends Controller
 
     public function updateIssue(Request $request, VehicleIssueReport $issue)
     {
-        $this->requireRole($request, ['Admin', 'Maintenance Personnel', 'Custodian']);
+        $this->requireAbility($request, 'issue.edit');
 
         if ($request->user()->hasRole('Custodian') && !$request->user()->hasAnyRole(['Admin', 'Maintenance Personnel'])) {
             abort_unless($issue->reported_by === $request->user()->id, 403, 'You can only edit your own issue reports.');
@@ -1465,7 +1507,7 @@ class FleetController extends Controller
             abort_unless($issue->reported_by === $user->id, 403, 'You can only delete your own issue reports.');
             abort_unless($issue->status === 'Pending', 422, 'This issue has already been reviewed and can no longer be deleted.');
         } else {
-            $this->requireRole($request, ['Admin']);
+            $this->requireAbility($request, 'issue.delete');
         }
 
         $this->log($request, 'Delete', 'Vehicle Issue Reports', $issue->issue_report_id, "Deleted issue report #{$issue->issue_report_id}");
@@ -1482,7 +1524,7 @@ class FleetController extends Controller
      */
     public function openIssuesForVehicle(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin', 'Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'issue.view');
 
         return VehicleIssueReport::where('vehicle_id', $vehicle->vehicle_id)
             ->whereNot('status', 'Resolved')
@@ -1505,7 +1547,7 @@ class FleetController extends Controller
 
     public function storeVehicleDocument(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin', 'Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'document.create');
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -1533,7 +1575,13 @@ class FleetController extends Controller
 
     public function updateVehicleDocument(Request $request, VehicleDocument $document)
     {
-        $this->requireRole($request, ['Admin', 'Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'document.edit');
+
+        // Phase B4 — Admin edits any document; a Custodian may only edit
+        // the one they themselves uploaded.
+        if (!$request->user()->hasRole('Admin')) {
+            abort_unless($document->added_by === $request->user()->id, 403, 'You can only edit a document you uploaded yourself.');
+        }
 
         $data = $request->validate([
             'title' => ['sometimes', 'string', 'max:255'],
@@ -1554,7 +1602,7 @@ class FleetController extends Controller
 
     public function destroyVehicleDocument(Request $request, VehicleDocument $document)
     {
-        $this->requireRole($request, ['Admin', 'Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'document.delete');
 
         $this->log($request, 'Delete', 'Vehicle Documents', $document->document_id, "Deleted document \"{$document->title}\"");
         $document->delete();
@@ -1564,6 +1612,13 @@ class FleetController extends Controller
 
     public function maintenanceRecords(Request $request)
     {
+        // Maintenance Personnel see a vehicle's past repairs through its own
+        // profile instead of a barangay-wide ledger (VMS-IMPROVEMENT-PLAN.md Phase B3).
+        $user = $request->user();
+        if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
+            return collect();
+        }
+
         $query = VehicleMaintenanceRecord::with([
             'vehicle.category',
             'sourceVehicle',
@@ -1611,7 +1666,7 @@ class FleetController extends Controller
 
     public function storeMaintenanceRecord(Request $request)
     {
-        $this->requireRole($request, ['Admin', 'Maintenance Personnel', 'Custodian']);
+        $this->requireAbility($request, 'record.create');
 
         $data = $request->validate([
             'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
@@ -1769,7 +1824,7 @@ class FleetController extends Controller
 
     public function updateMaintenanceRecord(Request $request, VehicleMaintenanceRecord $record)
     {
-        $this->requireRole($request, ['Admin', 'Maintenance Personnel', 'Custodian']);
+        $this->requireAbility($request, 'record.edit');
 
         $data = $request->validate([
             'source_vehicle_id' => ['nullable', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
@@ -1906,7 +1961,7 @@ class FleetController extends Controller
 
     public function verifyMaintenance(Request $request, VehicleMaintenanceRecord $record)
     {
-        $this->requireRole($request, ['Custodian']);
+        $this->requireAbility($request, 'record.verify');
 
         abort_unless(
             $record->progress_status === 'For Verification',
@@ -1973,7 +2028,7 @@ class FleetController extends Controller
 
     public function confirmMaintenance(Request $request, VehicleMaintenanceRecord $record)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'record.confirm');
 
         abort_unless(
             $record->progress_status === 'For Verification' && $record->verification_result === 'Passed',
@@ -2058,7 +2113,7 @@ class FleetController extends Controller
      */
     public function decisionCloseMaintenance(Request $request, VehicleMaintenanceRecord $record)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'record.decision_close');
 
         abort_if(
             $record->progress_status === 'Completed',
@@ -2136,6 +2191,7 @@ class FleetController extends Controller
 
     public function schedules(Request $request)
     {
+        $user = $request->user();
         $query = VehicleMaintenanceSchedule::with([
             'vehicle.category',
             'createdBy',
@@ -2148,6 +2204,13 @@ class FleetController extends Controller
             'resultingMaintenance.verifiedBy',
             'resultingMaintenance.confirmedBy',
         ]);
+
+        // A pure Maintenance Personnel account only sees schedules assigned
+        // to them — Admin and Custodian keep the full barangay-wide list
+        // (VMS-IMPROVEMENT-PLAN.md Phase B3).
+        if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
+            $query->where('assigned_to', $user->id);
+        }
 
         $query->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('maintenance_type'), fn ($q) => $q->where('maintenance_type', $request->maintenance_type));
@@ -2165,12 +2228,12 @@ class FleetController extends Controller
 
     public function storeSchedule(Request $request)
     {
-        // Custodian included: they're the one with daily visibility into a
-        // vehicle's condition, and proposing WHEN to look at something isn't
-        // a commitment of cost or work — that still only happens at
-        // completeSchedule(), which the Custodian cannot do. Scheduling is
-        // just a calendar entry, not a decision that needs gatekeeping.
-        $this->requireRole($request, ['Admin', 'Maintenance Personnel', 'Custodian']);
+        // Custodian books directly — they have the day-to-day visibility
+        // into a vehicle's condition, and a date on a calendar isn't yet a
+        // cost/risk commitment the way completing it is. Admin keeps
+        // oversight (edit/cancel/reassign any of them) without needing to
+        // originate one.
+        $this->requireAbility($request, 'schedule.create');
 
         $data = $request->validate([
             'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
@@ -2183,20 +2246,22 @@ class FleetController extends Controller
             // null/absent = one-time; otherwise the interval (months) to auto-
             // schedule the next service when this one is completed.
             'recurrence_months' => ['nullable', 'integer', 'min:1', 'max:60'],
+            // A confirmed decision to proceed despite checkScheduleConflicts()
+            // below — the whole point is this NEVER blocks outright, only
+            // asks for an explicit yes once the conflict is shown.
+            'confirm_conflicts' => ['nullable', 'boolean'],
         ]);
 
         $data['maintenance_type'] = MaintenanceType::resolve($data['maintenance_type']);
 
-        // Guard against double-booking: one active (Scheduled) entry per
-        // vehicle per date is enough — a second one is almost always a mistake.
-        $alreadyBooked = VehicleMaintenanceSchedule::where('vehicle_id', $data['vehicle_id'])
-            ->whereDate('scheduled_date', $data['scheduled_date'])
-            ->where('status', 'Scheduled')
-            ->exists();
-        abort_if($alreadyBooked, 422, 'This vehicle already has a maintenance schedule on that date.');
+        $vehicle = Vehicle::findOrFail($data['vehicle_id']);
 
-        $schedule = DB::transaction(function () use ($data, $request) {
-            $vehicle = Vehicle::findOrFail($data['vehicle_id']);
+        $conflicts = $this->checkScheduleConflicts($vehicle, $data['scheduled_date']);
+        if ($conflicts && !$request->boolean('confirm_conflicts')) {
+            return response()->json($conflicts, 409);
+        }
+
+        $schedule = DB::transaction(function () use ($data, $request, $vehicle) {
             // A new schedule always starts Scheduled — Completed/Cancelled are
             // only ever reached via completeSchedule()/updateSchedule(), never
             // picked at creation time.
@@ -2223,13 +2288,88 @@ class FleetController extends Controller
         return response()->json($schedule->load(['vehicle.category', 'createdBy', 'assignedToUser']), 201);
     }
 
+    /**
+     * Warning-not-a-block for a new/moved schedule date: a same-vehicle
+     * same-day conflict, and/or the barangay's daily volume crossing
+     * config('scheduling.daily_volume_warning_threshold'). Returns null when
+     * there's nothing to flag; otherwise the caller re-submits with
+     * confirm_conflicts=true to proceed anyway. Deliberately never aborts —
+     * the whole point is the decision stays with the person booking it.
+     */
+    private function checkScheduleConflicts(Vehicle $vehicle, string $date, ?int $excludeScheduleId = null): ?array
+    {
+        $sameVehicleConflict = VehicleMaintenanceSchedule::where('vehicle_id', $vehicle->vehicle_id)
+            ->whereDate('scheduled_date', $date)
+            ->where('status', 'Scheduled')
+            ->when($excludeScheduleId, fn ($q) => $q->where('schedule_id', '!=', $excludeScheduleId))
+            ->exists();
+
+        $dailyCount = VehicleMaintenanceSchedule::whereHas('vehicle', fn ($q) => $q->where('barangay_id', $vehicle->barangay_id))
+            ->whereDate('scheduled_date', $date)
+            ->where('status', 'Scheduled')
+            ->when($excludeScheduleId, fn ($q) => $q->where('schedule_id', '!=', $excludeScheduleId))
+            ->count();
+
+        $threshold = config('scheduling.daily_volume_warning_threshold');
+        $busyDay = $dailyCount >= $threshold;
+
+        if (!$sameVehicleConflict && !$busyDay) {
+            return null;
+        }
+
+        $messages = [];
+        if ($sameVehicleConflict) {
+            $messages[] = "{$vehicle->vehicle_name} already has a maintenance schedule on that date.";
+        }
+        if ($busyDay) {
+            $messages[] = "This barangay already has {$dailyCount} maintenance schedules on that date.";
+        }
+
+        return [
+            'warning' => true,
+            'same_vehicle_conflict' => $sameVehicleConflict,
+            'daily_volume_count' => $dailyCount,
+            'daily_volume_threshold' => $threshold,
+            'message' => implode(' ', $messages) . ' Are you sure you want to add another?',
+        ];
+    }
+
+    // Phase B4 — replaces a Custodian's old ability to book a schedule
+    // directly. This creates NO row at all, only a notification: the Admin
+    // still makes the actual scheduling decision.
+    public function suggestSchedule(Request $request)
+    {
+        $this->requireAbility($request, 'schedule.suggest');
+
+        $data = $request->validate([
+            'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
+            'maintenance_type' => ['required', 'string', 'max:150'],
+            'notes' => ['nullable', 'string'],
+        ]);
+
+        $vehicle = Vehicle::findOrFail($data['vehicle_id']);
+        $note = $data['notes'] ?? null;
+
+        $this->notifyAdmins(
+            'Maintenance Suggested',
+            "{$request->user()->name} suggests scheduling {$data['maintenance_type']} for {$vehicle->vehicle_name}."
+                . ($note ? " Note: {$note}" : ''),
+            'schedule_suggested',
+            $request->user()->barangay_id
+        );
+
+        return response()->json(['message' => 'Suggestion sent to your barangay\'s Admin(s).'], 201);
+    }
+
     public function updateSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
     {
-        // Admin-only — editing what/when/who is a planning decision, not
-        // something the assigned mechanic should be able to do just to
-        // unlock completeSchedule()'s "assigned to me" check below. Their
-        // only action on an existing schedule is completeSchedule() itself.
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'schedule.edit');
+
+        // Admin edits any schedule; a Custodian may only edit the one they
+        // themselves created (same ownership pattern as condition.edit).
+        if (!$request->user()->hasRole('Admin')) {
+            abort_unless($schedule->created_by === $request->user()->id, 403, 'You can only edit a schedule you created yourself.');
+        }
 
         $data = $request->validate([
             'vehicle_id' => ['sometimes', 'exists:vehicles,vehicle_id'],
@@ -2246,21 +2386,24 @@ class FleetController extends Controller
             // silently skip both.
             'status' => ['nullable', Rule::in(['Scheduled', 'Cancelled'])],
             'recurrence_months' => ['nullable', 'integer', 'min:1', 'max:60'],
+            'confirm_conflicts' => ['nullable', 'boolean'],
         ]);
 
         if (isset($data['maintenance_type'])) {
             $data['maintenance_type'] = MaintenanceType::resolve($data['maintenance_type']);
         }
 
-        // Same double-booking guard as create (ignoring this schedule itself).
-        $targetVehicle = $data['vehicle_id'] ?? $schedule->vehicle_id;
-        $targetDate = $data['scheduled_date'] ?? $schedule->scheduled_date;
-        $alreadyBooked = VehicleMaintenanceSchedule::where('vehicle_id', $targetVehicle)
-            ->whereDate('scheduled_date', $targetDate)
-            ->where('status', 'Scheduled')
-            ->where('schedule_id', '!=', $schedule->schedule_id)
-            ->exists();
-        abort_if($alreadyBooked, 422, 'This vehicle already has a maintenance schedule on that date.');
+        // Same warning-not-a-block guard as create, ignoring this schedule
+        // itself — only re-checked when the vehicle or date actually moved.
+        if (isset($data['vehicle_id']) || isset($data['scheduled_date'])) {
+            $targetVehicle = isset($data['vehicle_id']) ? Vehicle::findOrFail($data['vehicle_id']) : $schedule->vehicle;
+            $targetDate = $data['scheduled_date'] ?? $schedule->scheduled_date;
+
+            $conflicts = $this->checkScheduleConflicts($targetVehicle, $targetDate, $schedule->schedule_id);
+            if ($conflicts && !$request->boolean('confirm_conflicts')) {
+                return response()->json($conflicts, 409);
+            }
+        }
 
         $previousAssignee = $schedule->assigned_to;
 
@@ -2292,9 +2435,19 @@ class FleetController extends Controller
      */
     public function completeSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
     {
-        $this->requireRole($request, ['Admin', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'schedule.complete');
 
         abort_unless($schedule->status === 'Scheduled', 422, "Only a scheduled maintenance can be marked done. Current: {$schedule->status}.");
+
+        // Once ConvertDueSchedulesToTickets has turned this into a real
+        // ticket, THAT ticket is the live repair process — completing the
+        // schedule directly here would create a second, disconnected
+        // "proof of work" record for the same job. Close the ticket instead.
+        abort_if(
+            $schedule->resulting_ticket_id,
+            422,
+            "This schedule became Ticket #{$schedule->resulting_ticket_id} — complete the work there instead of on the schedule directly."
+        );
 
         // A schedule is visible to every mechanic (it's a shared calendar), but
         // only ONE of them should ever be able to act on it — otherwise two
@@ -2469,11 +2622,61 @@ class FleetController extends Controller
         ]);
     }
 
+    /**
+     * VMS-IMPROVEMENT-PLAN.md Phase B5 — a purpose-built reassignment for
+     * VehicleMaintenanceSchedule.assigned_to, the one assignment type that
+     * previously had no dedicated "hand this off" endpoint at all (only the
+     * generic Admin-only updateSchedule() could touch the field). Exists
+     * mainly so GuardsOpenWorkOnDeactivation's block on deactivating someone
+     * with a Scheduled assignment has somewhere to send the Admin.
+     */
+    public function reassignSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
+    {
+        $this->requireAbility($request, 'schedule.reassign');
+
+        abort_unless($schedule->status === 'Scheduled', 422, "Only a Scheduled entry can be reassigned. Current status: {$schedule->status}.");
+
+        $data = $request->validate([
+            'assigned_to' => ['required', 'exists:users,id'],
+        ]);
+
+        $newAssignee = User::findOrFail($data['assigned_to']);
+        abort_if($newAssignee->id === $schedule->assigned_to, 422, 'That person is already assigned to this schedule.');
+
+        $previousAssigneeId = $schedule->assigned_to;
+
+        DB::transaction(function () use ($schedule, $data, $request, $newAssignee, $previousAssigneeId) {
+            $schedule->update(['assigned_to' => $data['assigned_to']]);
+
+            $vehicleName = $schedule->vehicle->vehicle_name;
+            $this->history($schedule->vehicle, 'Maintenance Schedule Reassigned', "Schedule #{$schedule->schedule_id} ({$schedule->maintenance_type}) reassigned to {$newAssignee->name}.", 'vehicle_maintenance_schedules', $schedule->schedule_id, $request);
+            $this->log($request, 'Edit', 'Vehicle Maintenance Schedule', $schedule->schedule_id, "Reassigned schedule #{$schedule->schedule_id} to {$newAssignee->name}");
+
+            $this->notifyUser(
+                $newAssignee->id,
+                'Maintenance Assigned to You',
+                "You've been assigned {$schedule->maintenance_type} for {$vehicleName}, scheduled {$schedule->scheduled_date}.",
+                'schedule_assigned'
+            );
+
+            if ($previousAssigneeId) {
+                $this->notifyUser(
+                    $previousAssigneeId,
+                    'Maintenance Reassigned',
+                    "{$schedule->maintenance_type} for {$vehicleName} has been reassigned to someone else.",
+                    'schedule_reassigned'
+                );
+            }
+        });
+
+        return $schedule->fresh(['vehicle.category', 'createdBy', 'assignedToUser']);
+    }
+
     public function deleteSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
     {
         // Admin-only — cancelling a plan is a planning decision, same as
         // updateSchedule() above.
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'schedule.delete');
 
         $schedule->update(['status' => 'Cancelled']);
         $this->history($schedule->vehicle, 'Maintenance Schedule Cancelled', "Maintenance schedule #{$schedule->schedule_id} was cancelled.", 'vehicle_maintenance_schedules', $schedule->schedule_id, $request);
@@ -2491,7 +2694,7 @@ class FleetController extends Controller
     public function restoreSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
     {
         // Admin-only — same reasoning as deleteSchedule()/updateSchedule().
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'schedule.restore');
 
         abort_unless(
             $schedule->status === 'Cancelled',
@@ -2530,7 +2733,7 @@ class FleetController extends Controller
 
     public function histories(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'vehicle.view_history');
 
         $query = VehicleHistory::with(['vehicle.category', 'updatedBy']);
 
@@ -2542,7 +2745,7 @@ class FleetController extends Controller
 
     public function logs(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'activity_log.view');
 
         $query = ActivityLog::with('user');
 
@@ -2563,7 +2766,7 @@ class FleetController extends Controller
 
     public function reports(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'report.generate');
 
         $data = $request->validate([
             'report_type' => ['required', 'string'],
@@ -2688,11 +2891,6 @@ class FleetController extends Controller
             'affected_record_id' => $affectedRecordId ? (string) $affectedRecordId : null,
             'details' => $details,
         ]);
-    }
-
-    private function requireRole(Request $request, array $roles): void
-    {
-        abort_unless($request->user()->hasAnyRole($roles), 403, 'Your account role cannot perform this action.');
     }
 
     // User carries no global scope — every "notify everyone with this role"

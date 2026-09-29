@@ -23,6 +23,7 @@ class VehicleMaintenanceSchedule extends Model
         'assigned_to',
         'recurrence_months',
         'resulting_maintenance_id',
+        'resulting_ticket_id',
     ];
 
     protected $casts = [
@@ -55,5 +56,12 @@ class VehicleMaintenanceSchedule extends Model
     public function resultingMaintenance()
     {
         return $this->belongsTo(VehicleMaintenanceRecord::class, 'resulting_maintenance_id', 'maintenance_id');
+    }
+
+    // The ticket auto-created for this schedule on its due date (see
+    // App\Console\Commands\ConvertDueSchedulesToTickets). Null until then.
+    public function resultingTicket()
+    {
+        return $this->belongsTo(MaintenanceTicket::class, 'resulting_ticket_id', 'ticket_id');
     }
 }

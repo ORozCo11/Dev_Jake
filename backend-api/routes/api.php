@@ -63,7 +63,12 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     // Secure user identification endpoint (useful for checking active status on refresh)
     Route::get('/user', function (Request $request) {
-        return $request->user();
+        $user = $request->user();
+
+        // 'abilities' is added here rather than via a global User $appends —
+        // this route is "who am I", the one place the frontend actually
+        // needs the list (VMS-IMPROVEMENT-PLAN.md Phase B2).
+        return array_merge($user->toArray(), ['abilities' => $user->getAbilities()]);
     });
 
     // DEV-ONLY impersonation (fast role-switching for testing). These handlers
@@ -176,7 +181,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     Route::get('/maintenance-schedules', [FleetController::class, 'schedules']);
     Route::post('/maintenance-schedules', [FleetController::class, 'storeSchedule']);
+    Route::post('/maintenance-schedules/suggest', [FleetController::class, 'suggestSchedule']);
     Route::put('/maintenance-schedules/{schedule}', [FleetController::class, 'updateSchedule']);
+    Route::put('/maintenance-schedules/{schedule}/reassign', [FleetController::class, 'reassignSchedule']);
     Route::put('/maintenance-schedules/{schedule}/complete', [FleetController::class, 'completeSchedule']);
     Route::post('/maintenance-schedules/{schedule}/restore', [FleetController::class, 'restoreSchedule']);
     Route::delete('/maintenance-schedules/{schedule}', [FleetController::class, 'deleteSchedule']);
@@ -198,6 +205,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     // Phase 1 — Admin: Create ticket (Main Issue) & assign to Custodian
     Route::post('/tickets', [TicketController::class, 'createTicket']);
+    Route::post('/tickets/propose', [TicketController::class, 'proposeTicket']);
+    Route::put('/tickets/{ticket}/approve', [TicketController::class, 'approveTicket']);
+    Route::put('/tickets/{ticket}/decline', [TicketController::class, 'declineTicket']);
 
     // Phase 2 — Custodian: Submit inspection, populate the sub-issue list
     Route::put('/tickets/{ticket}/inspect', [TicketController::class, 'submitInspection']);
