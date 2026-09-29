@@ -153,6 +153,17 @@ class AuthController extends Controller
                 "{$user->name} registered as the first Admin for {$barangayLabel}. Review and approve before they can sign in.",
                 'pending_admin_approval'
             );
+        } else {
+            // Every other registration is approved by the barangay's own
+            // Admin(s), who otherwise had no way to learn a pending account
+            // existed short of happening to open the Users module
+            // (VMS-IMPROVEMENT-PLAN.md Phase B6).
+            $this->notifyAdmins(
+                'New staff registration awaiting approval',
+                "{$user->name} registered as {$user->role} and is awaiting your approval before they can sign in.",
+                'pending_staff_approval',
+                $user->barangay_id
+            );
         }
 
         return response()->json([
@@ -176,6 +187,23 @@ class AuthController extends Controller
         foreach ($superAdmins as $superAdmin) {
             \App\Models\Notification::create([
                 'user_id' => $superAdmin->id,
+                'title' => $title,
+                'message' => $message,
+                'type' => $type,
+                'ticket_id' => null,
+            ]);
+        }
+    }
+
+    // Same shape as FleetController::notifyAdmins() / TicketController's own
+    // copy — a fourth near-identical instance rather than a new shared
+    // service, matching how the other two already coexist.
+    private function notifyAdmins(string $title, string $message, string $type, ?int $barangayId): void
+    {
+        $admins = User::where('barangay_id', $barangayId)->havingRole('Admin')->get();
+        foreach ($admins as $admin) {
+            \App\Models\Notification::create([
+                'user_id' => $admin->id,
                 'title' => $title,
                 'message' => $message,
                 'type' => $type,
@@ -274,6 +302,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $user->role, // Primary role — drives the portal layout
                 'roles' => $user->allRoles(), // Every hat this account may wear
+                'abilities' => $user->getAbilities(), // Phase B2 — what the frontend gates on
             ]
         ], 200);
     }
@@ -305,8 +334,7 @@ class AuthController extends Controller
      */
     private function canImpersonate(Request $request): bool
     {
-        return $request->user()?->hasRole('Admin')
-            || $request->user()?->hasRole('Super Admin')
+        return (bool) $request->user()?->canDo('impersonation.start')
             || (bool) $request->user()?->currentAccessToken()?->can('impersonated');
     }
 
@@ -414,6 +442,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role'  => $user->role,
                 'roles' => $user->allRoles(),
+                'abilities' => $user->getAbilities(),
             ],
         ]);
     }

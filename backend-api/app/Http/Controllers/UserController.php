@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesAbilities;
 use App\Http\Controllers\Concerns\GuardsLastAdmin;
+use App\Http\Controllers\Concerns\GuardsOpenWorkOnDeactivation;
 use App\Http\Controllers\Concerns\UploadsImages;
 use App\Models\RegistrationSetting;
 use App\Models\User;
@@ -14,13 +16,10 @@ class UserController extends Controller
 {
     use UploadsImages;
     use GuardsLastAdmin;
+    use GuardsOpenWorkOnDeactivation;
+    use AuthorizesAbilities;
 
     private const ROLES = ['Admin', 'Custodian', 'Maintenance Personnel'];
-
-    private function requireAdmin(Request $request): void
-    {
-        abort_unless($request->user()->hasRole('Admin'), 403, 'Only Admins can manage users.');
-    }
 
     /**
      * Cross-tenant guard for the User model, which — unlike Vehicle/Hub —
@@ -54,7 +53,7 @@ class UserController extends Controller
 
     public function index(Request $request)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.view', 'Only Admins can manage users.');
 
         $query = User::where('barangay_id', $request->user()->barangay_id);
 
@@ -78,7 +77,7 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.create', 'Only Admins can manage users.');
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -111,7 +110,7 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.edit', 'Only Admins can manage users.');
         $this->requireSameBarangay($request, $user);
 
         $data = $request->validate([
@@ -162,10 +161,11 @@ class UserController extends Controller
 
     public function deactivate(Request $request, User $user)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.deactivate', 'Only Admins can manage users.');
         $this->requireSameBarangay($request, $user);
         abort_if($user->id === $request->user()->id, 422, 'You cannot deactivate your own account.');
         $this->abortIfLastActiveAdmin($user, 'deactivating them');
+        $this->abortIfHasOpenWork($user, 'deactivating them');
 
         $user->update(['is_active' => false]);
         // Revoke every existing token immediately — otherwise a session
@@ -177,7 +177,7 @@ class UserController extends Controller
 
     public function activate(Request $request, User $user)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.activate', 'Only Admins can manage users.');
         $this->requireSameBarangay($request, $user);
 
         $data = $request->validate([
@@ -208,14 +208,14 @@ class UserController extends Controller
 
     public function registrationSettings(Request $request)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'registration_code.view', 'Only Admins can manage users.');
 
         return response()->json(['staff_code' => RegistrationSetting::for($request->user()->barangay_id)->staff_code]);
     }
 
     public function regenerateRegistrationCode(Request $request)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'registration_code.regenerate', 'Only Admins can manage users.');
 
         $setting = RegistrationSetting::regenerateFor($request->user()->barangay_id);
 

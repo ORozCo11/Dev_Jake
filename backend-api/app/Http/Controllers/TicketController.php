@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesAbilities;
 use App\Http\Controllers\Concerns\ChecksRecurrence;
 use App\Http\Controllers\Concerns\UploadsImages;
 use App\Models\ActivityLog;
@@ -54,6 +55,7 @@ class TicketController extends Controller
 {
     use UploadsImages;
     use ChecksRecurrence;
+    use AuthorizesAbilities;
 
     private array $priorities       = ['Low', 'Medium', 'High'];
 
@@ -101,6 +103,20 @@ class TicketController extends Controller
 
     public function show(Request $request, MaintenanceTicket $ticket)
     {
+        $user = $request->user();
+
+        // Mirrors index()'s scoping so a ticket id can't be opened directly
+        // by someone it wasn't already visible to in the list (VMS-IMPROVEMENT-PLAN.md
+        // Phase B3). A dual-hat account (e.g. Custodian + Maintenance Personnel)
+        // passes if EITHER hat gives them a reason to be here.
+        if (!$user->hasRole('Admin')) {
+            $isAssignedCustodian = $user->hasRole('Custodian') && $ticket->assigned_custodian_id === $user->id;
+            $isAssignedMechanic = $user->hasRole('Maintenance Personnel')
+                && $ticket->subIssues()->where('assigned_mechanic_id', $user->id)->exists();
+
+            abort_unless($isAssignedCustodian || $isAssignedMechanic, 403, 'You are not assigned to this ticket.');
+        }
+
         return $ticket->load($this->eagerLoads());
     }
 
@@ -133,7 +149,7 @@ class TicketController extends Controller
      */
     public function openTicketsForVehicle(Request $request, Vehicle $vehicle)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.view_open_for_vehicle');
 
         return MaintenanceTicket::where('vehicle_id', $vehicle->vehicle_id)
             ->whereNotIn('status', ['Closed', 'Cancelled'])
@@ -143,7 +159,7 @@ class TicketController extends Controller
 
     public function archives(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.view_archives');
 
         $query = TicketArchiveLog::with(['vehicle', 'archivedBy'])
             ->when($request->filled('vehicle_id'), fn ($q) => $q->where('vehicle_id', $request->vehicle_id));
@@ -166,7 +182,7 @@ class TicketController extends Controller
 
     public function createTicket(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.create');
 
         $data = $request->validate([
             'vehicle_id'            => ['required', 'exists:vehicles,vehicle_id'],
@@ -401,12 +417,262 @@ class TicketController extends Controller
     }
 
     // ===================================================================
+    // Custodian: propose a ticket; Admin: review, edit, approve or decline
+    // ===================================================================
+
+    /**
+     * A Custodian's own version of createTicket()'s pre-diagnosed mode —
+     * they log what's wrong and who they think should fix it, but nothing
+     * goes live until an Admin approves it (see approveTicket()). Admin
+     * keeps createTicket() too, for when THEY spot something themselves;
+     * this is an additional path in, not a replacement.
+     */
+    public function proposeTicket(Request $request)
+    {
+        $this->requireAbility($request, 'ticket.propose');
+
+        $data = $request->validate([
+            'vehicle_id'          => ['required', 'exists:vehicles,vehicle_id'],
+            'ticket_title'        => ['required', 'string', 'max:255'],
+            'fault_category'      => ['nullable', 'string', 'max:150'],
+            'ticket_description'  => ['required', 'string'],
+            'priority'            => ['required', Rule::in($this->priorities)],
+            'sub_issues'                          => ['required', 'array', 'min:1'],
+            'sub_issues.*.title'                  => ['required', 'string', 'max:255'],
+            'sub_issues.*.maintenance_type'        => ['nullable', 'string', 'max:150'],
+            // Who the Custodian THINKS should do the repair — a suggestion
+            // only. Doesn't become a real work-order dispatch (and doesn't
+            // notify the mechanic) unless an Admin approves it.
+            'sub_issues.*.suggested_mechanic_id'   => ['nullable', 'exists:users,id'],
+        ]);
+
+        if (!empty($data['fault_category'])) {
+            $data['fault_category'] = FaultCategory::resolve($data['fault_category']);
+        }
+        foreach ($data['sub_issues'] as &$sub) {
+            if (!empty($sub['maintenance_type'])) {
+                $sub['maintenance_type'] = MaintenanceType::resolve($sub['maintenance_type']);
+            }
+        }
+        unset($sub);
+
+        $vehicle = Vehicle::findOrFail($data['vehicle_id']);
+        abort_if(
+            in_array($vehicle->status, ['Inactive', 'Decommissioned'], true),
+            422,
+            'Cannot propose a ticket on an archived or decommissioned vehicle.'
+        );
+
+        foreach ($data['sub_issues'] as $sub) {
+            if (empty($sub['suggested_mechanic_id'])) {
+                continue;
+            }
+            $suggested = User::findOrFail($sub['suggested_mechanic_id']);
+            abort_unless($suggested->hasRole('Maintenance Personnel'), 422, 'A suggested mechanic must be Maintenance Personnel.');
+            abort_unless($suggested->barangay_id === $vehicle->barangay_id, 422, 'The suggested mechanic does not belong to this barangay.');
+        }
+
+        $ticket = DB::transaction(function () use ($data, $request, $vehicle) {
+            $ticket = MaintenanceTicket::create([
+                'vehicle_id'            => $data['vehicle_id'],
+                'created_by'            => $request->user()->id,
+                'ticket_title'          => $data['ticket_title'],
+                'fault_category'        => $data['fault_category'] ?? null,
+                'ticket_description'    => $data['ticket_description'],
+                'priority'              => $data['priority'],
+                'status'                => 'Pending Approval',
+                'assigned_custodian_id' => $request->user()->id,
+                'assigned_at'           => now(),
+            ]);
+
+            foreach ($data['sub_issues'] as $sub) {
+                TicketSubIssue::create([
+                    'ticket_id'              => $ticket->ticket_id,
+                    'created_by'             => $request->user()->id,
+                    'title'                  => $sub['title'],
+                    'maintenance_type'       => $sub['maintenance_type'] ?? null,
+                    'suggested_mechanic_id'  => $sub['suggested_mechanic_id'] ?? null,
+                    'status'                 => 'Open',
+                ]);
+            }
+
+            $this->log($request, 'Propose Ticket', "Ticket proposal \"{$data['ticket_title']}\" for {$vehicle->vehicle_name} submitted for Admin review.", $ticket->ticket_id);
+
+            $this->notifyAdmins(
+                'New Ticket Proposal Awaiting Review',
+                "{$request->user()->name} proposed a ticket — \"{$data['ticket_title']}\" for {$vehicle->vehicle_name}. Review, edit if needed, then approve or decline.",
+                'ticket_proposed',
+                $ticket->ticket_id,
+                $vehicle->barangay_id
+            );
+
+            return $ticket;
+        });
+
+        return response()->json($ticket->load($this->eagerLoads()), 201);
+    }
+
+    /**
+     * Admin reviews a Pending Approval ticket: optionally edits ticket-level
+     * fields and/or individual sub-issues (matched by sub_issue_id — only
+     * the ones you want to change need to be included), then approves.
+     * Approving is what actually dispatches any suggested mechanic (the
+     * same effect as assignMechanic()) and puts the vehicle out of service —
+     * none of that happens at proposal time.
+     */
+    public function approveTicket(Request $request, MaintenanceTicket $ticket)
+    {
+        $this->requireAbility($request, 'ticket.approve');
+
+        abort_unless($ticket->status === 'Pending Approval', 422, "Only a Pending Approval ticket can be approved. Current: {$ticket->status}.");
+
+        $data = $request->validate([
+            'ticket_title'          => ['sometimes', 'string', 'max:255'],
+            'fault_category'        => ['nullable', 'string', 'max:150'],
+            'ticket_description'    => ['sometimes', 'string'],
+            'priority'              => ['sometimes', Rule::in($this->priorities)],
+            'assigned_custodian_id' => ['sometimes', 'exists:users,id'],
+            'sub_issues'                        => ['nullable', 'array'],
+            'sub_issues.*.sub_issue_id'          => ['required_with:sub_issues', 'exists:ticket_sub_issues,sub_issue_id'],
+            'sub_issues.*.title'                 => ['nullable', 'string', 'max:255'],
+            'sub_issues.*.maintenance_type'      => ['nullable', 'string', 'max:150'],
+            'sub_issues.*.suggested_mechanic_id' => ['nullable', 'exists:users,id'],
+        ]);
+
+        if (isset($data['fault_category'])) {
+            $data['fault_category'] = FaultCategory::resolve($data['fault_category']);
+        }
+
+        if (isset($data['assigned_custodian_id'])) {
+            $newCustodian = User::findOrFail($data['assigned_custodian_id']);
+            abort_unless($newCustodian->hasRole('Custodian'), 422, 'The selected user is not a Custodian.');
+            abort_unless($newCustodian->barangay_id === $ticket->vehicle->barangay_id, 422, 'The selected Custodian does not belong to this barangay.');
+        }
+
+        $ticket = DB::transaction(function () use ($ticket, $data, $request) {
+            $ticket->update(array_intersect_key($data, array_flip([
+                'ticket_title', 'fault_category', 'ticket_description', 'priority', 'assigned_custodian_id',
+            ])));
+
+            foreach ($data['sub_issues'] ?? [] as $subData) {
+                $subIssue = TicketSubIssue::where('ticket_id', $ticket->ticket_id)
+                    ->where('sub_issue_id', $subData['sub_issue_id'])
+                    ->firstOrFail();
+
+                $patch = [];
+                if (array_key_exists('title', $subData) && $subData['title'] !== null) {
+                    $patch['title'] = $subData['title'];
+                }
+                if (array_key_exists('maintenance_type', $subData) && $subData['maintenance_type'] !== null) {
+                    $patch['maintenance_type'] = MaintenanceType::resolve($subData['maintenance_type']);
+                }
+                if (array_key_exists('suggested_mechanic_id', $subData)) {
+                    $patch['suggested_mechanic_id'] = $subData['suggested_mechanic_id'];
+                }
+                if ($patch) {
+                    $subIssue->update($patch);
+                }
+            }
+
+            $vehicle = $ticket->vehicle;
+            $ticket->update([
+                'status'            => 'Active',
+                'down_since'        => $ticket->down_since ?? now(),
+                'inspection_result' => 'Needs Maintenance',
+                'inspection_notes'  => 'Proposed by Custodian, reviewed and approved by Admin — inspection skipped.',
+                'inspected_by'      => $ticket->assigned_custodian_id,
+                'inspected_at'      => $ticket->created_at,
+            ]);
+            $vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
+
+            $dispatchedMechanics = [];
+            foreach ($ticket->subIssues()->get() as $subIssue) {
+                if (!$subIssue->suggested_mechanic_id) {
+                    continue;
+                }
+                $mechanic = User::find($subIssue->suggested_mechanic_id);
+                if (!$mechanic || !$mechanic->hasRole('Maintenance Personnel') || $mechanic->barangay_id !== $vehicle->barangay_id) {
+                    // The suggestion is no longer valid (e.g. the account was
+                    // deactivated or reassigned barangays since it was
+                    // proposed) — leave the sub-issue Open for a manual
+                    // assignMechanic() instead of silently dispatching to it.
+                    continue;
+                }
+
+                $subIssue->update([
+                    'status'               => 'Under Repair',
+                    'assigned_mechanic_id' => $mechanic->id,
+                    'mechanic_assigned_at' => now(),
+                    'mechanic_assigned_by' => $request->user()->id,
+                ]);
+                $dispatchedMechanics[] = $mechanic;
+            }
+
+            $this->log($request, 'Approve Ticket', "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) proposal approved.", $ticket->ticket_id);
+
+            $this->notifyUser(
+                $ticket->assigned_custodian_id,
+                'Ticket Proposal Approved',
+                "Your proposed ticket \"{$ticket->ticket_title}\" for {$vehicle->vehicle_name} was approved.",
+                'ticket_approved',
+                $ticket->ticket_id
+            );
+            foreach ($dispatchedMechanics as $mechanic) {
+                $this->notifyUser(
+                    $mechanic->id,
+                    'New Work Order Assigned',
+                    "You have been assigned to work on Ticket #{$ticket->ticket_id} ({$vehicle->vehicle_name}).",
+                    'work_order_assigned',
+                    $ticket->ticket_id
+                );
+            }
+
+            return $ticket;
+        });
+
+        return response()->json($ticket->load($this->eagerLoads()));
+    }
+
+    /**
+     * Admin declines a proposal outright — no partial/soft state, the row
+     * is gone (sub-issues cascade with it). The reason lives only in the
+     * notification sent to the Custodian who proposed it; there is
+     * deliberately no other trace once this returns.
+     */
+    public function declineTicket(Request $request, MaintenanceTicket $ticket)
+    {
+        $this->requireAbility($request, 'ticket.decline');
+
+        abort_unless($ticket->status === 'Pending Approval', 422, "Only a Pending Approval ticket can be declined. Current: {$ticket->status}.");
+
+        $data = $request->validate([
+            'decline_reason' => ['required', 'string'],
+        ]);
+
+        $custodianId = $ticket->assigned_custodian_id;
+        $ticketTitle = $ticket->ticket_title;
+        $vehicleName = $ticket->vehicle->vehicle_name;
+
+        $ticket->delete();
+
+        $this->notifyUser(
+            $custodianId,
+            'Ticket Proposal Declined',
+            "Your proposed ticket \"{$ticketTitle}\" for {$vehicleName} was declined. Reason: {$data['decline_reason']}",
+            'ticket_declined',
+            null
+        );
+
+        return response()->json(['message' => 'Ticket proposal declined.']);
+    }
+
+    // ===================================================================
     // PHASE 2 — Custodian: Submit Inspection, Populate Sub-Issues
     // ===================================================================
 
     public function submitInspection(Request $request, MaintenanceTicket $ticket)
     {
-        $this->requireRole($request, ['Custodian']);
+        $this->requireAbility($request, 'ticket.inspect');
 
         abort_unless($ticket->assigned_custodian_id === $request->user()->id, 403, 'This ticket is not assigned to you.');
         abort_unless($ticket->status === 'Open', 422, "Inspection can only be submitted when the ticket is Open. Current status: {$ticket->status}.");
@@ -495,7 +761,7 @@ class TicketController extends Controller
      */
     public function addSubIssue(Request $request, MaintenanceTicket $ticket)
     {
-        $this->requireRole($request, ['Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'subissue.create');
         $user = $request->user();
 
         $isAssignedCustodian = $user->hasRole('Custodian') && $ticket->assigned_custodian_id === $user->id;
@@ -545,7 +811,7 @@ class TicketController extends Controller
 
     public function assignMechanic(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'subissue.assign_mechanic');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         abort_unless($ticket->status === 'Active', 422, "Work orders can only be dispatched while the ticket is Active. Current status: {$ticket->status}.");
@@ -626,7 +892,7 @@ class TicketController extends Controller
      */
     public function reassignMechanic(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'subissue.reassign_mechanic');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         abort_unless($ticket->status === 'Active', 422, "Work orders can only be reassigned while the ticket is Active. Current status: {$ticket->status}.");
@@ -698,7 +964,7 @@ class TicketController extends Controller
      */
     public function reassignCustodian(Request $request, MaintenanceTicket $ticket)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.reassign_custodian');
 
         // Allowed while Open (stuck awaiting inspection — the main case this
         // exists for) or Active. A finished ticket is left alone: reassigning
@@ -796,7 +1062,7 @@ class TicketController extends Controller
 
     public function logRepairs(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Maintenance Personnel']);
+        $this->requireAbility($request, 'subissue.log_repair');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         abort_unless($subIssue->assigned_mechanic_id === $request->user()->id, 403, 'This work order is not assigned to you.');
@@ -904,7 +1170,7 @@ class TicketController extends Controller
      */
     public function approveCannibalization(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'repair.approve_cannibalized');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         abort_unless($subIssue->status === 'Pending Approval' && $subIssue->cannibalization_status === 'Pending', 422, 'This sub-issue is not awaiting cannibalization approval.');
@@ -977,7 +1243,7 @@ class TicketController extends Controller
      */
     public function rejectCannibalization(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'repair.reject_cannibalized');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         abort_unless($subIssue->status === 'Pending Approval' && $subIssue->cannibalization_status === 'Pending', 422, 'This sub-issue is not awaiting cannibalization approval.');
@@ -1024,7 +1290,7 @@ class TicketController extends Controller
 
     public function verifyRepair(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Custodian', 'Admin']);
+        $this->requireAbility($request, 'subissue.verify');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         $isAdmin = $request->user()->hasRole('Admin');
@@ -1135,7 +1401,7 @@ class TicketController extends Controller
 
     public function confirmSubIssue(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'subissue.confirm');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         abort_unless($ticket->status === 'Active', 422, "A sub-issue can only be confirmed while the ticket is Active. Current status: {$ticket->status}.");
@@ -1211,7 +1477,7 @@ class TicketController extends Controller
 
     public function reopenConfirmedSubIssue(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'subissue.reopen_confirmed');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         abort_unless($subIssue->status === 'Done', 422, "Only Done sub-issues can be unconfirmed. Current status: {$subIssue->status}.");
@@ -1271,7 +1537,7 @@ class TicketController extends Controller
 
     public function closeTicket(Request $request, MaintenanceTicket $ticket)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.close');
 
         abort_unless($ticket->status === 'Active', 422, "Only an Active ticket can be closed. Current: {$ticket->status}.");
 
@@ -1406,7 +1672,7 @@ class TicketController extends Controller
      */
     public function deferSubIssue(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'subissue.defer');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
         abort_unless($ticket->status === 'Active', 422, "Sub-issues can only be deferred while the ticket is Active. Current: {$ticket->status}.");
@@ -1444,7 +1710,7 @@ class TicketController extends Controller
      */
     public function cancelTicket(Request $request, MaintenanceTicket $ticket)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.cancel');
 
         abort_unless(!in_array($ticket->status, ['Closed', 'Cancelled'], true), 422, 'This ticket is already closed and cannot be cancelled.');
 
@@ -1484,7 +1750,7 @@ class TicketController extends Controller
      */
     public function uncancelTicket(Request $request, MaintenanceTicket $ticket)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.uncancel');
 
         abort_unless($ticket->status === 'Cancelled', 422, 'Only cancelled tickets can be restored.');
 
@@ -1519,7 +1785,7 @@ class TicketController extends Controller
      */
     public function deleteTicket(Request $request, MaintenanceTicket $ticket)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.delete');
 
         abort_if($ticket->status === 'Closed', 422, 'A closed ticket is permanent and cannot be deleted.');
 
@@ -1552,7 +1818,7 @@ class TicketController extends Controller
      */
     public function reopenArchive(Request $request, TicketArchiveLog $archive)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'ticket.reopen_archived');
 
         abort_unless($archive->final_status === 'Deleted', 422, 'Only a deleted, not-yet-finished ticket can be reopened — a Closed ticket is permanently locked.');
 
@@ -1817,11 +2083,6 @@ class TicketController extends Controller
             'affected_record_id' => $affectedRecordId,
             'details' => $details,
         ]);
-    }
-
-    private function requireRole(Request $request, array $roles): void
-    {
-        abort_unless($request->user()->hasAnyRole($roles), 403, 'Your account role cannot perform this action.');
     }
 
     private function notifyUser($userId, $title, $message, $type, $ticketId)

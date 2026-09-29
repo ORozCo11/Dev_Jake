@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesAbilities;
 use App\Http\Controllers\Concerns\GuardsLastAdmin;
+use App\Http\Controllers\Concerns\GuardsOpenWorkOnDeactivation;
 use App\Models\ActivityLog;
 use App\Models\Barangay;
 use App\Models\ConcernReport;
@@ -26,6 +28,8 @@ use Illuminate\Validation\Rule;
 class SuperAdminController extends Controller
 {
     use GuardsLastAdmin;
+    use GuardsOpenWorkOnDeactivation;
+    use AuthorizesAbilities;
 
     private const ROLES = ['Admin', 'Custodian', 'Maintenance Personnel'];
 
@@ -42,11 +46,6 @@ class SuperAdminController extends Controller
      * by name) means a newly added fleet module is excluded by default.
      */
     private const ACCOUNT_MODULES = ['Super Admin', 'Dev Tools', 'Profile'];
-
-    private function requireSuperAdmin(Request $request): void
-    {
-        abort_unless($request->user()->hasRole('Super Admin'), 403, 'Only a Super Admin can perform this action.');
-    }
 
     private function log(Request $request, string $action, string $details): void
     {
@@ -66,7 +65,7 @@ class SuperAdminController extends Controller
      */
     public function barangays(Request $request)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'barangay.view_all', 'Only a Super Admin can perform this action.');
 
         return Barangay::with(['city.province', 'registrationSetting'])
             ->withCount('users')
@@ -114,7 +113,7 @@ class SuperAdminController extends Controller
      */
     public function storeBarangay(Request $request)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'barangay.create', 'Only a Super Admin can perform this action.');
 
         $data = $request->validate([
             'city_id' => ['required', 'exists:cities,id'],
@@ -164,7 +163,7 @@ class SuperAdminController extends Controller
      */
     public function refreshBarangayBoundary(Request $request, Barangay $barangay)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'barangay.refresh_boundary', 'Only a Super Admin can perform this action.');
 
         if ($barangay->boundary !== null) {
             return response()->json(['has_boundary' => true]);
@@ -334,7 +333,7 @@ class SuperAdminController extends Controller
      */
     public function users(Request $request)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'user.view_all_platform', 'Only a Super Admin can perform this action.');
 
         $query = User::with('barangay.city.province');
 
@@ -360,7 +359,7 @@ class SuperAdminController extends Controller
 
     public function activateUser(Request $request, User $user)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'user.activate_platform', 'Only a Super Admin can perform this action.');
 
         $user->update(['is_active' => true, 'approved_at' => $user->approved_at ?? now()]);
         $this->log($request, 'Activate', "Activated {$user->name} ({$user->email}).");
@@ -370,9 +369,10 @@ class SuperAdminController extends Controller
 
     public function deactivateUser(Request $request, User $user)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'user.deactivate_platform', 'Only a Super Admin can perform this action.');
         abort_if($user->id === $request->user()->id, 422, 'You cannot deactivate your own account.');
         $this->abortIfLastActiveAdmin($user, 'deactivating them');
+        $this->abortIfHasOpenWork($user, 'deactivating them');
 
         $user->update(['is_active' => false]);
         $user->tokens()->delete();
@@ -391,7 +391,7 @@ class SuperAdminController extends Controller
      */
     public function rejectUser(Request $request, User $user)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'user.reject', 'Only a Super Admin can perform this action.');
         abort_if($user->approved_at !== null, 422, 'This account was already approved at some point — deactivate it instead of rejecting.');
 
         $name = $user->name;
@@ -411,7 +411,7 @@ class SuperAdminController extends Controller
      */
     public function pendingApprovals(Request $request)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'user.view_pending', 'Only a Super Admin can perform this action.');
 
         return User::with('barangay.city.province')
             ->whereNull('approved_at')
@@ -437,7 +437,7 @@ class SuperAdminController extends Controller
      */
     public function updateUserRole(Request $request, User $user)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'user.change_role_platform', 'Only a Super Admin can perform this action.');
         abort_if($user->id === $request->user()->id, 422, 'You cannot change your own role.');
         abort_if($user->hasRole('Super Admin'), 422, 'Super Admin roles cannot be changed through this endpoint.');
 
@@ -457,14 +457,14 @@ class SuperAdminController extends Controller
 
     public function registrationCode(Request $request, Barangay $barangay)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'barangay.view_registration_code', 'Only a Super Admin can perform this action.');
 
         return response()->json(['staff_code' => RegistrationSetting::for($barangay->id)->staff_code]);
     }
 
     public function regenerateRegistrationCode(Request $request, Barangay $barangay)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'barangay.regenerate_registration_code', 'Only a Super Admin can perform this action.');
 
         $setting = RegistrationSetting::regenerateFor($barangay->id);
         $this->log($request, 'Edit', "Regenerated the staff registration code for {$barangay->name}.");
@@ -484,7 +484,7 @@ class SuperAdminController extends Controller
      */
     public function activityLog(Request $request)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'activity_log.view_platform', 'Only a Super Admin can perform this action.');
 
         return ActivityLog::with('user')
             ->whereIn('module', self::ACCOUNT_MODULES)
@@ -502,14 +502,14 @@ class SuperAdminController extends Controller
      */
     public function concernReports(Request $request)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'concern_report.view', 'Only a Super Admin can perform this action.');
 
         return ConcernReport::with('resolvedBy')->latest('id')->get();
     }
 
     public function resolveConcernReport(Request $request, ConcernReport $concernReport)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'concern_report.resolve', 'Only a Super Admin can perform this action.');
 
         $concernReport->update([
             'status' => 'Resolved',
@@ -523,7 +523,7 @@ class SuperAdminController extends Controller
 
     public function reopenConcernReport(Request $request, ConcernReport $concernReport)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'concern_report.reopen', 'Only a Super Admin can perform this action.');
 
         $concernReport->update(['status' => 'Open', 'resolved_by' => null, 'resolved_at' => null]);
         $this->log($request, 'Edit', "Reopened concern report #{$concernReport->id}.");
@@ -539,7 +539,7 @@ class SuperAdminController extends Controller
      */
     public function destroyConcernReport(Request $request, ConcernReport $concernReport)
     {
-        $this->requireSuperAdmin($request);
+        $this->requireAbility($request, 'concern_report.delete', 'Only a Super Admin can perform this action.');
 
         $id = $concernReport->id;
         $concernReport->delete();

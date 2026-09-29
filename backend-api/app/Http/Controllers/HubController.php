@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesAbilities;
 use App\Models\Vehicle;
 use App\Models\VehicleHub;
 use Illuminate\Http\Request;
@@ -10,6 +11,8 @@ use Illuminate\Validation\Rule;
 
 class HubController extends Controller
 {
+    use AuthorizesAbilities;
+
     /**
      * GET /hubs — every workspace role needs the hub list to plot/select vehicle locations.
      */
@@ -25,7 +28,7 @@ class HubController extends Controller
      */
     public function store(Request $request)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'hub.create');
 
         $barangayId = $request->user()->barangay_id;
 
@@ -55,7 +58,7 @@ class HubController extends Controller
      */
     public function update(Request $request, VehicleHub $hub)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'hub.edit');
 
         $data = $request->validate([
             'name' => [
@@ -77,7 +80,7 @@ class HubController extends Controller
      */
     public function destroy(Request $request, VehicleHub $hub)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'hub.delete');
 
         abort_if($hub->is_default, 422, 'Default hubs cannot be deleted. Hide it instead.');
 
@@ -90,10 +93,5 @@ class HubController extends Controller
         $hub->delete();
 
         return response()->json(['message' => 'Hub removed.']);
-    }
-
-    private function requireRole(Request $request, array $roles): void
-    {
-        abort_unless($request->user()->hasAnyRole($roles), 403, 'Your account role cannot perform this action.');
     }
 }

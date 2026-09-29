@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesAbilities;
 use App\Models\FaultCategory;
 use App\Models\MaintenanceTicket;
 use App\Models\MaintenanceType;
@@ -27,6 +28,8 @@ use Illuminate\Support\Facades\DB;
  */
 class CatalogController extends Controller
 {
+    use AuthorizesAbilities;
+
     public function faultCategories()
     {
         return FaultCategory::orderBy('name')->get(['id', 'name']);
@@ -34,7 +37,7 @@ class CatalogController extends Controller
 
     public function storeFaultCategory(Request $request)
     {
-        $this->requireRole($request, ['Admin', 'Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'catalog.create');
         $data = $request->validate(['name' => ['required', 'string', 'max:150']]);
 
         return response()->json(FaultCategory::findOrCreateByName($data['name']), 201);
@@ -49,7 +52,7 @@ class CatalogController extends Controller
      */
     public function updateFaultCategory(Request $request, FaultCategory $faultCategory)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'catalog.edit');
         $data = $request->validate(['name' => ['required', 'string', 'max:150']]);
         $newName = trim($data['name']);
 
@@ -71,7 +74,7 @@ class CatalogController extends Controller
 
     public function destroyFaultCategory(Request $request, FaultCategory $faultCategory)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'catalog.delete');
 
         $this->abortIfInUse($faultCategory->name, [
             'ticket'       => MaintenanceTicket::withoutGlobalScopes()->where('fault_category', $faultCategory->name)->count(),
@@ -90,7 +93,7 @@ class CatalogController extends Controller
 
     public function storeMaintenanceType(Request $request)
     {
-        $this->requireRole($request, ['Admin', 'Custodian', 'Maintenance Personnel']);
+        $this->requireAbility($request, 'catalog.create');
         $data = $request->validate(['name' => ['required', 'string', 'max:150']]);
 
         return response()->json(MaintenanceType::findOrCreateByName($data['name']), 201);
@@ -98,7 +101,7 @@ class CatalogController extends Controller
 
     public function updateMaintenanceType(Request $request, MaintenanceType $maintenanceType)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'catalog.edit');
         $data = $request->validate(['name' => ['required', 'string', 'max:150']]);
         $newName = trim($data['name']);
 
@@ -121,7 +124,7 @@ class CatalogController extends Controller
 
     public function destroyMaintenanceType(Request $request, MaintenanceType $maintenanceType)
     {
-        $this->requireRole($request, ['Admin']);
+        $this->requireAbility($request, 'catalog.delete');
 
         $this->abortIfInUse($maintenanceType->name, [
             'work order'         => TicketSubIssue::withoutGlobalScopes()->where('maintenance_type', $maintenanceType->name)->count(),
@@ -132,11 +135,6 @@ class CatalogController extends Controller
         $maintenanceType->delete();
 
         return response()->noContent();
-    }
-
-    private function requireRole(Request $request, array $roles): void
-    {
-        abort_unless($request->user()->hasAnyRole($roles), 403, 'Your account role cannot perform this action.');
     }
 
     /**

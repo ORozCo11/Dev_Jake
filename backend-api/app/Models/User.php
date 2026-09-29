@@ -116,4 +116,40 @@ class User extends Authenticatable
               ->orWhere('roles', 'like', '%"' . $role . '"%');
         });
     }
+
+    /**
+     * Single source of truth for "can this account do X" (config/permissions.php),
+     * OR'd across every role the account holds. Ownership/live-state rules
+     * (own report, not-the-repairer, last-active-Admin, same barangay) are
+     * NOT decided here — they stay as separate guard calls next to this one,
+     * since they depend on a database record, not just the actor's role.
+     */
+    /**
+     * VMS-IMPROVEMENT-PLAN.md Phase B2 — every ability this account currently
+     * holds, for the frontend to gate on instead of role strings. Deliberately
+     * a plain method, not an Eloquent accessor/$appends entry: this is only
+     * meaningful for "who am I" (login response, GET /user) — appending it
+     * globally would silently bloat every OTHER user embedded elsewhere
+     * (a ticket's assignedCustodian, an issue's reportedBy, etc.) with an
+     * abilities array nobody asked for there.
+     */
+    public function getAbilities(): array
+    {
+        return collect(config('permissions'))
+            ->filter(fn (array $roles) => $this->hasAnyRole($roles))
+            ->keys()
+            ->values()
+            ->all();
+    }
+
+    public function canDo(string $ability): bool
+    {
+        // Note: config('permissions.' . $ability) would be wrong here — Laravel's
+        // config() helper splits every dot into a nested lookup, but
+        // config/permissions.php stores each ability as a single flat key that
+        // itself contains a dot (e.g. 'vehicle.create'), not a nested array.
+        $allowedRoles = config('permissions')[$ability] ?? [];
+
+        return $this->hasAnyRole($allowedRoles);
+    }
 }

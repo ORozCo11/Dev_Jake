@@ -16,6 +16,13 @@ use Symfony\Component\HttpFoundation\Response;
  * it before swapping back to the real account) and switching to a
  * different impersonated account (impersonate/*), both of which are about
  * the impersonation session, not the impersonated account's own data.
+ *
+ * Bypassed in 'local' only (a developer's own machine) so impersonating an
+ * account while building/testing a feature doesn't also require logging in
+ * as that account separately. Deliberately NOT bypassed in 'testing' —
+ * that's PHPUnit's environment name, and ImpersonationTest specifically
+ * exercises this block; including it here would silently stop testing the
+ * one thing this class exists to guarantee. Production is never affected.
  */
 class RestrictImpersonatedToReadOnly
 {
@@ -33,7 +40,7 @@ class RestrictImpersonatedToReadOnly
         // suite look impersonated. A real impersonation token's name is
         // always exactly 'impersonation_token' (see
         // AuthController::impersonate()); nothing else ever uses that name.
-        if (!$token || $token->name !== 'impersonation_token' || $request->isMethod('get') || $request->isMethod('head') || $request->isMethod('options')) {
+        if (!$token || $token->name !== 'impersonation_token' || $request->isMethod('get') || $request->isMethod('head') || $request->isMethod('options') || app()->environment('local')) {
             return $next($request);
         }
 

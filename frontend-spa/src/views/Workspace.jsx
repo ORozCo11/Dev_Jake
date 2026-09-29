@@ -105,18 +105,25 @@ const modulesByRole = {
   ],
   Custodian: [
     { section: null, items: [['dashboard', 'Dashboard']] },
+    // VMS Improvement Plan — sidebar consolidation: what used to be 5
+    // separate rows (Report Vehicle Issue, Propose Ticket, Assigned
+    // Inspections, Repair Verifications, Work Tracker) are now 2 — a
+    // chooser entry point (see 'reportOrPropose' handling in renderModule)
+    // and a tabbed container (see 'myTasks' handling below and its tab bar
+    // in renderModule). Neither key has its own moduleEndpoints entry —
+    // both are pure navigation/presentation wrappers around the same
+    // components and data flows the old 5 rows used unchanged.
     { section: 'Daily Tasks', icon: 'checkCircle', items: [
       ['vehicles', 'View Vehicles'],
-      ['issues', 'Report Vehicle Issue'],
-      ['ticketInspections', 'Assigned Inspections'],
-      ['ticketVerifications', 'Repair Verifications'],
-      ['workTracker', 'Work Tracker'],
+      ['reportOrPropose', 'Report / Propose'],
+      ['myTasks', 'My Tasks'],
     ] },
     { section: 'Monitoring & Schedules', icon: 'calendar', items: [
       ['conditions', 'Condition Monitoring'],
       ['schedules', 'Maintenance Schedule'],
-      ['maintenanceStatus', 'Maintenance Status'],
-      ['maintenance', 'Maintenance Records'],
+      // Merged "Maintenance Status" + "Maintenance Records" — same
+      // underlying data (see maintenanceLedgerLastTab above), tabbed.
+      ['maintenanceLedger', 'Maintenance Records'],
     ] },
   ],
   'Maintenance Personnel': [
@@ -124,11 +131,6 @@ const modulesByRole = {
     { section: 'Work Orders & Repairs', icon: 'wrench', items: [
       ['ticketWorkOrders', 'My Work Orders'],
       ['workTracker', 'Work Tracker'],
-      ['issues', 'View Vehicle Issues'],
-      ['schedules', 'Maintenance Schedule'],
-    ] },
-    { section: 'Monitoring & Schedules', icon: 'calendar', items: [
-      ['maintenance', 'Maintenance Records'],
     ] },
   ],
 };
@@ -141,6 +143,15 @@ function hasRole(user, role) {
   const roles = user.roles;
   if (Array.isArray(roles) && roles.length) return roles.includes(role);
   return user.role === role; // fall back to primary role
+}
+
+// Ability-based permission check. The backend computes `user.abilities` from
+// config/permissions.php (role -> abilities) and returns it on login/GET user.
+// Prefer this over hasRole()/raw role checks for authorization decisions —
+// role checks should be reserved for display-only logic (e.g. label copy).
+function canDo(user, ability) {
+  if (!user) return false;
+  return Array.isArray(user.abilities) && user.abilities.includes(ability);
 }
 
 function userRoles(user) {
@@ -263,6 +274,13 @@ const moduleIcons = {
       <path d="m9 12 2 2 4-4" />
     </svg>
   ),
+  // Merged "Maintenance Status" + "Maintenance Records" — reuses the
+  // ledger's own wrench icon, since that's the entry's primary identity.
+  maintenanceLedger: (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </svg>
+  ),
   schedules: (
     <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -285,6 +303,42 @@ const moduleIcons = {
       <polyline points="21 8 21 21 3 21 3 8" />
       <rect x="1" y="3" width="22" height="5" />
       <line x1="10" y1="12" x2="14" y2="12" />
+    </svg>
+  ),
+  // Merged Custodian entry point (Task 2 of the sidebar consolidation) —
+  // reuses the `issues` warning-triangle glyph since the chooser it opens
+  // still leads with "flag a concern" as the first, most common option.
+  reportOrPropose: (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  ),
+  // Merged Custodian "queues waiting on me" container (Task 1) — a simple
+  // checklist glyph, distinct from the three it now groups (ticketInspections/
+  // ticketVerifications/workTracker keep their own icons below, still used
+  // for the page-heading icon whenever one of those keys is the active tab
+  // but reached from OUTSIDE this container, e.g. Maintenance Personnel's
+  // own separate Work Tracker entry).
+  myTasks: (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M8 3v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3" />
+      <path d="m8 12.5 2 2 4-4.5" />
+      <line x1="8" y1="17" x2="16" y2="17" />
+    </svg>
+  ),
+  // Custodian's "propose a ticket" entry point — the same document shape as
+  // `tickets`, with a plus instead of the two summary lines, so it reads as
+  // "start a new one" rather than "view the list". Kept for the (now
+  // unreachable in practice) fallback path in breadcrumbModule below.
+  ticketPropose: (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="12" y1="12" x2="12" y2="18" />
+      <line x1="9" y1="15" x2="15" y2="15" />
     </svg>
   ),
   ticketInspections: (
@@ -350,6 +404,9 @@ function Workspace() {
   const vehicleUrlMatch = location.pathname.match(/\/vehicles\/(new|\d+)$/);
   const vehicleProfileId = vehicleUrlMatch && vehicleUrlMatch[1] !== 'new' ? vehicleUrlMatch[1] : null;
   const isNewVehiclePage = vehicleUrlMatch?.[1] === 'new';
+  // Vehicle "edit" isn't its own path — VehicleProfilePage seeds its Edit
+  // tab from ?tab=edit on the profile URL itself (see its `editing` state).
+  const isVehicleEditPage = Boolean(vehicleProfileId) && new URLSearchParams(location.search).get('tab') === 'edit';
   const ticketUrlMatch = location.pathname.match(/\/tickets\/(new|\d+)$/);
   const ticketProfileId = ticketUrlMatch && ticketUrlMatch[1] !== 'new' ? ticketUrlMatch[1] : null;
   const isNewTicketPage = ticketUrlMatch?.[1] === 'new';
@@ -412,6 +469,39 @@ function Workspace() {
     || (editLocationVehicleId && 'Update Location')
     || null;
   const { user, logout, refreshUser } = useContext(AuthContext);
+  // Phase B2 — UX-only redirect for every full-page create/edit route: the
+  // backend independently (and exhaustively) enforces each of these
+  // abilities on the actual endpoint, so this just keeps someone without the
+  // ability from sitting on a form that can only ever 403 on submit, instead
+  // of silently rendering it. Mirrors ProtectedRoute's own /unauthorized
+  // bounce rather than inventing a second pattern.
+  useEffect(() => {
+    const deniedNewOrEdit = (
+      (isNewVehiclePage && !canDo(user, 'vehicle.create'))
+      || (isVehicleEditPage && !canDo(user, 'vehicle.edit'))
+      || (isNewCategoryPage && !canDo(user, 'vehicle_type.create'))
+      || (editCategoryId && !canDo(user, 'vehicle_type.edit'))
+      || (isNewSchedulePage && !canDo(user, 'schedule.create'))
+      || (editScheduleId && !canDo(user, 'schedule.edit'))
+      || (isNewIssuePage && !canDo(user, 'issue.create'))
+      || (editIssueId && !canDo(user, 'issue.edit'))
+      || (isNewConditionPage && !canDo(user, 'condition.create'))
+      || (editConditionId && !canDo(user, 'condition.edit'))
+      || (isNewMaintenancePage && !canDo(user, 'record.create'))
+      || (editMaintenanceId && !canDo(user, 'record.edit'))
+      || (isNewUserPage && !canDo(user, 'user.create'))
+      || (editUserId && !canDo(user, 'user.edit'))
+      || (isNewLocationPage && !canDo(user, 'vehicle.update_location'))
+      || (editLocationVehicleId && !canDo(user, 'vehicle.update_location'))
+    );
+    if (deniedNewOrEdit) navigate('/unauthorized', { replace: true });
+  }, [
+    navigate, user,
+    isNewVehiclePage, isVehicleEditPage, isNewCategoryPage, editCategoryId,
+    isNewSchedulePage, editScheduleId, isNewIssuePage, editIssueId,
+    isNewConditionPage, editConditionId, isNewMaintenancePage, editMaintenanceId,
+    isNewUserPage, editUserId, isNewLocationPage, editLocationVehicleId,
+  ]);
   const moduleGroups = useMemo(() => resolveModuleGroups(user), [user.role, user.roles]);
   const modules = useMemo(() => moduleGroups.flatMap((g) => g.items), [moduleGroups]);
   // A fresh mount (hard refresh, a bookmarked/shared link, opening a new tab)
@@ -436,6 +526,38 @@ function Workspace() {
     if (inspectTicketId) return 'ticketInspections';
     return modules[0]?.[0] ?? 'dashboard';
   });
+  // Custodian's merged "My Tasks" sidebar entry (Task 1 of the sidebar
+  // consolidation) is a thin navigation wrapper, not a real module —
+  // `activeModule` still ends up literally 'ticketInspections' /
+  // 'ticketVerifications' / 'workTracker' exactly as before (so every
+  // existing fetch/filter/stat/render keyed off those strings keeps working
+  // completely unchanged), this just remembers which of the three tabs was
+  // last open so re-clicking the "My Tasks" sidebar row returns you to it.
+  const [myTasksLastTab, setMyTasksLastTab] = useState('ticketInspections');
+  // 'workTracker' is the one key shared between Custodian's My Tasks
+  // ("History" tab) and Maintenance Personnel's own separate, untouched
+  // "Work Tracker" sidebar entry — this disambiguates which context set it,
+  // since both simply set activeModule to the same string. Defaults true
+  // (Custodian is the only role this whole file's new My Tasks flow
+  // targets); Maintenance Personnel's own Work Tracker click flips it false.
+  const [workTrackerViaMyTasks, setWorkTrackerViaMyTasks] = useState(true);
+  // Jumps into (or switches tabs within) the merged My Tasks container —
+  // used by both the sidebar's "My Tasks" row and the in-page tab bar.
+  const setMyTasksTab = useCallback((key) => {
+    setMyTasksLastTab(key);
+    setWorkTrackerViaMyTasks(true);
+    setActiveModule(key);
+  }, []);
+  // Same thin-wrapper pattern as My Tasks above, merging Custodian's
+  // "Maintenance Status" (records awaiting their verification) and
+  // "Maintenance Records" (the full ledger) — same underlying data
+  // (GET /maintenance-records), just a different filter, so this is a pure
+  // navigation/presentation merge with zero change to either module.
+  const [maintenanceLedgerLastTab, setMaintenanceLedgerLastTab] = useState('maintenanceStatus');
+  const setMaintenanceLedgerTab = useCallback((key) => {
+    setMaintenanceLedgerLastTab(key);
+    setActiveModule(key);
+  }, []);
   // Which sidebar sections the user has folded away, remembered per browser.
   // Stored as the collapsed set. Unlike a brand-new section defaulting open,
   // a first-ever visit (nothing in localStorage yet) starts every section
@@ -463,18 +585,48 @@ function Workspace() {
   // one of these. Computed directly (not synced via an effect) so it's
   // never wrong even for a single frame. Falls back to `activeModule` only
   // for the plain module-list pages, where that state is authoritative.
+  // Whether these two merged Custodian entries actually exist in THIS user's
+  // sidebar — true for a Custodian, false for Admin/Maintenance Personnel
+  // (who keep their own separate, unmerged 'issues'/'ticketInspections'/
+  // 'ticketVerifications'/'workTracker' entries untouched). Drives every
+  // "should this special page/tab highlight the merged entry instead of the
+  // real key" decision below.
+  const hasMyTasksNav = modules.some(([k]) => k === 'myTasks');
+  const hasReportOrProposeNav = modules.some(([k]) => k === 'reportOrPropose');
+  const hasMaintenanceLedgerNav = modules.some(([k]) => k === 'maintenanceLedger');
   const breadcrumbModule = ticketProfileId || isNewTicketPage
-    ? (user.role === 'Admin' ? 'tickets' : 'workTracker')
-    : maintenanceProfileId || isNewMaintenancePage || editMaintenanceId ? 'maintenance'
+    ? (user.role === 'Admin'
+      ? 'tickets'
+      // The propose form is a brand-new entry point (never reachable before
+      // this), so — unlike the ticketProfileId case just below it, which
+      // keeps its long-established 'workTracker' fallback — this can safely
+      // highlight its own sidebar item instead (now the merged
+      // 'reportOrPropose' chooser entry, replacing the old direct-link
+      // 'ticketPropose' row it used to point at).
+      : (isNewTicketPage && canDo(user, 'ticket.propose')
+        ? (hasReportOrProposeNav ? 'reportOrPropose' : 'ticketPropose')
+        : (hasMyTasksNav ? 'myTasks' : 'workTracker')))
+    : maintenanceProfileId || isNewMaintenancePage || editMaintenanceId ? (hasMaintenanceLedgerNav ? 'maintenanceLedger' : 'maintenance')
     : isNewVehiclePage || vehicleProfileId ? 'vehicles'
     : isNewCategoryPage || editCategoryId ? 'categories'
     : isNewSchedulePage || editScheduleId ? 'schedules'
-    : isNewIssuePage || editIssueId || viewIssueId ? 'issues'
+    : isNewIssuePage || editIssueId || viewIssueId ? (hasReportOrProposeNav ? 'reportOrPropose' : 'issues')
     : isNewConditionPage || editConditionId ? 'conditions'
     : isNewUserPage || editUserId || viewUserId ? 'users'
     : isNewLocationPage || editLocationVehicleId ? 'locations'
     : logRepairsTicketId ? 'ticketWorkOrders'
-    : inspectTicketId ? 'ticketInspections'
+    : inspectTicketId ? (hasMyTasksNav ? 'myTasks' : 'ticketInspections')
+    // Plain module-list view (no special sub-page open) for one of the three
+    // merged "My Tasks" queues — 'ticketInspections'/'ticketVerifications'
+    // are Custodian-only regardless, 'workTracker' also covers Maintenance
+    // Personnel's own separate entry, disambiguated by workTrackerViaMyTasks.
+    : (hasMyTasksNav && (
+        activeModule === 'ticketInspections'
+        || activeModule === 'ticketVerifications'
+        || (activeModule === 'workTracker' && workTrackerViaMyTasks)
+      )) ? 'myTasks'
+    : (hasReportOrProposeNav && activeModule === 'issues') ? 'reportOrPropose'
+    : (hasMaintenanceLedgerNav && (activeModule === 'maintenanceStatus' || activeModule === 'maintenance')) ? 'maintenanceLedger'
     : activeModule;
   // Always starts expanded — a collapsed sidebar should only ever be a
   // deliberate, in-session choice (the toggle button), never the default a
@@ -507,6 +659,10 @@ function Workspace() {
   const [dashboard, setDashboard] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
   const [completeScheduleTarget, setCompleteScheduleTarget] = useState(null);
+  // Admin's "Reassign" action on a Scheduled row (schedule.reassign ability,
+  // Admin-only) — hands a still-open schedule to a different Maintenance
+  // Personnel without cancelling and re-booking it.
+  const [reassignScheduleTarget, setReassignScheduleTarget] = useState(null);
   // After a Custodian passes a verification they're already standing at the
   // vehicle — offer the Readiness Check right then instead of making them
   // come back for a second visit. Holds the vehicle to check, or null.
@@ -737,9 +893,9 @@ function Workspace() {
 
     const params = {};
 
-    if (key === 'issues' && hasRole(user, 'Custodian') && !hasRole(user, 'Admin')) {
-      params.mine = 1;
-    }
+    // A Custodian sees every issue report in the barangay, same as Admin —
+    // not just their own (VMS-IMPROVEMENT-PLAN.md Phase B3). Maintenance
+    // Personnel gets none at all, enforced server-side regardless of params.
 
     if (key === 'maintenanceStatus') {
       params.for_verification = 1;
@@ -754,7 +910,23 @@ function Workspace() {
 
     const response = await api.get(endpoint, { params });
     setRecords((current) => ({ ...current, [key]: response.data }));
-  }, [user.role]);
+
+    // Phase B4 — Maintenance Personnel's Condition Monitoring and standalone
+    // Maintenance Schedule sidebar entries were removed (issue.edit dropped
+    // them entirely, and Maintenance Personnel never gets schedule.create
+    // either way); their assigned schedules instead surface as a second
+    // section on My Work Orders. This
+    // piggybacks a second fetch onto that same module load rather than
+    // giving Maintenance Personnel back a 'schedules' sidebar entry — the
+    // backend already scopes GET /maintenance-schedules to assigned_to = me
+    // for a pure Maintenance Personnel account.
+    if (key === 'ticketWorkOrders' && hasRole(user, 'Maintenance Personnel')) {
+      try {
+        const scheduleResponse = await api.get('/maintenance-schedules');
+        setRecords((current) => ({ ...current, mySchedules: scheduleResponse.data }));
+      } catch { /* optional secondary fetch — the work orders list still loaded fine */ }
+    }
+  }, [user]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -930,6 +1102,23 @@ function Workspace() {
     }
   };
 
+  // Custodian's "propose a ticket" path — a separate endpoint from Admin's
+  // createTicket() above (POST /tickets/propose instead of POST /tickets):
+  // the backend self-assigns the proposing Custodian and parks it at
+  // 'Pending Approval' instead of dispatching an inspection immediately.
+  const proposeTicket = async (payload) => {
+    setNotice(null);
+    try {
+      await api.post('/tickets/propose', cleanPayload(payload));
+      setNotice({ type: 'success', text: 'Ticket proposal submitted — an Admin will review it.' });
+      await refreshCurrent();
+      return true;
+    } catch (error) {
+      showError(error, setNotice);
+      return false;
+    }
+  };
+
   const handleCreateTicketFromIssue = (issue) => {
     // The custodian who filed this already told us what's wrong — don't make
     // someone re-diagnose it. Pre-diagnosed mode skips straight past
@@ -977,10 +1166,10 @@ function Workspace() {
   };
 
   // The Custodian has daily eyes on the vehicle and is the one most likely
-  // to notice "this is due for a checkup soon" — but they can't decide to
-  // fix something, only propose WHEN to look at it. Jumps to Add Schedule
-  // with the vehicle and a note already filled in; still needs to actually
-  // be submitted (nothing is booked until then).
+  // to notice "this is due for a checkup soon" — and, since Custodian can
+  // book a schedule directly again, this hands off straight to the real Add
+  // Schedule form with the vehicle and a note already filled in; nothing is
+  // booked until the form is actually submitted.
   const handleSuggestScheduleFromCondition = (cond) => {
     setPrefilledScheduleData({
       vehicle_id: cond.vehicle_id,
@@ -1243,11 +1432,41 @@ function Workspace() {
     }
   };
 
-  const submitFormPage = async (moduleKey, existing, payload) => {
+  // Admin's "Reassign" action (schedule.reassign ability, Admin only): hand a
+  // Scheduled row to a different Maintenance Personnel without having to
+  // cancel it and book a new one.
+  const reassignSchedule = async (target, payload) => {
     setNotice(null);
     try {
-      let finalPayload = payload;
+      await api.put(`/maintenance-schedules/${target.schedule_id}/reassign`, { assigned_to: payload.assigned_to });
+      await refreshCurrent();
+      setNotice({ type: 'success', text: 'Schedule reassigned.' });
+      setReassignScheduleTarget(null);
+    } catch (error) {
+      showError(error, setNotice);
+    }
+  };
 
+  // Shared success tail for submitFormPage, below — pulled out so the
+  // confirm-and-resubmit branch (a Maintenance Schedule conflict warning)
+  // can reach the exact same "what happens after this actually saves" path
+  // as an ordinary submit.
+  const finishFormPageSuccess = async (moduleKey, existing, successMessage) => {
+    await refreshCurrent();
+    // If the admin just edited their OWN account, re-pull the logged-in user
+    // so the topbar name/avatar/photo update immediately (no reload needed).
+    if (moduleKey === 'users' && existing?.id != null && String(existing.id) === String(user.id)) {
+      await refreshUser();
+    }
+    setNotice({ type: 'success', text: successMessage });
+    returnToModule(moduleKey);
+  };
+
+  const submitFormPage = async (moduleKey, existing, payload) => {
+    setNotice(null);
+    let finalPayload = payload;
+    let request;
+    try {
       // "+ Add New Issue" was picked on the maintenance form instead of an
       // existing report — file the Issue Report first, then point the
       // maintenance record at the ID it comes back with. The new report's
@@ -1270,18 +1489,34 @@ function Workspace() {
         };
       }
 
-      const request = moduleRequest(moduleKey, existing, finalPayload);
+      request = moduleRequest(moduleKey, existing, finalPayload);
       await sendPayload(request.method, request.path, finalPayload);
-      await refreshCurrent();
-      // If the admin just edited their OWN account, re-pull the logged-in user
-      // so the topbar name/avatar/photo update immediately (no reload needed).
-      if (moduleKey === 'users' && existing?.id != null && String(existing.id) === String(user.id)) {
-        await refreshUser();
-      }
-      setNotice({ type: 'success', text: request.success });
-      returnToModule(moduleKey);
+      await finishFormPageSuccess(moduleKey, existing, request.success);
       return true;
     } catch (error) {
+      // A Maintenance Schedule create/update that lands on a same-vehicle or
+      // barangay daily-volume conflict comes back as a 409 warning, not a
+      // hard block — the backend never refuses outright, it just wants an
+      // explicit "yes, anyway" first. Surface that as the same confirm
+      // dialog used elsewhere in this file, and resubmit the exact same
+      // payload with confirm_conflicts: true if the user confirms.
+      if (moduleKey === 'schedules' && error.response?.status === 409 && error.response?.data?.warning) {
+        setConfirmDialog({
+          title: 'Scheduling Conflict',
+          message: error.response.data.message,
+          confirmLabel: existing ? 'Save Anyway' : 'Add Anyway',
+          variant: 'primary',
+          onConfirm: async () => {
+            try {
+              await sendPayload(request.method, request.path, { ...finalPayload, confirm_conflicts: true });
+              await finishFormPageSuccess(moduleKey, existing, request.success);
+            } catch (confirmError) {
+              showError(confirmError, setNotice);
+            }
+          },
+        });
+        return false;
+      }
       showError(error, setNotice);
       return false;
     }
@@ -1808,8 +2043,8 @@ function Workspace() {
   // (show/hide + drag to reorder, persisted per browser) — see
   // ColumnChooserButton/useColumnChooser below.
   const vehicleColumnDefs = useMemo(
-    () => vehicleColumns(user.role, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile),
-    [user.role, openVehicleProfile, deleteRecord, restoreRecord, filterStatus, openTicketProfile],
+    () => vehicleColumns(user, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile),
+    [user, openVehicleProfile, deleteRecord, restoreRecord, filterStatus, openTicketProfile],
   );
   const vehicleColumnChooser = useColumnChooser('vms_vehicle_columns', vehicleColumnDefs);
 
@@ -1834,26 +2069,26 @@ function Workspace() {
 
   const conditionColumnDefs = useMemo(
     () => conditionColumns(
-      user.role,
+      user,
       (row) => navigate(`${roleRoutes[user.role]}/conditions/${row.condition_check_id}/edit`),
       deleteRecord,
       handleCreateTicketFromCondition,
       handleSuggestScheduleFromCondition,
       () => navigate(`${roleRoutes[user.role]}/conditions/new`),
     ),
-    [user.role, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition],
+    [user, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition],
   );
   const conditionColumnChooser = useColumnChooser('vms_condition_columns', conditionColumnDefs);
 
   const issueColumnDefs = useMemo(
-    () => issueColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}/edit`), handleCreateTicketFromIssue, setUserInfoTarget, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`), deleteRecord),
-    [user.role, navigate, handleCreateTicketFromIssue, deleteRecord],
+    () => issueColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}/edit`), handleCreateTicketFromIssue, setUserInfoTarget, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`), deleteRecord, user),
+    [user, navigate, handleCreateTicketFromIssue, deleteRecord],
   );
   const issueColumnChooser = useColumnChooser('vms_issue_columns', issueColumnDefs);
 
   const maintenanceColumnDefs = useMemo(
-    () => maintenanceColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}/edit`), updateRecord, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}`)),
-    [user.role, navigate, updateRecord],
+    () => maintenanceColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}/edit`), updateRecord, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}`), user),
+    [user, navigate, updateRecord],
   );
   const maintenanceColumnChooser = useColumnChooser('vms_maintenance_columns', maintenanceColumnDefs);
 
@@ -1864,7 +2099,7 @@ function Workspace() {
   const maintenanceStatusColumnChooser = useColumnChooser('vms_maintenance_status_columns', maintenanceStatusColumnDefs);
 
   const scheduleColumnDefs = useMemo(
-    () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord),
+    () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget),
     [navigate, user, deleteRecord, restoreRecord],
   );
   const scheduleColumnChooser = useColumnChooser('vms_schedule_columns', scheduleColumnDefs);
@@ -2228,6 +2463,15 @@ function Workspace() {
     selectBarangayBoundary(barangayId);
   };
 
+  // Sidebar badge for a given module key — 'myTasks' has no badge_counts
+  // entry of its own (it's not a real module), so it's the sum of the two
+  // real queues it groups. Shared by each row's own badge and by a
+  // collapsed group header's summed badge below.
+  const badgeCountFor = (key) => (
+    key === 'myTasks'
+      ? (dashboard?.badge_counts?.ticketInspections ?? 0) + (dashboard?.badge_counts?.ticketVerifications ?? 0)
+      : (dashboard?.badge_counts?.[key] ?? 0)
+  );
 
   return (
     <FormNoticeContext.Provider value={notice}>
@@ -2413,13 +2657,49 @@ function Workspace() {
           <nav className="module-nav" aria-label="Workspace modules">
             {moduleGroups.map(({ section, icon, items }) => {
               const renderItem = ([key, label]) => {
-                const badgeCount = dashboard?.badge_counts?.[key] ?? 0;
+                const badgeCount = badgeCountFor(key);
+                // Admin's "Maintenance Tickets" badge (badge_counts.tickets)
+                // already counts every non-Closed/Cancelled ticket, Pending
+                // Approval proposals included — adding ticketProposals on top
+                // would double-count them. Shown as its own small pill
+                // instead, so "N open tickets" and "M awaiting your review"
+                // stay two distinct, addable-up-in-your-head signals.
+                const proposalCount = key === 'tickets' ? (dashboard?.badge_counts?.ticketProposals ?? 0) : 0;
+                // 'ticketPropose' isn't a real module (no list view/endpoint
+                // of its own) — it's a direct link straight to the Propose
+                // Ticket form, same URL Admin's own Create Ticket flow uses.
+                // Every other item here just flips `activeModule` in place.
+                const isDirectRouteLink = key === 'ticketPropose';
+                // 'myTasks' also isn't a real module — clicking it jumps
+                // straight to whichever of its three tabs was last open
+                // (see setMyTasksTab / myTasksLastTab above).
+                const isMyTasksContainer = key === 'myTasks';
+                // 'maintenanceLedger' is the same kind of thin wrapper —
+                // jumps to whichever of its two tabs was last open (see
+                // setMaintenanceLedgerTab / maintenanceLedgerLastTab above).
+                const isMaintenanceLedgerContainer = key === 'maintenanceLedger';
                 return (
                   <button
                     className={key === breadcrumbModule ? 'active' : ''}
                     key={key}
                     onClick={() => guardedNavigate(() => {
-                      setActiveModule(key);
+                      if (isDirectRouteLink) {
+                        navigate(`${roleRoutes[user.role]}/tickets/new`);
+                        return;
+                      }
+                      if (isMyTasksContainer) {
+                        setMyTasksTab(myTasksLastTab);
+                      } else if (isMaintenanceLedgerContainer) {
+                        setMaintenanceLedgerTab(maintenanceLedgerLastTab);
+                      } else {
+                        // 'workTracker' is the one real key both My Tasks'
+                        // own "History" tab and Maintenance Personnel's
+                        // separate, untouched "Work Tracker" row can set —
+                        // landing here via THIS plain entry (not the My
+                        // Tasks tab bar above) means it's the latter.
+                        if (key === 'workTracker') setWorkTrackerViaMyTasks(false);
+                        setActiveModule(key);
+                      }
                       if (isOnSpecialPage) {
                         navigate(roleRoutes[user.role]);
                       }
@@ -2430,6 +2710,15 @@ function Workspace() {
                     {moduleIcons[key]}
                     <span>{label}</span>
                     {badgeCount > 0 && <span className="module-nav-badge">{badgeCount}</span>}
+                    {proposalCount > 0 && (
+                      <span
+                        className="module-nav-badge"
+                        style={{ background: '#d97706' }}
+                        title={`${proposalCount} ticket proposal${proposalCount === 1 ? '' : 's'} awaiting your review`}
+                      >
+                        {proposalCount}
+                      </span>
+                    )}
                   </button>
                 );
               };
@@ -2440,7 +2729,7 @@ function Workspace() {
               // Collapsing must never hide an alert: the header carries the
               // sum of its children's badges so a folded group still shows
               // there's something inside needing attention.
-              const groupBadge = items.reduce((sum, [key]) => sum + (dashboard?.badge_counts?.[key] ?? 0), 0);
+              const groupBadge = items.reduce((sum, [key]) => sum + badgeCountFor(key), 0);
               // The icon-only rail forces every group open (no room for
               // headers there, and hiding icons would leave no way to reach
               // them). Otherwise this is a plain accordion — a group holding
@@ -2482,7 +2771,13 @@ function Workspace() {
                 {subPageTitle && !isProfilePage && (
                   <p className="breadcrumb-path">{moduleLabel(modules, breadcrumbModule)} »</p>
                 )}
-                <h2>{subPageTitle ?? moduleLabel(modules, activeModule)}</h2>
+                {/* breadcrumbModule (not activeModule) — for the merged
+                    My Tasks / Report-Propose entries, activeModule is still
+                    the real underlying key (e.g. 'ticketInspections'), which
+                    isn't a literal sidebar item any more so moduleLabel
+                    couldn't resolve it; breadcrumbModule already maps those
+                    to the merged entry's own key/label for exactly this. */}
+                <h2>{subPageTitle ?? moduleLabel(modules, breadcrumbModule)}</h2>
               </div>
             </div>
           )}
@@ -2587,21 +2882,40 @@ function Workspace() {
               }}
             />
           ) : isNewTicketPage ? (
-            <NewTicketPage
-              onBack={() => { setPrefilledTicketData(null); returnToModule('tickets'); }}
-              ticketLookups={ticketLookups}
-              prefilledTicketData={prefilledTicketData}
-              onCreateTicket={createTicket}
-              basePath={roleRoutes[user.role]}
-              onDirty={() => setHasUnsavedChanges(true)}
-            />
+            // Same /tickets/new URL, two entirely separate components: Admin
+            // (ticket.create) keeps NewTicketPage completely untouched;
+            // Custodian (ticket.propose) instead gets ProposeTicketPage — a
+            // simpler, purpose-built form for POST /tickets/propose, kept
+            // fully separate rather than a shared branch so Admin's existing
+            // form/payload is provably unaffected by this addition.
+            canDo(user, 'ticket.propose') ? (
+              <ProposeTicketPage
+                onBack={() => returnToModule('workTracker')}
+                ticketLookups={ticketLookups}
+                onProposeTicket={proposeTicket}
+                onDirty={() => setHasUnsavedChanges(true)}
+              />
+            ) : (
+              <NewTicketPage
+                onBack={() => { setPrefilledTicketData(null); returnToModule('tickets'); }}
+                ticketLookups={ticketLookups}
+                prefilledTicketData={prefilledTicketData}
+                onCreateTicket={createTicket}
+                basePath={roleRoutes[user.role]}
+                onDirty={() => setHasUnsavedChanges(true)}
+              />
+            )
           ) : vehicleProfileId ? (
             <VehicleProfilePage
               vehicleId={vehicleProfileId}
               lookups={lookups}
               allHubs={allHubs}
               canManage={hasRole(user, 'Admin')}
-              canManageDocuments={hasRole(user, 'Admin') || hasRole(user, 'Custodian') || hasRole(user, 'Maintenance Personnel')}
+              // Phase B4 — document.create/edit dropped Maintenance Personnel
+              // entirely (view/download only now); Custodian keeps upload +
+              // edit-own (VehicleFiles/VehicleFilesModal enforce the
+              // ownership half via added_by), Admin unrestricted.
+              canManageDocuments={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
               canCheckReadiness={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
               setNotice={setNotice}
               onSaved={refreshCurrent}
@@ -2610,7 +2924,7 @@ function Workspace() {
           ) : ticketProfileId ? (
             <TicketProfilePage
               ticketId={ticketProfileId}
-              role={user.role}
+              user={user}
               userId={user.id}
               ticketLookups={ticketLookups}
               onBack={() => returnToModule('tickets')}
@@ -2656,7 +2970,7 @@ function Workspace() {
               issueId={viewIssueId}
               allIssues={records.issues ?? []}
               allHubs={allHubs}
-              role={user.role}
+              user={user}
               onCreateTicketFromIssue={handleCreateTicketFromIssue}
               onSendToExternalShop={handleSendToExternalShop}
             />
@@ -2707,7 +3021,7 @@ function Workspace() {
             <UserViewPage
               userId={viewUserId}
               users={records.users}
-              role={user.role}
+              currentUser={user}
               onEdit={() => navigate(`${roleRoutes[user.role]}/users/${viewUserId}/edit`)}
             />
           ) : (isNewUserPage || editUserId) ? (
@@ -2784,7 +3098,188 @@ function Workspace() {
     </FormNoticeContext.Provider>
   );
 
+  // Shared "Mark Done" modal for a Maintenance Schedule — used both from the
+  // Schedules module (Admin/Custodian) and from My Work Orders (Phase B4 —
+  // a Maintenance Personnel account's assigned schedules now surface there
+  // too), so completing a schedule works identically regardless of which
+  // page it was opened from. Pulled out of the Schedules module's own render
+  // branch so it isn't limited to only appearing there.
+  function renderCompleteScheduleModal() {
+    return (
+      <FormModal open={!!completeScheduleTarget} title={`Mark Done — ${completeScheduleTarget?.maintenance_type ?? ''}`} onClose={() => setCompleteScheduleTarget(null)}>
+        {completeScheduleTarget && (
+          <>
+            <p className="muted" style={{ marginBottom: 12, fontSize: '0.85rem' }}>
+              This logs a maintenance record for the work and closes the schedule
+              {completeScheduleTarget.recurrence_months ? `, then auto-schedules the next one (${RECURRENCE_LABEL[completeScheduleTarget.recurrence_months] ?? `every ${completeScheduleTarget.recurrence_months} months`}).` : '.'}
+            </p>
+            <SmartForm
+              fields={[
+                { label: 'Date Completed', name: 'date_completed', type: 'date' },
+                // Only an assigned mechanic (or Admin) can even open this
+                // modal now — for a mechanic completing their own job,
+                // "who performed it" is already answered by "you".
+                // Admin keeps the picker since they can complete an
+                // unassigned schedule on someone's behalf.
+                ...(hasRole(user, 'Admin')
+                  ? [{ label: 'Performed By', name: 'maintenance_personnel_id', options: options(lookups.maintenance_performers, 'id', 'name'), type: 'select' }]
+                  : []),
+                { label: 'Cost (optional)', name: 'maintenance_cost', type: 'number' },
+                // Sometimes a scheduled job turns out to need a
+                // third-party shop instead of in-house work.
+                { label: 'Sent to External Shop?', name: 'is_external', type: 'select', options: [
+                  { value: 0, label: 'No — done in-house' },
+                  { value: 1, label: 'Yes — external shop repair' },
+                ] },
+                // Vendor/warranty only matter when it went external, so
+                // those two stay conditional. Proof of completion below
+                // does NOT — a receipt (external) or a photo of the
+                // finished work (in-house) are equally valid proof, and
+                // either is what actually lets Admin close this
+                // immediately instead of waiting on Custodian
+                // verification. A typed note alone is never enough.
+                ...(completeScheduleExternal ? [
+                  { label: 'External Shop / Vendor', name: 'external_vendor', type: 'text', placeholder: 'e.g. Bautista Auto Shop' },
+                  { label: 'Warranty Until', name: 'warranty_until', type: 'date' },
+                ] : []),
+                {
+                  label: 'Receipt / Proof of Completion',
+                  name: 'receipt',
+                  type: 'file',
+                  accept: 'image/*,.pdf',
+                  hint: hasRole(user, 'Admin')
+                    ? 'Attach a receipt (external shop) or a photo of the completed repair (in-house) to close this immediately — no separate Custodian verification needed.'
+                    : 'Attach a receipt or a photo of the completed repair so the Custodian verifying this has proof.',
+                },
+                { label: 'Notes (what was done)', name: 'notes', type: 'textarea', rows: 2 },
+              ]}
+              key={`complete-${completeScheduleTarget.schedule_id}`}
+              initialValues={{ date_completed: new Date().toISOString().slice(0, 10), maintenance_personnel_id: completeScheduleTarget.assigned_to ?? '' }}
+              onValuesChange={(vals) => setCompleteScheduleExternal(vals.is_external === 1 || vals.is_external === '1' || vals.is_external === true)}
+              onCancel={() => setCompleteScheduleTarget(null)}
+              onSubmit={(payload) => completeSchedule(completeScheduleTarget, payload)}
+              submitLabel="Mark as Done"
+              title=""
+            />
+          </>
+        )}
+      </FormModal>
+    );
+  }
+
+  // Phase B4 — Admin-only "Reassign" action on a Scheduled row (new
+  // schedule.reassign ability): hands the job to a different Maintenance
+  // Personnel without cancelling and re-booking it. Reuses the same
+  // maintenance_personnel picker the Add/Edit Schedule form already uses for
+  // Assigned To.
+  function renderReassignScheduleModal() {
+    return (
+      <FormModal open={!!reassignScheduleTarget} title={`Reassign — ${reassignScheduleTarget?.maintenance_type ?? ''}`} onClose={() => setReassignScheduleTarget(null)}>
+        {reassignScheduleTarget && (
+          <SmartForm
+            fields={[
+              {
+                label: 'Assigned To',
+                name: 'assigned_to',
+                // The backend 422s if "reassigned" to whoever already has
+                // it — leave the current assignee out of the picker rather
+                // than let that be a click away.
+                options: options((lookups.maintenance_personnel ?? []).filter((p) => String(p.id) !== String(reassignScheduleTarget.assigned_to)), 'id', 'name'),
+                required: true,
+                type: 'select',
+              },
+            ]}
+            key={`reassign-${reassignScheduleTarget.schedule_id}`}
+            initialValues={{ assigned_to: '' }}
+            onCancel={() => setReassignScheduleTarget(null)}
+            onSubmit={(payload) => reassignSchedule(reassignScheduleTarget, payload)}
+            submitLabel="Reassign"
+            title=""
+          />
+        )}
+      </FormModal>
+    );
+  }
+
   function renderModule() {
+    // Task 1 of the sidebar consolidation — Custodian's merged "My Tasks"
+    // container. `activeModule` is still the literal real key here
+    // ('ticketInspections'/'ticketVerifications'/'workTracker'); this only
+    // decides whether to also show the tab bar above that unchanged module
+    // component, reusing the same segmented tab-bar pattern already used for
+    // Vehicle Location's Map/Records toggle (see .locations-tab-bar below).
+    const showMyTasksContainer = hasMyTasksNav && (
+      activeModule === 'ticketInspections'
+      || activeModule === 'ticketVerifications'
+      || (activeModule === 'workTracker' && workTrackerViaMyTasks)
+    );
+    const myTasksTabBar = showMyTasksContainer && (
+      <div className="locations-tab-bar" role="tablist" aria-label="My Tasks">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeModule === 'ticketInspections'}
+          className={`locations-tab-button ${activeModule === 'ticketInspections' ? 'active' : ''}`}
+          onClick={() => setMyTasksTab('ticketInspections')}
+        >
+          To Inspect
+          {(dashboard?.badge_counts?.ticketInspections ?? 0) > 0 && (
+            <span className="count-badge">{dashboard.badge_counts.ticketInspections}</span>
+          )}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeModule === 'ticketVerifications'}
+          className={`locations-tab-button ${activeModule === 'ticketVerifications' ? 'active' : ''}`}
+          onClick={() => setMyTasksTab('ticketVerifications')}
+        >
+          To Verify
+          {(dashboard?.badge_counts?.ticketVerifications ?? 0) > 0 && (
+            <span className="count-badge">{dashboard.badge_counts.ticketVerifications}</span>
+          )}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeModule === 'workTracker'}
+          className={`locations-tab-button ${activeModule === 'workTracker' ? 'active' : ''}`}
+          onClick={() => setMyTasksTab('workTracker')}
+        >
+          History
+        </button>
+      </div>
+    );
+
+    // Same thin-wrapper approach as My Tasks above — `activeModule` is
+    // still literally 'maintenanceStatus'/'maintenance', this only decides
+    // whether to also show the tab bar above that unchanged module.
+    const showMaintenanceLedgerContainer = hasMaintenanceLedgerNav && (
+      activeModule === 'maintenanceStatus' || activeModule === 'maintenance'
+    );
+    const maintenanceLedgerTabBar = showMaintenanceLedgerContainer && (
+      <div className="locations-tab-bar" role="tablist" aria-label="Maintenance Records">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeModule === 'maintenanceStatus'}
+          className={`locations-tab-button ${activeModule === 'maintenanceStatus' ? 'active' : ''}`}
+          onClick={() => setMaintenanceLedgerTab('maintenanceStatus')}
+        >
+          Needs Verification
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeModule === 'maintenance'}
+          className={`locations-tab-button ${activeModule === 'maintenance' ? 'active' : ''}`}
+          onClick={() => setMaintenanceLedgerTab('maintenance')}
+        >
+          All Records
+        </button>
+      </div>
+    );
+
     if (activeModule === 'dashboard') {
       return (
         <Dashboard
@@ -3239,6 +3734,31 @@ function Workspace() {
       );
     }
 
+    // Task 2 of the sidebar consolidation — Custodian's merged "Report /
+    // Propose" entry point. This is only ever a chooser screen: each option
+    // just triggers the exact same navigation the old separate 'issues' and
+    // 'ticketPropose' sidebar rows used to (switch to the unchanged 'issues'
+    // module below, or navigate straight to /tickets/new — same as the old
+    // direct link), so neither underlying flow needed any changes at all.
+    if (activeModule === 'reportOrPropose') {
+      return (
+        <ModulePanel description="Choose how you want to log this.">
+          <div className="entry-chooser">
+            <button type="button" className="entry-chooser-card" onClick={() => setActiveModule('issues')}>
+              <Icon name="alert" size={24} />
+              <h3>Just flagging a concern</h3>
+              <p>Report something you've noticed on a vehicle — no repair details needed yet. An Admin or Custodian follows up from there.</p>
+            </button>
+            <button type="button" className="entry-chooser-card" onClick={() => navigate(`${roleRoutes[user.role]}/tickets/new`)}>
+              <Icon name="ticket" size={24} />
+              <h3>I have full repair details</h3>
+              <p>Already know what's wrong and what work is needed? Propose a ticket directly with the repair details filled in.</p>
+            </button>
+          </div>
+        </ModulePanel>
+      );
+    }
+
     if (activeModule === 'issues') {
       if (hasRole(user, 'Custodian') && !hasVehicles) {
         return (
@@ -3329,6 +3849,7 @@ function Workspace() {
     if (activeModule === 'maintenance') {
       return (
         <ModulePanel
+          tabBar={maintenanceLedgerTabBar}
           description="Directly log external, historical, or third-party vehicle maintenance records and expenses without running the 5-phase ticket workflow."
           statCards={
             <ModuleStatCards
@@ -3429,7 +3950,7 @@ function Workspace() {
     if (activeModule === 'maintenanceStatus') {
       return (
         <>
-          <ModulePanel description="Review records marked for field verification and send the result back to the ticket loop.">
+          <ModulePanel tabBar={maintenanceLedgerTabBar} description="Review records marked for field verification and send the result back to the ticket loop.">
             <div className="panel-header-bar">
               <h3>Pending Verifications <span className="count-badge">{visibleRows.length}</span></h3>
               <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search verifications..." columnChooser={maintenanceStatusColumnChooser} />
@@ -3536,11 +4057,15 @@ function Workspace() {
             <h3>Maintenance Schedules <span className="count-badge">{visibleRows.length}</span></h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <ViewModeDropdown value={scheduleViewMode} onChange={changeScheduleViewMode} />
+              {/* Custodian books directly (schedule.create) — they have the
+                  day-to-day visibility into a vehicle's condition. Admin keeps
+                  oversight (edit any/reassign/cancel) without originating one;
+                  Maintenance Personnel never booked schedules directly. */}
               <LocalSearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search schedules..."
-                onAdd={(hasRole(user, 'Admin') || hasRole(user, 'Maintenance Personnel') || hasRole(user, 'Custodian'))
+                onAdd={canDo(user, 'schedule.create')
                   ? () => navigate(`${roleRoutes[user.role]}/schedules/new`)
                   : undefined}
                 addLabel="Add Schedule"
@@ -3563,6 +4088,7 @@ function Workspace() {
                   onDelete={(r) => deleteRecord(`/maintenance-schedules/${r.schedule_id}`, 'Schedule cancelled.')}
                   onRestore={(r) => restoreRecord(`/maintenance-schedules/${r.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?')}
                   onViewRecord={(r) => navigate(`${roleRoutes[user.role]}/maintenance/${r.resulting_maintenance_id}`)}
+                  onReassign={setReassignScheduleTarget}
                 />
               )}
             />
@@ -3576,64 +4102,8 @@ function Workspace() {
             />
           )}
 
-          <FormModal open={!!completeScheduleTarget} title={`Mark Done — ${completeScheduleTarget?.maintenance_type ?? ''}`} onClose={() => setCompleteScheduleTarget(null)}>
-            {completeScheduleTarget && (
-              <>
-                <p className="muted" style={{ marginBottom: 12, fontSize: '0.85rem' }}>
-                  This logs a maintenance record for the work and closes the schedule
-                  {completeScheduleTarget.recurrence_months ? `, then auto-schedules the next one (${RECURRENCE_LABEL[completeScheduleTarget.recurrence_months] ?? `every ${completeScheduleTarget.recurrence_months} months`}).` : '.'}
-                </p>
-                <SmartForm
-                  fields={[
-                    { label: 'Date Completed', name: 'date_completed', type: 'date' },
-                    // Only an assigned mechanic (or Admin) can even open this
-                    // modal now — for a mechanic completing their own job,
-                    // "who performed it" is already answered by "you".
-                    // Admin keeps the picker since they can complete an
-                    // unassigned schedule on someone's behalf.
-                    ...(hasRole(user, 'Admin')
-                      ? [{ label: 'Performed By', name: 'maintenance_personnel_id', options: options(lookups.maintenance_performers, 'id', 'name'), type: 'select' }]
-                      : []),
-                    { label: 'Cost (optional)', name: 'maintenance_cost', type: 'number' },
-                    // Sometimes a scheduled job turns out to need a
-                    // third-party shop instead of in-house work.
-                    { label: 'Sent to External Shop?', name: 'is_external', type: 'select', options: [
-                      { value: 0, label: 'No — done in-house' },
-                      { value: 1, label: 'Yes — external shop repair' },
-                    ] },
-                    // Vendor/warranty only matter when it went external, so
-                    // those two stay conditional. Proof of completion below
-                    // does NOT — a receipt (external) or a photo of the
-                    // finished work (in-house) are equally valid proof, and
-                    // either is what actually lets Admin close this
-                    // immediately instead of waiting on Custodian
-                    // verification. A typed note alone is never enough.
-                    ...(completeScheduleExternal ? [
-                      { label: 'External Shop / Vendor', name: 'external_vendor', type: 'text', placeholder: 'e.g. Bautista Auto Shop' },
-                      { label: 'Warranty Until', name: 'warranty_until', type: 'date' },
-                    ] : []),
-                    {
-                      label: 'Receipt / Proof of Completion',
-                      name: 'receipt',
-                      type: 'file',
-                      accept: 'image/*,.pdf',
-                      hint: hasRole(user, 'Admin')
-                        ? 'Attach a receipt (external shop) or a photo of the completed repair (in-house) to close this immediately — no separate Custodian verification needed.'
-                        : 'Attach a receipt or a photo of the completed repair so the Custodian verifying this has proof.',
-                    },
-                    { label: 'Notes (what was done)', name: 'notes', type: 'textarea', rows: 2 },
-                  ]}
-                  key={`complete-${completeScheduleTarget.schedule_id}`}
-                  initialValues={{ date_completed: new Date().toISOString().slice(0, 10), maintenance_personnel_id: completeScheduleTarget.assigned_to ?? '' }}
-                  onValuesChange={(vals) => setCompleteScheduleExternal(vals.is_external === 1 || vals.is_external === '1' || vals.is_external === true)}
-                  onCancel={() => setCompleteScheduleTarget(null)}
-                  onSubmit={(payload) => completeSchedule(completeScheduleTarget, payload)}
-                  submitLabel="Mark as Done"
-                  title=""
-                />
-              </>
-            )}
-          </FormModal>
+          {renderCompleteScheduleModal()}
+          {renderReassignScheduleModal()}
         </ModulePanel>
       );
     }
@@ -4033,78 +4503,90 @@ function Workspace() {
     // Phase 2: Custodian — submit inspection results
     if (activeModule === 'ticketInspections') {
       return (
-        <CustodianInspectionModule
-          tickets={visibleRows}
-          onOpenInspect={(ticket) => navigate(`${roleRoutes[user.role]}/inspections/${ticket.ticket_id}/inspect`)}
-          categories={lookups.categories}
-          vehicles={lookups.vehicles}
-          filterCategory={filterCategory}
-          setFilterCategory={setFilterCategory}
-          filterCapacity={filterCapacity}
-          setFilterCapacity={setFilterCapacity}
-          filterPriority={filterPriority}
-          setFilterPriority={setFilterPriority}
-          priorityOptions={ticketLookups.priorities}
-          onViewVehicle={openVehicleProfile}
-          stats={inspectionStats}
-          activeFilter={filterStatus}
-          onFilterChange={setFilterStatus}
-        />
+          <CustodianInspectionModule
+            tabBar={myTasksTabBar}
+            tickets={visibleRows}
+            onOpenInspect={(ticket) => navigate(`${roleRoutes[user.role]}/inspections/${ticket.ticket_id}/inspect`)}
+            categories={lookups.categories}
+            vehicles={lookups.vehicles}
+            filterCategory={filterCategory}
+            setFilterCategory={setFilterCategory}
+            filterCapacity={filterCapacity}
+            setFilterCapacity={setFilterCapacity}
+            filterPriority={filterPriority}
+            setFilterPriority={setFilterPriority}
+            priorityOptions={ticketLookups.priorities}
+            onViewVehicle={openVehicleProfile}
+            stats={inspectionStats}
+            activeFilter={filterStatus}
+            onFilterChange={setFilterStatus}
+          />
       );
     }
 
     // Phase 4 Tier 1: Custodian — verify completed repairs
     if (activeModule === 'ticketVerifications') {
       return (
-        <CustodianVerificationModule
-          user={user}
-          tickets={visibleRows}
-          editTarget={editTarget}
-          setEditTarget={setEditTarget}
-          onVerify={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/verify`, payload, 'Repair verification submitted.')}
-          onCancelEdit={() => setEditTarget(null)}
-          categories={lookups.categories}
-          vehicles={lookups.vehicles}
-          filterCategory={filterCategory}
-          setFilterCategory={setFilterCategory}
-          filterCapacity={filterCapacity}
-          setFilterCapacity={setFilterCapacity}
-          filterPriority={filterPriority}
-          setFilterPriority={setFilterPriority}
-          mechanicOptions={(lookups.maintenance_personnel ?? []).map((p) => p.name)}
-          filterVerdict={filterVerdict}
-          setFilterVerdict={setFilterVerdict}
-          onViewVehicle={openVehicleProfile}
-          stats={verificationStats}
-          activeFilter={filterStatus}
-          onFilterChange={setFilterStatus}
-        />
+          <CustodianVerificationModule
+            tabBar={myTasksTabBar}
+            user={user}
+            tickets={visibleRows}
+            editTarget={editTarget}
+            setEditTarget={setEditTarget}
+            onVerify={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/verify`, payload, 'Repair verification submitted.')}
+            onCancelEdit={() => setEditTarget(null)}
+            categories={lookups.categories}
+            vehicles={lookups.vehicles}
+            filterCategory={filterCategory}
+            setFilterCategory={setFilterCategory}
+            filterCapacity={filterCapacity}
+            setFilterCapacity={setFilterCapacity}
+            filterPriority={filterPriority}
+            setFilterPriority={setFilterPriority}
+            mechanicOptions={(lookups.maintenance_personnel ?? []).map((p) => p.name)}
+            filterVerdict={filterVerdict}
+            setFilterVerdict={setFilterVerdict}
+            onViewVehicle={openVehicleProfile}
+            stats={verificationStats}
+            activeFilter={filterStatus}
+            onFilterChange={setFilterStatus}
+          />
       );
     }
 
     // Phase 3: Mechanic — view work orders and log repairs
     if (activeModule === 'ticketWorkOrders') {
       return (
-        <MechanicWorkOrderModule
-          tickets={visibleRows}
-          allRows={rawRows}
-          onOpenLogRepairs={(row) => navigate(`${roleRoutes[user.role]}/work-orders/${row.ticket_id}/${row.sub_issue_id}/log-repairs`)}
-          categories={lookups.categories}
-          vehicles={lookups.vehicles}
-          filterCategory={filterCategory}
-          setFilterCategory={setFilterCategory}
-          filterCapacity={filterCapacity}
-          setFilterCapacity={setFilterCapacity}
-          filterPriority={filterPriority}
-          setFilterPriority={setFilterPriority}
-          maintTypeOptions={lookups.maintenance_types}
-          onViewVehicle={openVehicleProfile}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          stats={workOrderStats}
-          activeFilter={filterStatus}
-          onFilterChange={setFilterStatus}
-        />
+        <>
+          <MechanicWorkOrderModule
+            tickets={visibleRows}
+            allRows={rawRows}
+            onOpenLogRepairs={(row) => navigate(`${roleRoutes[user.role]}/work-orders/${row.ticket_id}/${row.sub_issue_id}/log-repairs`)}
+            categories={lookups.categories}
+            vehicles={lookups.vehicles}
+            filterCategory={filterCategory}
+            setFilterCategory={setFilterCategory}
+            filterCapacity={filterCapacity}
+            setFilterCapacity={setFilterCapacity}
+            filterPriority={filterPriority}
+            setFilterPriority={setFilterPriority}
+            maintTypeOptions={lookups.maintenance_types}
+            onViewVehicle={openVehicleProfile}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            stats={workOrderStats}
+            activeFilter={filterStatus}
+            onFilterChange={setFilterStatus}
+            // Phase B4 — Maintenance Personnel's Condition Monitoring and
+            // standalone Maintenance Schedule sidebar entries were removed;
+            // their assigned schedules surface here instead, as a second
+            // section on the same page (see loadModule's mySchedules fetch).
+            mySchedules={hasRole(user, 'Maintenance Personnel') ? (records.mySchedules ?? []) : null}
+            onCompleteSchedule={openCompleteSchedule}
+            currentUser={user}
+          />
+          {renderCompleteScheduleModal()}
+        </>
       );
     }
 
@@ -4113,13 +4595,14 @@ function Workspace() {
     // Reopened) without hunting for the ticket or relying on a notification.
     if (activeModule === 'workTracker') {
       return (
-        <WorkTrackerModule
-          tickets={records.workTracker ?? []}
-          user={user}
-          categories={lookups.categories}
-          vehicles={lookups.vehicles}
-          onViewTicket={openTicketProfile}
-        />
+          <WorkTrackerModule
+            tabBar={myTasksTabBar}
+            tickets={records.workTracker ?? []}
+            user={user}
+            categories={lookups.categories}
+            vehicles={lookups.vehicles}
+            onViewTicket={openTicketProfile}
+          />
       );
     }
 
@@ -5219,7 +5702,7 @@ function DismissibleHint() {
   return null;
 }
 
-function ModulePanel({ children, description, statCards, filterBar }) {
+function ModulePanel({ children, description, statCards, filterBar, tabBar }) {
   return (
     <div className="module-grid">
       <DismissibleHint description={description} />
@@ -5229,6 +5712,7 @@ function ModulePanel({ children, description, statCards, filterBar }) {
           {filterBar}
         </section>
       )}
+      {tabBar}
       <section className="panel">
         {children}
       </section>
@@ -5306,7 +5790,7 @@ function UserInfoModal({ user, onClose }) {
 // Full-page user profile — clicking a user anywhere (any table, any role) opens
 // this instead of a popup. Uses the loaded users list when available, otherwise
 // the user object carried on navigation state (so non-admins can view it too).
-function UserViewPage({ userId, users = [], role, onEdit }) {
+function UserViewPage({ userId, users = [], currentUser, onEdit }) {
   const location = useLocation();
   const user = (users ?? []).find((u) => String(u.id) === String(userId)) || location.state?.user || null;
 
@@ -5327,7 +5811,7 @@ function UserViewPage({ userId, users = [], role, onEdit }) {
           <span className="ticket-detail-id">User ID #{user.id}</span>
           <h3 className="ticket-detail-title">{user.name}</h3>
         </div>
-        {role === 'Admin' && (
+        {canDo(currentUser, 'user.edit') && (
           <button className="primary-button" type="button" onClick={onEdit}><Icon name="edit" size={14} /> Edit User</button>
         )}
       </div>
@@ -5373,7 +5857,7 @@ const ISSUE_STATUS_COLORS = {
 // a pure Custodian's own list is filtered to "mine", but a "View" link from
 // the duplicate-issue warning is specifically for a report FILED BY SOMEONE
 // ELSE on the same vehicle, which that filtered list would never contain.
-function IssueViewPage({ issueId, allIssues = [], allHubs = [], role, onCreateTicketFromIssue, onSendToExternalShop }) {
+function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTicketFromIssue, onSendToExternalShop }) {
   const actions = useContext(RowActionsContext);
   const [issue, setIssue] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -5438,16 +5922,18 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], role, onCreateTi
         </div>
         {/* Lets the Admin act on this issue right here instead of going back
             to the Issue Reports list just to click the same button there. */}
-        {role === 'Admin' && (
+        {(canDo(user, 'ticket.create') || canDo(user, 'record.create')) && (
           <div style={{ display: 'flex', gap: 8 }}>
-            {onCreateTicketFromIssue && (
+            {onCreateTicketFromIssue && canDo(user, 'ticket.create') && (
               <button className="ghost-button btn-confirm-action" type="button" onClick={() => onCreateTicketFromIssue(issue)}><Icon name="ticket" size={14} /> Create Ticket</button>
             )}
             {/* Receipt-backed fast close (#5): for a problem that's going to
                 (or already did) get fixed by an outside shop instead of
                 in-house — jumps to Add Maintenance Record with this issue
-                already linked. */}
-            {onSendToExternalShop && (
+                already linked. This button ultimately navigates to the
+                standalone Maintenance Record form, which is gated by
+                record.create, same ability as that form itself. */}
+            {onSendToExternalShop && canDo(user, 'record.create') && (
               <button
                 className="ghost-button btn-edit-action"
                 type="button"
@@ -5961,6 +6447,49 @@ function SelectOrOtherField({ field, value, onChange }) {
   );
 }
 
+// Phase B4 — catalog.create (fault categories / maintenance types) is
+// Admin-only now. Everywhere a Custodian or Maintenance Personnel used to
+// get CreatableSelect's "+ Add New" affordance on one of these two
+// catalogs, this replaces it: a plain select with "Other" pinned as the
+// last option. Picking it reveals a free-text note below — `value` stays a
+// real catalog name, or the literal CATALOG_OTHER_VALUE sentinel; `note` is
+// kept separate, meant to be folded into whichever description/notes field
+// the parent form already sends to the backend (rather than trying to mint
+// a new catalog value, which only Admin can still do). Admin keeps the
+// original CreatableSelect wherever this replaces it — this component is
+// never shown to Admin.
+const CATALOG_OTHER_VALUE = 'Other';
+
+function CatalogOrOtherField({ value, onChange, note, onNoteChange, options = [], required = false, placeholder = 'Select an option', otherNoteLabel = 'Describe the issue/type' }) {
+  const isOther = value === CATALOG_OTHER_VALUE;
+  return (
+    <>
+      <select
+        required={required}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option, i) => (
+          <option key={option?.value != null ? option.value : `opt-${i}`} value={option?.value ?? option ?? ''}>
+            {option?.label ?? option}
+          </option>
+        ))}
+        <option value={CATALOG_OTHER_VALUE}>Other</option>
+      </select>
+      {isOther && (
+        <input
+          type="text"
+          placeholder={otherNoteLabel}
+          value={note ?? ''}
+          onChange={(e) => onNoteChange(e.target.value)}
+          style={{ marginTop: 8 }}
+        />
+      )}
+    </>
+  );
+}
+
 // Every required/pattern/confirm-match check SmartForm used to hand off to
 // the browser's own constraint validation (native tooltip, positioned and
 // styled by the browser, not this app). Re-implemented here so every form
@@ -6098,6 +6627,24 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
             .map((row) => row.trim())
             .filter(Boolean)
             .join('\n');
+        }
+      });
+      // Phase B4 — a 'catalog-or-other' field's typed note never has a
+      // backend column of its own (Custodian/Maintenance Personnel can no
+      // longer mint a new catalog value, so "Other" + a note stands in for
+      // it). Runs as its own pass, after the 'list' join above, so folding
+      // the note into another field this same form owns (e.g. a textarea
+      // that started as an array) appends to the already-joined string, not
+      // the raw array.
+      fields.forEach((field) => {
+        if (field.type !== 'catalog-or-other') return;
+        const noteKey = `${field.name}__other_note`;
+        const note = String(payload[noteKey] ?? '').trim();
+        delete payload[noteKey];
+        if (payload[field.name] === CATALOG_OTHER_VALUE && note && field.otherNoteField) {
+          const prefixed = `Other (specified type): ${note}`;
+          const existing = String(payload[field.otherNoteField] ?? '').trim();
+          payload[field.otherNoteField] = existing ? `${existing}\n${prefixed}` : prefixed;
         }
       });
       await onSubmit(payload);
@@ -6246,6 +6793,26 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
               extraFields={field.extraFields}
             />
           ) : null}
+          {field.type === 'catalog-or-other' ? (
+            <CatalogOrOtherField
+              value={values[field.name] ?? ''}
+              onChange={(v) => {
+                const next = { ...values, [field.name]: v };
+                setValues(next);
+                onValuesChange?.(next);
+              }}
+              note={values[`${field.name}__other_note`] ?? ''}
+              onNoteChange={(v) => {
+                const next = { ...values, [`${field.name}__other_note`]: v };
+                setValues(next);
+                onValuesChange?.(next);
+              }}
+              options={field.options ?? []}
+              required={field.required}
+              placeholder={field.placeholder}
+              otherNoteLabel={field.otherNoteLabel}
+            />
+          ) : null}
           {field.type === 'new-issue-modal' ? (
             <NewIssueModalField
               value={{ new_issue_type: values.new_issue_type }}
@@ -6372,7 +6939,7 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
               </button>
             </div>
           ) : null}
-          {!['textarea', 'select', 'quantity', 'checkboxes', 'select-or-other', 'creatable-select', 'list', 'password', 'file'].includes(field.type) ? (
+          {!['textarea', 'select', 'quantity', 'checkboxes', 'select-or-other', 'creatable-select', 'catalog-or-other', 'list', 'password', 'file'].includes(field.type) ? (
             <input
               accept={field.accept}
               autoComplete="off"
@@ -7495,19 +8062,21 @@ function FormPage({ description, onBack, fields, initialValues, onSubmit, submit
               </section>
             )}
 
-            {/* Last in the column (not squeezed above Entry Summary) and
-                given real height — a location map cropped to 220px read as
-                barely more than a thumbnail. */}
+          </div>
+          <div className="form-context-form-col">
+            <div className={`form-grid-2col form-context-form${wrapperClassName ? ` ${wrapperClassName}` : ''}`}>{form}</div>
+            {/* Stacked below the form fields, inside the same column, so it
+                fills the free space the form's shorter height leaves behind
+                instead of floating full-width beneath both columns. */}
             {vehicle && !showDomainPreview && (
-              <section className="veh-card">
+              <section className="veh-card form-context-map-inline">
                 <div className="veh-card-head"><Icon name="pin" size={16} /><h4>{vehicle.current_location ?? 'Location unknown'}</h4></div>
-                <div className="veh-map-wrap form-context-map">
+                <div className="veh-map-wrap form-context-map-expanded">
                   <VehicleLocationMap lat={hub?.lat} lng={hub?.lng} label={vehicle.current_location} />
                 </div>
               </section>
             )}
           </div>
-          <div className={`form-grid-2col form-context-form${wrapperClassName ? ` ${wrapperClassName}` : ''}`}>{form}</div>
         </div>
       ) : (
         <div className={`form-grid-2col${wrapperClassName ? ` ${wrapperClassName}` : ''}`}>{form}</div>
@@ -7566,7 +8135,11 @@ function conditionFields(lookups) {
 function issueFields(lookups, editTarget, role, onAddVehicle) {
   if (editTarget?.issue_report_id && role === 'Custodian') {
     return [
-      { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'creatable-select', newItemLabel: 'issue type', catalogEndpoint: '/fault-categories' },
+      // Phase B4 — catalog.create (fault categories) is Admin-only now, so
+      // a Custodian no longer gets the "+ Add New" affordance here — "Other"
+      // + a note (folded into Remarks on submit, see SmartForm's handleSubmit)
+      // stands in for it instead.
+      { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'catalog-or-other', otherNoteField: 'remarks', otherNoteLabel: 'Describe the issue/type' },
       // A list, not one paragraph — each row becomes its own line-item, so
       // when this report is later converted into a Pre-Diagnosed ticket,
       // every distinct problem lands as its own sub-issue instead of the
@@ -7594,7 +8167,12 @@ function issueFields(lookups, editTarget, role, onAddVehicle) {
       // Custodian/Maintenance Personnel, who'd just hit a permissions wall.
       action: onAddVehicle ? { label: '+ Add Vehicle', onClick: onAddVehicle } : undefined,
     },
-    { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'creatable-select', newItemLabel: 'issue type', catalogEndpoint: '/fault-categories' },
+    // Phase B4 — Admin keeps the original "+ Add New" catalog affordance;
+    // anyone else (a Custodian filing a fresh report) gets "Other" + a note
+    // folded into Remarks instead, same as the edit-own path above.
+    (role === 'Admin'
+      ? { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'creatable-select', newItemLabel: 'issue type', catalogEndpoint: '/fault-categories' }
+      : { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'catalog-or-other', otherNoteField: 'remarks', otherNoteLabel: 'Describe the issue/type' }),
     { label: 'Issue Description', name: 'issue_description', required: true, type: 'textarea' },
     { label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select' },
     { label: 'Reported On Behalf Of (driver, optional)', name: 'reported_on_behalf_of', placeholder: 'e.g. Driver Mang Tonio', type: 'text' },
@@ -8019,6 +8597,9 @@ const MAINTENANCE_RECORD_STAT_CARDS = [
 
 const TICKET_STAT_CARDS = [
   { key: 'Open', label: 'Open', icon: 'alert', bg: '#e0f2fe', color: '#0284c7' },
+  // Custodian-proposed tickets awaiting Admin approve/decline — a distinct
+  // bucket from 'Open' (Admin-created, already dispatched for inspection).
+  { key: 'Pending Approval', label: 'Proposals', icon: 'clipboard', bg: '#fef9c3', color: '#a16207' },
   { key: 'Active', label: 'Active', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
   { key: 'Closed', label: 'Closed', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
   { key: 'Cancelled', label: 'Cancelled', icon: 'close', bg: '#fee2e2', color: '#dc2626' },
@@ -8109,7 +8690,7 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
   );
 }
 
-function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket) {
+function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket) {
   const columns = [
     { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.vehicle_id },
     {
@@ -8187,7 +8768,10 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
     );
   }
 
-  if (role === 'Admin') {
+  const canEditVehicle = canDo(user, 'vehicle.edit');
+  const canRestoreVehicle = canDo(user, 'vehicle.restore');
+  const canArchiveVehicle = canDo(user, 'vehicle.archive');
+  if (canEditVehicle || canRestoreVehicle || canArchiveVehicle) {
     columns.push({
       key: 'action',
       label: 'Action',
@@ -8205,11 +8789,17 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
           ) : (
             <span className="icon-btn-spacer" aria-hidden="true" />
           )}
-          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+          {canEditVehicle && (
+            <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+          )}
           {(row.status === 'Inactive' || row.status === 'Decommissioned') ? (
-            <button className="btn-edit-action icon-btn" onClick={() => restoreRecord(`/vehicles/${row.vehicle_id}/restore`, row.status === 'Decommissioned' ? 'Vehicle recommissioned.' : 'Vehicle restored.')} type="button" title={row.status === 'Decommissioned' ? 'Recommission' : 'Restore'} aria-label="Restore"><Icon name="undo" size={14} /></button>
+            canRestoreVehicle && (
+              <button className="btn-edit-action icon-btn" onClick={() => restoreRecord(`/vehicles/${row.vehicle_id}/restore`, row.status === 'Decommissioned' ? 'Vehicle recommissioned.' : 'Vehicle restored.')} type="button" title={row.status === 'Decommissioned' ? 'Recommission' : 'Restore'} aria-label="Restore"><Icon name="undo" size={14} /></button>
+            )
           ) : (
-            <button className="btn-archive-action icon-btn" onClick={() => deleteRecord(`/vehicles/${row.vehicle_id}`, 'Vehicle marked inactive.')} type="button" title="Deactivate (reversible)" aria-label="Deactivate"><Icon name="archive" size={14} /></button>
+            canArchiveVehicle && (
+              <button className="btn-archive-action icon-btn" onClick={() => deleteRecord(`/vehicles/${row.vehicle_id}`, 'Vehicle marked inactive.')} type="button" title="Deactivate (reversible)" aria-label="Deactivate"><Icon name="archive" size={14} /></button>
+            )
           )}
         </div>
       ),
@@ -8353,7 +8943,7 @@ function locationColumns(currentUser, onViewOnMap, onEdit) {
   ];
 }
 
-function conditionColumns(role, onEdit, deleteRecord, onCreateTicketFromCondition, onSuggestScheduleFromCondition, onAddCondition) {
+function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromCondition, onSuggestScheduleFromCondition, onAddCondition) {
   const columns = [
     { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.condition_check_id ?? '-' },
     { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (row) => row.vehicle?.plate_number ?? '-' },
@@ -8363,13 +8953,19 @@ function conditionColumns(role, onEdit, deleteRecord, onCreateTicketFromConditio
     { key: 'time', label: 'Time', className: 'cell-center', render: (row) => formatTime(row.created_at) },
   ];
 
-  if (['Custodian', 'Admin'].includes(role)) {
+  if (hasRole(user, 'Custodian') || hasRole(user, 'Admin')) {
     columns.push({
       key: 'action',
       label: 'Action',
       locked: true,
       className: 'cell-center',
-      render: (row) => (
+      render: (row) => {
+        // Phase B4 — condition.edit stays Admin (any row) + Custodian, but a
+        // Custodian may only edit the check THEY performed (backend now 403s
+        // otherwise); condition.delete narrowed to Admin only.
+        const canEdit = hasRole(user, 'Admin') || (hasRole(user, 'Custodian') && String(row.checked_by?.id) === String(user.id));
+        const canDelete = hasRole(user, 'Admin');
+        return (
         // A synthesized "Not Checked" row has no condition_check_id — there's
         // no record yet to create a ticket from, suggest a schedule against,
         // edit, or delete. Its only real action is filing the first check.
@@ -8389,7 +8985,7 @@ function conditionColumns(role, onEdit, deleteRecord, onCreateTicketFromConditio
               removed) even when this row doesn't qualify — otherwise
               Edit/Delete shift left on every row that lacks it, and the
               column stops lining up. */}
-          {role === 'Admin' && onCreateTicketFromCondition && (
+          {hasRole(user, 'Admin') && onCreateTicketFromCondition && (
             row.condition_result !== 'Good' ? (
               <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromCondition(row)} type="button" title="Create Ticket" aria-label="Create Ticket"><Icon name="ticket" size={14} /></button>
             ) : (
@@ -8411,11 +9007,16 @@ function conditionColumns(role, onEdit, deleteRecord, onCreateTicketFromConditio
           {onSuggestScheduleFromCondition && (
             <button className="btn-view-action icon-btn" onClick={() => onSuggestScheduleFromCondition(row)} type="button" title="Suggest Maintenance Schedule" aria-label="Suggest Maintenance Schedule"><Icon name="calendar" size={14} /></button>
           )}
-          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-          <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/conditions/${row.condition_check_id}`, 'Condition check deleted.')} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
+          {canEdit && (
+            <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+          )}
+          {canDelete && (
+            <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/conditions/${row.condition_check_id}`, 'Condition check deleted.')} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
+          )}
         </div>
         )
-      ),
+        );
+      },
     });
   }
 
@@ -8877,7 +9478,7 @@ function TicketFilterPanel({
   );
 }
 
-function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, onView, deleteRecord) {
+function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, onView, deleteRecord, user) {
   const columns = [
     { key: 'id', label: 'ID', width: '5%', locked: true, className: 'cell-center', render: (row) => row.issue_report_id },
     {
@@ -8920,8 +9521,13 @@ function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, 
       render: (row) => (
         <div className="row-actions" style={{ flexWrap: 'nowrap' }}>
           <button className="btn-view-action icon-btn" onClick={() => onView(row)} type="button" title="View" aria-label="View"><Icon name="eye" size={14} /></button>
-          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Update" aria-label="Update"><Icon name="edit" size={14} /></button>
-          {role === 'Admin' && (
+          {/* issue.edit is Admin+Custodian only (Phase B4 narrowed Maintenance
+              Personnel out) — gated by ability rather than this block's role
+              condition since the two no longer match. */}
+          {canDo(user, 'issue.edit') && (
+            <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Update" aria-label="Update"><Icon name="edit" size={14} /></button>
+          )}
+          {canDo(user, 'ticket.create') && (
             <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromIssue(row)} type="button" title="Create Ticket" aria-label="Create Ticket"><Icon name="ticket" size={14} /></button>
           )}
         </div>
@@ -8951,7 +9557,7 @@ function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, 
   return columns;
 }
 
-function maintenanceColumns(role, setEditTarget, updateRecord, onViewRecord) {
+function maintenanceColumns(role, setEditTarget, updateRecord, onViewRecord, user) {
   const columns = [
     { key: 'id', label: 'ID', width: '4%', locked: true, className: 'cell-center', render: (row) => row.maintenance_id },
     { key: 'vehicle', label: 'Vehicle', width: '15%', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> },
@@ -9000,8 +9606,13 @@ function maintenanceColumns(role, setEditTarget, updateRecord, onViewRecord) {
           {onViewRecord && (
             <button className="btn-view-action icon-btn" onClick={() => onViewRecord(row)} type="button" title="View" aria-label="View"><Icon name="eye" size={14} /></button>
           )}
-          <button className="btn-edit-action icon-btn" onClick={() => setEditTarget(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-          {role === 'Admin' && row.verification_result === 'Passed' && row.progress_status !== 'Completed' ? (
+          {/* Phase B4 — record.edit narrowed to Admin only (Custodian is
+              read-only here now; Maintenance Personnel never reaches this
+              module at all — see modulesByRole). */}
+          {canDo(user, 'record.edit') && (
+            <button className="btn-edit-action icon-btn" onClick={() => setEditTarget(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+          )}
+          {canDo(user, 'record.confirm') && row.verification_result === 'Passed' && row.progress_status !== 'Completed' ? (
             <>
               <button className="btn-confirm-action icon-btn" onClick={() => updateRecord(`/maintenance-records/${row.maintenance_id}/confirm`, { confirmed: true }, 'Maintenance confirmed.')} type="button" title="Confirm" aria-label="Confirm"><Icon name="checkCircle" size={14} /></button>
               <button className="btn-reopen-action icon-btn" onClick={() => updateRecord(`/maintenance-records/${row.maintenance_id}/confirm`, { confirmed: false }, 'Maintenance reopened.')} type="button" title="Reopen" aria-label="Reopen"><Icon name="undo" size={14} /></button>
@@ -9359,7 +9970,7 @@ function maintenanceStatusColumns(setEditTarget, currentUserId) {
   ];
 }
 
-function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord) {
+function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord, onReassign) {
   const isAdmin = hasRole(currentUser, 'Admin');
   const currentUserId = currentUser?.id;
   return [
@@ -9444,16 +10055,23 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
           {row.status === 'Completed' && row.resulting_maintenance_id && onViewRecord && (
             <button className="btn-view-action icon-btn" onClick={() => onViewRecord(row)} type="button" title="View Maintenance Record" aria-label="View Maintenance Record"><Icon name="wrench" size={14} /></button>
           )}
-          {/* Editing/cancelling a schedule (what to do, when, who it's for) is
-              a planning decision — reserved for Admin. A Maintenance Personnel
-              assigned to it only ever gets to act on it via Mark as Done
-              above; giving them Edit too let them quietly self-assign an
-              unassigned schedule to unlock that button, which just made the
-              backend's "ask an Admin to assign it" message a lie. Matches
-              the backend, which never allowed Custodian here either. */}
+          {/* Admin edits any schedule; a Custodian may only edit the one they
+              themselves created (matches the backend's ownership check on
+              schedule.edit). A Maintenance Personnel assigned to it only ever
+              gets to act on it via Mark as Done above. */}
+          {(isAdmin || (currentUserId != null && String(row.createdBy?.id) === String(currentUserId))) && (
+            <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+          )}
+          {/* Reassigning/cancelling a schedule stays an Admin-only planning
+              decision, unaffected by the ownership change above. */}
           {isAdmin && (
             <>
-              <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+              {/* schedule.reassign ability (Admin only): hand a still-open
+                  Scheduled row to a different Maintenance Personnel without
+                  cancelling and re-booking it. */}
+              {row.status === 'Scheduled' && onReassign && (
+                <button className="btn-view-action icon-btn" onClick={() => onReassign(row)} type="button" title="Reassign" aria-label="Reassign"><Icon name="undo" size={14} /></button>
+              )}
               {/* Cancelling a schedule is a soft cancel — the row survives — so a
                   cancelled one gets Restore instead of a Delete that would do
                   nothing. Same swap vehicleColumns makes for archived vehicles. */}
@@ -9502,7 +10120,7 @@ function scheduleUrgencyBucket(row) {
 // Deliberately NOT one big click target: unlike a Maintenance Record, a
 // schedule has no detail page to open, and a whole-card click would fight
 // with the action buttons it needs to carry.
-function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore }) {
+function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign }) {
   const isAdmin = hasRole(currentUser, 'Admin');
   const currentUserId = currentUser?.id;
   const isMine = currentUserId != null && String(row.assigned_to) === String(currentUserId);
@@ -9586,10 +10204,18 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
         {row.status === 'Completed' && row.resulting_maintenance_id && onViewRecord && (
           <button className="btn-view-action icon-btn" onClick={() => onViewRecord(row)} type="button" title="View Maintenance Record" aria-label="View Maintenance Record"><Icon name="wrench" size={14} /></button>
         )}
-        {/* Admin-only — see scheduleColumns' matching Action column for why. */}
+        {/* Admin edits any schedule; a Custodian may only edit the one they
+            themselves created — see scheduleColumns' matching Action column. */}
+        {(isAdmin || (currentUserId != null && String(row.createdBy?.id) === String(currentUserId))) && (
+          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+        )}
+        {/* Reassign/cancel stay Admin-only, unaffected by the ownership edit above. */}
         {isAdmin && (
           <>
-            <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+            {/* schedule.reassign ability (Admin only). */}
+            {row.status === 'Scheduled' && onReassign && (
+              <button className="btn-view-action icon-btn" onClick={() => onReassign(row)} type="button" title="Reassign" aria-label="Reassign"><Icon name="undo" size={14} /></button>
+            )}
             {/* Same swap as the table: a cancelled schedule offers Restore, not a
                 Delete that would just re-cancel something already cancelled. */}
             {row.status === 'Cancelled' && onRestore ? (
@@ -10824,7 +11450,7 @@ function WorkRoleBadge({ row }) {
 // work (approved, rejected, confirmed, reopened) in one place — no notification
 // chasing. Scope: everything still in progress, plus items completed/deferred
 // within the last 30 days so recent outcomes stay visible without old clutter.
-function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onViewTicket }) {
+function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onViewTicket, tabBar }) {
   const [activeFilter, setActiveFilter] = useState('');
   const [search, setSearch] = useState('');
   // FilterBar (draft/apply) state — Category + Capacity + Status + My Role.
@@ -10931,6 +11557,7 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
           }]}
         />
       </section>
+      {tabBar}
       <section className="panel operations-board work-tracker-board">
         <div className="operations-board-head">
           <div>
@@ -11244,10 +11871,164 @@ function TicketStatusBadge({ value, size = 'normal' }) {
 }
 
 // =========================================================================
+// TICKET PROPOSAL REVIEW — Admin's approve/decline screen for a Custodian's
+// proposed ticket (status 'Pending Approval'). Kept as its own pair of
+// components (not folded into the sub-issue cards below) so the existing
+// read-only rendering for every other status stays completely untouched —
+// TicketDetailPanel only ever mounts this while ticket.status is exactly
+// 'Pending Approval', and swaps in a plain read-only notice instead for
+// anyone viewing it without ticket.approve (i.e. the proposing Custodian).
+// =========================================================================
+
+function TicketProposalReview({ user, ticket, lookups, onApprove, onDecline }) {
+  if (!canDo(user, 'ticket.approve')) {
+    return (
+      <section className="ticket-section">
+        <h4><Icon name="clipboard" size={14} /> Proposal Status</h4>
+        <div className="notice warning" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icon name="alert" size={15} /> Awaiting Admin review — you'll be notified once this is approved or declined.
+        </div>
+      </section>
+    );
+  }
+
+  // Keyed by ticket id so a fresh mount (a different ticket) always starts
+  // from that ticket's own values instead of whatever was last typed here.
+  return <TicketProposalReviewForm key={ticket.ticket_id} ticket={ticket} lookups={lookups} onApprove={onApprove} onDecline={onDecline} />;
+}
+
+function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
+  const [fields, setFields] = useState({
+    ticket_title: ticket.ticket_title ?? '',
+    ticket_description: ticket.ticket_description ?? '',
+    priority: ticket.priority ?? '',
+    fault_category: ticket.fault_category ?? '',
+  });
+  const [subRows, setSubRows] = useState(() => (ticket.sub_issues ?? []).map((si) => ({
+    sub_issue_id: si.sub_issue_id,
+    title: si.title ?? '',
+    maintenance_type: si.maintenance_type ?? '',
+    suggested_mechanic_id: si.suggested_mechanic_id ?? '',
+  })));
+  const [declining, setDeclining] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const setField = (name, value) => setFields((f) => ({ ...f, [name]: value }));
+  const updateSubRow = (index, patch) => setSubRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+
+  const submitApprove = async () => {
+    setSubmitting(true);
+    try {
+      await onApprove({
+        ticket_title: fields.ticket_title,
+        ticket_description: fields.ticket_description,
+        priority: fields.priority,
+        fault_category: fields.fault_category || null,
+        sub_issues: subRows.map((r) => ({
+          sub_issue_id: r.sub_issue_id,
+          title: r.title,
+          maintenance_type: r.maintenance_type || null,
+          suggested_mechanic_id: r.suggested_mechanic_id || null,
+        })),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="ticket-section smart-form">
+      <h4><Icon name="checkCircle" size={14} /> Review Proposal</h4>
+      <p className="muted" style={{ marginTop: -4, marginBottom: 10, fontSize: '0.82rem' }}>
+        Proposed by {ticket.assigned_custodian?.name ?? 'the Custodian'}. Edit anything below before approving, or decline with a reason — declining permanently deletes this proposal.
+      </p>
+
+      <div className="ticket-form-grid-2" style={{ padding: 0, marginBottom: 10 }}>
+        <label>
+          <span>Ticket Title</span>
+          <input type="text" value={fields.ticket_title} onChange={(e) => setField('ticket_title', e.target.value)} />
+        </label>
+        <label>
+          <span>Priority</span>
+          <select value={fields.priority} onChange={(e) => setField('priority', e.target.value)}>
+            {(lookups.priorities ?? []).map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </label>
+      </div>
+      <label style={{ marginBottom: 10 }}>
+        <span>Fault Category</span>
+        <CreatableSelect
+          value={fields.fault_category}
+          onChange={(v) => setField('fault_category', v)}
+          options={lookups.fault_categories ?? []}
+          newItemLabel="fault category"
+          catalogEndpoint="/fault-categories"
+        />
+      </label>
+      <label style={{ marginBottom: 14 }}>
+        <span>Description / Details</span>
+        <textarea rows={3} value={fields.ticket_description} onChange={(e) => setField('ticket_description', e.target.value)} />
+      </label>
+
+      <h5 style={{ margin: '0 0 8px', fontSize: '0.82rem', fontWeight: 700, color: '#475569' }}>Sub-Issues</h5>
+      {subRows.map((row, index) => (
+        <div key={row.sub_issue_id} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+          <label style={{ marginBottom: 8 }}>
+            <span>Title</span>
+            <input type="text" value={row.title} onChange={(e) => updateSubRow(index, { title: e.target.value })} />
+          </label>
+          <div className="ticket-form-grid-2" style={{ padding: 0 }}>
+            <label>
+              <span>Maintenance Type</span>
+              <CreatableSelect
+                value={row.maintenance_type}
+                onChange={(v) => updateSubRow(index, { maintenance_type: v })}
+                options={lookups.maintenance_types ?? []}
+                newItemLabel="maintenance type"
+                catalogEndpoint="/maintenance-types"
+              />
+            </label>
+            <label>
+              <span>Suggested Mechanic</span>
+              <select value={row.suggested_mechanic_id ?? ''} onChange={(e) => updateSubRow(index, { suggested_mechanic_id: e.target.value })}>
+                <option value="">Unassigned</option>
+                {(lookups.maintenance_personnel ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+      ))}
+
+      {declining ? (
+        <div className="ticket-inline-form" style={{ marginTop: 10, padding: '10px 12px' }}>
+          <SmartForm
+            fields={[{ label: 'Decline Reason', name: 'decline_reason', type: 'textarea', rows: 2, required: true, placeholder: 'Let the Custodian know why this was declined' }]}
+            key={`decline-proposal-${ticket.ticket_id}`}
+            onCancel={() => setDeclining(false)}
+            onSubmit={(payload) => onDecline(payload)}
+            submitLabel="Decline Proposal"
+            title=""
+          />
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
+            <Icon name="checkCircle" size={14} /> Approve &amp; Activate
+          </button>
+          <button className="ghost-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
+            Decline
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// =========================================================================
 // TICKET DETAIL PANEL — shown when admin clicks a ticket row
 // =========================================================================
 
-function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onAddSubIssue, onDeferSubIssue, onCloseTicket, onCancel, onUncancel, onDelete, onRequestConfirmation, onSendToExternalShop, onVerify, onApproveCannibalization, onRejectCannibalization, onClose, asPage = false }) {
+function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onAddSubIssue, onDeferSubIssue, onCloseTicket, onCancel, onUncancel, onDelete, onRequestConfirmation, onSendToExternalShop, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
   const [assigningAll, setAssigningAll] = useState(false);
   const [reassigningAll, setReassigningAll] = useState(false);
   const [reassignTargetId, setReassignTargetId] = useState(null);
@@ -11291,7 +12072,10 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
   const allResolved = subIssues.length === 0 || !hasUnresolved;
   const canClose = ticket.status === 'Active' && allResolved;
   const canDecisionClose = ticket.status === 'Active' && hasUnresolved;
-  const isAdmin = role === 'Admin';
+  // Kept for the one spot (subissue.verify) that still needs "is this the
+  // Admin general-fallback path" separately from the ownership check —
+  // every other gate below is a specific ability instead of one shared flag.
+  const isAdminUser = hasRole(user, 'Admin');
   const resolvedCount = subIssues.filter((s) => isResolvedStatus(s.status)).length;
   const unresolvedCount = Math.max(0, progress.total - resolvedCount);
   const pendingMechanicCount = subIssues.filter((s) => s.status === 'Open').length;
@@ -11305,6 +12089,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
   const nextSignal = (() => {
     if (ticket.status === 'Cancelled') return { tone: 'alert', label: 'Ticket cancelled', detail: 'Restore it only if work needs to resume.' };
     if (ticket.status === 'Closed') return { tone: 'ok', label: 'Closed', detail: 'All recorded work is complete.' };
+    if (ticket.status === 'Pending Approval') return { tone: 'warn', label: 'Review proposal', detail: 'A Custodian proposed this ticket — review and approve or decline it below.' };
     if (canClose) return { tone: 'ok', label: 'Ready to close', detail: 'Return the vehicle once the final close is recorded.' };
     if (canDecisionClose) return { tone: 'warn', label: 'Decision needed', detail: `${unresolvedCount} unresolved item${unresolvedCount === 1 ? '' : 's'} must be finished, deferred, or decision-closed.` };
     if (ticket.status === 'Open') return { tone: 'active', label: 'Inspection first', detail: ticket.assigned_custodian?.name ? `${ticket.assigned_custodian.name} owns the inspection step.` : 'Assign and complete the custodian inspection.' };
@@ -11514,7 +12299,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                     unavailable the ticket is otherwise unworkable — and if it's
                     still Open it can't even be closed. Same escape hatch the
                     mechanic work orders already have. */}
-                {isAdmin && onReassignCustodian && !['Closed', 'Cancelled'].includes(ticket.status) && (
+                {canDo(user, 'ticket.reassign_custodian') && onReassignCustodian && !['Closed', 'Cancelled'].includes(ticket.status) && (
                   <button className="ghost-button btn-reassign-action" style={{ marginTop: 10 }} type="button" onClick={() => setReassigningCustodian(true)}>
                     <Icon name="undo" size={12} /> Reassign Custodian
                   </button>
@@ -11522,7 +12307,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
               </section>
             )}
 
-            {isAdmin && onReassignCustodian && (
+            {canDo(user, 'ticket.reassign_custodian') && onReassignCustodian && (
               <FormModal open={reassigningCustodian} title="Reassign Custodian" onClose={() => setReassigningCustodian(false)}>
                 <p className="muted" style={{ marginBottom: 8, fontSize: '0.8rem' }}>
                   Hand this ticket to a different Custodian (e.g. the current one is on leave). Any repairs already awaiting verification move with it.
@@ -11574,7 +12359,21 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
           </div>
 
           <div className="ticket-detail-col-right">
-          {ticket.status !== 'Open' && (
+          {/* Custodian-proposed ticket awaiting Admin review — a completely
+              separate block from the normal sub-issue cards just below
+              (which are explicitly excluded for this one status right
+              after), so nothing about how every other status renders
+              changes. */}
+          {ticket.status === 'Pending Approval' && (
+            <TicketProposalReview
+              user={user}
+              ticket={ticket}
+              lookups={lookups}
+              onApprove={(payload) => onApproveProposal(ticket, payload)}
+              onDecline={(payload) => onDeclineProposal(ticket, payload)}
+            />
+          )}
+          {ticket.status !== 'Open' && ticket.status !== 'Pending Approval' && (
             <section className="ticket-section">
               <h4><Icon name="wrench" size={14} /> Sub-Issues under "{ticket.ticket_title}"</h4>
               <p className="muted" style={{ marginTop: -4, marginBottom: 8, fontSize: '0.82rem' }}>Keep sub-issues and the mechanic's Maintenance Type scoped to this Main Issue — an unrelated repair belongs on its own ticket instead.</p>
@@ -11611,19 +12410,19 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                   Defer are corrective/exception actions (outline), so the
                   row reads as one primary + secondaries instead of three
                   equally-weighted solid buttons competing for attention. */}
-              {isAdmin && (openSubIssues.length > 0 || underRepairSubIssues.length > 0 || deferrableSubIssues.length > 0) && (
+              {(canDo(user, 'subissue.assign_mechanic') || canDo(user, 'subissue.reassign_mechanic') || canDo(user, 'subissue.defer')) && (openSubIssues.length > 0 || underRepairSubIssues.length > 0 || deferrableSubIssues.length > 0) && (
                 <div className="subissue-bulk-actions">
-                  {openSubIssues.length > 0 && !assigningAll && (
+                  {canDo(user, 'subissue.assign_mechanic') && openSubIssues.length > 0 && !assigningAll && (
                     <button className="primary-button" type="button" onClick={() => setAssigningAll(true)}>
                       <Icon name="wrench" size={12} /> Assign Mechanic
                     </button>
                   )}
-                  {underRepairSubIssues.length > 0 && !reassigningAll && (
+                  {canDo(user, 'subissue.reassign_mechanic') && underRepairSubIssues.length > 0 && !reassigningAll && (
                     <button className="ghost-button btn-reassign-action" type="button" onClick={() => setReassigningAll(true)}>
                       <Icon name="undo" size={12} /> Reassign Mechanic
                     </button>
                   )}
-                  {deferrableSubIssues.length > 0 && !deferringAll && (
+                  {canDo(user, 'subissue.defer') && deferrableSubIssues.length > 0 && !deferringAll && (
                     <button
                       type="button"
                       className="ghost-button btn-defer-action"
@@ -11635,7 +12434,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                 </div>
               )}
 
-              {isAdmin && assigningAll && (
+              {canDo(user, 'subissue.assign_mechanic') && assigningAll && (
                 <div className="ticket-inline-form" style={{ marginBottom: 10, padding: '10px 12px' }}>
                   <p className="muted" style={{ marginBottom: 8, fontSize: '0.8rem' }}>Assigns this mechanic to all {openSubIssues.length} open sub-issue{openSubIssues.length > 1 ? 's' : ''} below.</p>
                   <SmartForm
@@ -11649,7 +12448,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
               )}
 
               <FormModal
-                open={isAdmin && reassigningAll}
+                open={canDo(user, 'subissue.reassign_mechanic') && reassigningAll}
                 title="Reassign Mechanic"
                 onClose={() => { setReassigningAll(false); setReassignTargetId(null); }}
               >
@@ -11691,7 +12490,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
               </FormModal>
 
               <FormModal
-                open={isAdmin && deferringAll}
+                open={canDo(user, 'subissue.defer') && deferringAll}
                 title="Defer Sub-Issues"
                 onClose={() => { setDeferringAll(false); setDeferTargetId(null); }}
               >
@@ -11856,7 +12655,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                           in-house" is an external shop — jumps straight to
                           Add Maintenance Record with the follow-up issue and
                           vehicle already linked. */}
-                      {isAdmin && onSendToExternalShop && si.deferred_issue_report_id && (
+                      {canDo(user, 'record.create') && onSendToExternalShop && si.deferred_issue_report_id && (
                         <button
                           className="ghost-button btn-edit-action"
                           type="button"
@@ -11880,7 +12679,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                       the donor vehicle (backend side effect); rejecting
                       requires a reason and sends the sub-issue back to the
                       mechanic. */}
-                  {isAdmin && onApproveCannibalization && si.status === 'Pending Approval' && (
+                  {(canDo(user, 'repair.approve_cannibalized') || canDo(user, 'repair.reject_cannibalized')) && si.status === 'Pending Approval' && (
                     reviewingCannibalizationId === si.sub_issue_id ? (
                       <div className="ticket-inline-form" style={{ marginTop: 8, padding: '10px 12px' }}>
                         <SmartForm
@@ -11900,12 +12699,16 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                           Donor vehicle: <strong>{si.source_vehicle?.vehicle_name ?? 'Unknown'}</strong> ({si.source_vehicle?.plate_number ?? '-'}). Approving opens an Issue Report on it for the removed part.
                         </p>
                         <div style={{ display: 'flex', gap: 8 }}>
-                          <button className="primary-button" type="button" onClick={() => onApproveCannibalization(ticket, si, {})}>
-                            <Icon name="checkCircle" size={14} /> Approve Cannibalization
-                          </button>
-                          <button className="ghost-button" type="button" onClick={() => setReviewingCannibalizationId(si.sub_issue_id)}>
-                            Reject
-                          </button>
+                          {canDo(user, 'repair.approve_cannibalized') && (
+                            <button className="primary-button" type="button" onClick={() => onApproveCannibalization(ticket, si, {})}>
+                              <Icon name="checkCircle" size={14} /> Approve Cannibalization
+                            </button>
+                          )}
+                          {canDo(user, 'repair.reject_cannibalized') && (
+                            <button className="ghost-button" type="button" onClick={() => setReviewingCannibalizationId(si.sub_issue_id)}>
+                              Reject
+                            </button>
+                          )}
                         </div>
                       </div>
                     )
@@ -11920,7 +12723,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                       Not restricted to just that case — a general fallback,
                       same as every other Custodian action Admin can stand
                       in for. */}
-                  {isAdmin && onVerify && si.status === 'For Inspection' && (
+                  {canDo(user, 'subissue.verify') && (isAdminUser || idOf(si.verification_assigned_to) === userId) && onVerify && si.status === 'For Inspection' && (
                     verifyingId === si.sub_issue_id ? (
                       <div className="ticket-inline-form" style={{ marginTop: 8, padding: '10px 12px' }}>
                         <VerificationForm
@@ -11936,7 +12739,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                     )
                   )}
 
-                  {isAdmin && si.status === 'For Confirmation' && (
+                  {canDo(user, 'subissue.confirm') && si.status === 'For Confirmation' && (
                     confirmingId === si.sub_issue_id ? (
                       <div className="ticket-inline-form" style={{ marginTop: 8, padding: '10px 12px' }}>
                         <SmartForm
@@ -11953,7 +12756,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                     )
                   )}
 
-                  {isAdmin && si.status === 'Done' && (
+                  {canDo(user, 'subissue.reopen_confirmed') && si.status === 'Done' && (
                     editingDoneId === si.sub_issue_id ? (
                       <div className="ticket-inline-form" style={{ marginTop: 8, padding: '10px 12px' }}>
                         <p className="muted" style={{ marginBottom: 8, fontSize: '0.8rem' }}>Unconfirm this repair so you can make adjustments and re-confirm it.</p>
@@ -11984,7 +12787,14 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
                   <div className="ticket-inline-form">
                     <SmartForm
                       fields={[
-                        { label: 'Category', name: 'maintenance_type', options: lookups.maintenance_types ?? [], type: 'creatable-select', newItemLabel: 'maintenance type', catalogEndpoint: '/maintenance-types' },
+                        // Phase B4 — catalog.create (maintenance types) is
+                        // Admin-only now, and Admin never reaches this form
+                        // (canAddSubIssue is the assigned Custodian/mechanic
+                        // only) — "Other" + a note (folded into the title on
+                        // submit) stands in for minting a new catalog value.
+                        hasRole(user, 'Admin')
+                          ? { label: 'Category', name: 'maintenance_type', options: lookups.maintenance_types ?? [], type: 'creatable-select', newItemLabel: 'maintenance type', catalogEndpoint: '/maintenance-types' }
+                          : { label: 'Category', name: 'maintenance_type', options: lookups.maintenance_types ?? [], type: 'catalog-or-other', otherNoteField: 'title', otherNoteLabel: 'Describe the issue/type' },
                         { label: 'Sub-Issue Title', name: 'title', required: true, type: 'text' },
                       ]}
                       key="add-sub-issue"
@@ -12016,7 +12826,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
               because until Close Ticket is pressed, the vehicle stays stuck
               showing Under Maintenance even though nothing is actually being
               worked on anymore. */}
-          {isAdmin && canClose && (
+          {canDo(user, 'ticket.close') && canClose && (
             <div className="notice success" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Icon name="checkCircle" size={15} />
@@ -12032,7 +12842,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
 
           {/* Its action now lives beside Delete Ticket in the action row below
               — this stays as the explanation for why that button is there. */}
-          {isAdmin && canDecisionClose && !decisionClosing && (
+          {canDo(user, 'ticket.close') && canDecisionClose && !decisionClosing && (
             <div className="notice warning" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Icon name="alert" size={15} /> {progress.done}/{progress.total} sub-issue(s) done. You can still finish or defer the rest — or close now as a decision, which records the leftovers as Deferred.
             </div>
@@ -12042,7 +12852,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
               leftovers become Deferred, and the Admin must justify it AND
               make the fit-for-service call — closing a ticket no longer
               blindly returns a possibly-unsafe vehicle to service. */}
-          {isAdmin && canDecisionClose && decisionClosing && (
+          {canDo(user, 'ticket.close') && canDecisionClose && decisionClosing && (
             <div className="ticket-inline-form" style={{ marginBottom: 12, padding: '12px 14px' }}>
               <p className="muted" style={{ marginBottom: 10, fontSize: '0.82rem' }}>
                 Closing now will mark the {progress.total - progress.done - progress.deferred} unfinished sub-issue(s) as <strong>Deferred</strong>, each with a follow-up issue report so nothing is forgotten.
@@ -12068,25 +12878,29 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
           )}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {isAdmin && ticket.status === 'Cancelled' && onUncancel && (
+            {canDo(user, 'ticket.uncancel') && ticket.status === 'Cancelled' && onUncancel && (
               <button className="primary-button" type="button" onClick={() => onUncancel(ticket)}>Restore Ticket</button>
             )}
             {/* Close Ticket itself now lives in the green banner above when
                 canClose is true — no need to repeat the same button here. */}
-            {isAdmin && canDecisionClose && !decisionClosing && (
+            {canDo(user, 'ticket.close') && canDecisionClose && !decisionClosing && (
               <button className="primary-button" type="button" style={{ background: '#d97706', borderColor: '#d97706' }} onClick={() => setDecisionClosing(true)}>Close as Decision</button>
             )}
             {/* Cancel is excluded once canClose too: every sub-issue is
                 already resolved at that point, so there's real, confirmed
                 work on record — cancelling would void it instead of just
                 abandoning an unstarted/unfinished ticket. */}
-            {isAdmin && ticket.status !== 'Closed' && ticket.status !== 'Cancelled' && !canClose && (
+            {/* A Pending Approval proposal isn't a live ticket yet — Approve/
+                Decline in the Review Proposal block above are its real
+                actions; Cancel/Delete here are for already-live tickets and
+                would just bypass the decline notification. */}
+            {canDo(user, 'ticket.cancel') && ticket.status !== 'Closed' && ticket.status !== 'Cancelled' && ticket.status !== 'Pending Approval' && !canClose && (
               <button className="ghost-button" type="button" onClick={requestCancel}>Cancel Ticket</button>
             )}
             {/* Once every sub-issue is resolved (ready to close) or the ticket
                 is already Closed, there's real work on record — Delete is only
                 for genuine mistakes, not for discarding finished repairs. */}
-            {isAdmin && ticket.status !== 'Closed' && !canClose && (
+            {canDo(user, 'ticket.delete') && ticket.status !== 'Closed' && ticket.status !== 'Pending Approval' && !canClose && (
               <button className="danger-button" type="button" onClick={requestDelete}>Delete Ticket</button>
             )}
           </div>
@@ -12103,7 +12917,7 @@ function TicketDetailPanel({ role, userId, ticket, lookups, onAssignMechanic, on
   );
 }
 
-function TicketProfilePage({ ticketId, role, userId, ticketLookups, onBack, onDeleteTicket, onRequestConfirmation, onSendToExternalShop, ticketAction: sendTicketAction }) {
+function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDeleteTicket, onRequestConfirmation, onSendToExternalShop, ticketAction: sendTicketAction }) {
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -12149,7 +12963,7 @@ function TicketProfilePage({ ticketId, role, userId, ticketLookups, onBack, onDe
   return (
     <TicketDetailPanel
       asPage
-      role={role}
+      user={user}
       userId={userId}
       ticket={ticket}
       lookups={ticketLookups}
@@ -12168,6 +12982,10 @@ function TicketProfilePage({ ticketId, role, userId, ticketLookups, onBack, onDe
       onCancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/cancel`, {}, 'Ticket cancelled.').then(loadTicket)}
       onUncancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/uncancel`, {}, 'Ticket restored.').then(loadTicket)}
       onDelete={(t) => onDeleteTicket(t).then(onBack)}
+      onApproveProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/approve`, payload, 'Ticket proposal approved.').then(loadTicket)}
+      // Declining deletes the ticket server-side — nothing left to reload,
+      // so this navigates away instead, same as onDelete just above.
+      onDeclineProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/decline`, payload, 'Ticket proposal declined.').then(onBack)}
       onRequestConfirmation={onRequestConfirmation}
       onClose={onBack}
     />
@@ -12554,7 +13372,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
           )}
         </section>
 
-        <section className="veh-card">
+        <section className="veh-card veh-card-form">
           <div className="veh-card-head"><Icon name="alert" size={16} /><h4>Issue Details</h4></div>
           <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="ticket-form-grid-2" style={{ padding: 0 }}>
@@ -12594,7 +13412,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
         </section>
 
         {preDiagnosed && (
-          <section className="veh-card">
+          <section className="veh-card veh-card-form">
             <div className="veh-card-head">
               <Icon name="wrench" size={16} />
               <h4>{isSingleIssueMode ? 'Known Issue' : 'Known Sub-Issues'}</h4>
@@ -12660,6 +13478,225 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
         </div>
       </form>
       {submitting && <SubmitLoadingOverlay label="Creating ticket…" />}
+    </ModulePanel>
+  );
+}
+
+// A Custodian's "propose a ticket" form — their own diagnosis, including who
+// they think should do each repair, submitted for an Admin to review before
+// it becomes a real, live ticket (POST /tickets/propose). Deliberately a
+// separate component from NewTicketPage above rather than a shared branch:
+// Admin's flow is more elaborate (entry mode, cannibalized/external context,
+// Assign to Custodian, a single shared sub-issue category) and none of that
+// applies here — the backend self-assigns the proposing Custodian, and each
+// sub-issue carries its own maintenance type + an optional suggested
+// mechanic instead. Keeping it fully separate means Admin's existing form is
+// untouched by this addition.
+function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) {
+  const draftKeyBase = 'draft:propose-ticket';
+  const [liveValues, setLiveValues] = useDraftState(`${draftKeyBase}:values`, {});
+  const [subIssueRows, setSubIssueRows] = useDraftState(`${draftKeyBase}:sub-issues`, () => (
+    [{ title: '', maintenance_type: '', suggested_mechanic_id: '' }]
+  ));
+  const [submitting, setSubmitting] = useState(false);
+  const [validationLines, setValidationLines] = useState(null);
+
+  const clearProposeDraft = () => {
+    clearDraftState(`${draftKeyBase}:values`);
+    clearDraftState(`${draftKeyBase}:sub-issues`);
+  };
+
+  const setField = (name, value) => { setLiveValues((v) => ({ ...v, [name]: value })); onDirty?.(); };
+  const updateSubIssue = (index, patch) => {
+    setSubIssueRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+    onDirty?.();
+  };
+  const addSubIssueRow = () => setSubIssueRows((rows) => [...rows, { title: '', maintenance_type: '', suggested_mechanic_id: '' }]);
+  const removeSubIssueRow = (index) => setSubIssueRows((rows) => rows.filter((_, i) => i !== index));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const errors = [];
+    if (!liveValues.vehicle_id) errors.push('Vehicle is required.');
+    if (!(liveValues.ticket_title ?? '').trim()) errors.push('Ticket Title is required.');
+    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Description / Details is required.');
+    if (!liveValues.priority) errors.push('Priority is required.');
+    const cleanedRows = subIssueRows.filter((row) => (row.title ?? '').trim());
+    if (!cleanedRows.length) errors.push('At least one sub-issue is required.');
+    if (errors.length) {
+      setValidationLines(errors);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const out = {
+        vehicle_id: liveValues.vehicle_id,
+        ticket_title: liveValues.ticket_title,
+        ticket_description: liveValues.ticket_description,
+        priority: liveValues.priority,
+        fault_category: liveValues.fault_category || undefined,
+        sub_issues: cleanedRows.map((row) => ({
+          title: row.title.trim(),
+          maintenance_type: row.maintenance_type || null,
+          suggested_mechanic_id: row.suggested_mechanic_id || null,
+        })),
+      };
+      const created = await onProposeTicket(out);
+      if (created) { clearProposeDraft(); onBack(); }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const vehicleOptions = (ticketLookups.vehicles ?? []).filter((v) => v.status !== 'Inactive' && v.status !== 'Decommissioned');
+  const faultCategoryOptions = ticketLookups.fault_categories ?? [];
+  const priorityOptions = ticketLookups.priorities ?? [];
+  const mechanicOptions = ticketLookups.maintenance_personnel ?? [];
+  const selectedVehicle = vehicleOptions.find((v) => String(v.vehicle_id) === String(liveValues.vehicle_id)) ?? null;
+
+  return (
+    <ModulePanel description="Propose a maintenance ticket for Admin review — your own diagnosis, including who you think should handle each repair. It stays Pending Approval until an Admin approves or declines it.">
+      <form className="smart-form ticket-create-form" onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {validationLines && (
+          <div className="toast-notice-overlay" onClick={() => setValidationLines(null)}>
+            <div className="toast-notice toast-notice-validation error" role="alert" onClick={(e) => e.stopPropagation()}>
+              <Icon name="alert" size={17} className="toast-notice-icon" />
+              <div className="toast-notice-lines">
+                {validationLines.map((line, i) => <span key={i}>{line}</span>)}
+              </div>
+              <button type="button" className="toast-notice-close" onClick={() => setValidationLines(null)} aria-label="Dismiss">
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <section className="veh-card">
+          <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Vehicle</h4></div>
+          <div className="ticket-form-grid-2">
+            <label>
+              <span>Vehicle <span className="required-asterisk">*</span></span>
+              <select required value={liveValues.vehicle_id ?? ''} onChange={(e) => setField('vehicle_id', e.target.value)}>
+                <option value="">{' '}</option>
+                {vehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
+              </select>
+            </label>
+          </div>
+          {selectedVehicle && (
+            <div className="ticket-selection-preview">
+              <div className="ticket-preview-card">
+                {selectedVehicle.photo_url ? (
+                  <img className="ticket-preview-photo" src={resolvePhotoUrl(selectedVehicle.photo_url)} alt={selectedVehicle.vehicle_name} />
+                ) : (
+                  <span className="ticket-preview-photo ticket-preview-photo-empty"><Icon name="vehicle" size={32} /></span>
+                )}
+                <div className="ticket-preview-body">
+                  <strong>{selectedVehicle.vehicle_name}</strong>
+                  <span>{selectedVehicle.plate_number} &middot; {selectedVehicle.category?.category_name ?? 'Unclassified'}</span>
+                  <span className="muted">{[selectedVehicle.brand, selectedVehicle.model].filter(Boolean).join(' ') || '—'} &middot; {selectedVehicle.current_location ?? 'No location on file'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="veh-card veh-card-form">
+          <div className="veh-card-head"><Icon name="alert" size={16} /><h4>Issue Details</h4></div>
+          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="ticket-form-grid-2" style={{ padding: 0 }}>
+              <label>
+                <span>Ticket Title <span className="required-asterisk">*</span></span>
+                <input required type="text" value={liveValues.ticket_title ?? ''} onChange={(e) => setField('ticket_title', e.target.value)} />
+              </label>
+              <label>
+                <span>Fault Category</span>
+                <CreatableSelect
+                  value={liveValues.fault_category ?? ''}
+                  onChange={(v) => setField('fault_category', v)}
+                  options={faultCategoryOptions}
+                  newItemLabel="fault category"
+                  catalogEndpoint="/fault-categories"
+                />
+              </label>
+            </div>
+            <label>
+              <span>Description / Details <span className="required-asterisk">*</span></span>
+              <textarea required rows={3} value={liveValues.ticket_description ?? ''} onChange={(e) => setField('ticket_description', e.target.value)} />
+            </label>
+            <label style={{ maxWidth: 260 }}>
+              <span>Priority <span className="required-asterisk">*</span></span>
+              <select required value={liveValues.priority ?? ''} onChange={(e) => setField('priority', e.target.value)}>
+                <option value="">{' '}</option>
+                {priorityOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section className="veh-card veh-card-form">
+          <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Sub-Issues</h4></div>
+          <div style={{ padding: 18 }}>
+            <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
+              List each specific problem you found. A suggested mechanic is optional — the Admin can change it, or leave it unassigned, while reviewing.
+            </p>
+
+            <div className="sub-issue-rows" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {subIssueRows.map((row, index) => (
+                <div key={index} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="sub-issue-row-index">{index + 1}</span>
+                    <input
+                      type="text"
+                      style={{ flex: 1 }}
+                      placeholder="e.g. Low coolant level"
+                      value={row.title}
+                      onChange={(e) => updateSubIssue(index, { title: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="btn-delete-action icon-btn"
+                      onClick={() => removeSubIssueRow(index)}
+                      disabled={subIssueRows.length === 1}
+                      title="Remove sub-issue"
+                      aria-label="Remove sub-issue"
+                    >
+                      <Icon name="close" size={14} />
+                    </button>
+                  </div>
+                  <div className="ticket-form-grid-2" style={{ padding: 0 }}>
+                    <label>
+                      <span>Maintenance Type</span>
+                      <CreatableSelect
+                        value={row.maintenance_type ?? ''}
+                        onChange={(v) => updateSubIssue(index, { maintenance_type: v })}
+                        options={ticketLookups?.maintenance_types ?? []}
+                        placeholder="Select a category or type to add new"
+                        newItemLabel="maintenance type"
+                        catalogEndpoint="/maintenance-types"
+                      />
+                    </label>
+                    <label>
+                      <span>Suggested Mechanic</span>
+                      <select value={row.suggested_mechanic_id ?? ''} onChange={(e) => updateSubIssue(index, { suggested_mechanic_id: e.target.value })}>
+                        <option value="">Unassigned — Admin will decide</option>
+                        {mechanicOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="primary-button" style={{ marginTop: 10 }} onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
+          </div>
+        </section>
+
+        <div className="form-actions">
+          <button className="ghost-button" onClick={() => { clearProposeDraft(); onBack(); }} type="button" disabled={submitting}>Cancel</button>
+          <button className="primary-button" type="submit" disabled={submitting}>Submit for Admin Review</button>
+        </div>
+      </form>
+      {submitting && <SubmitLoadingOverlay label="Submitting proposal…" />}
     </ModulePanel>
   );
 }
@@ -12739,7 +13776,7 @@ function TicketModule({
   // including Total, would collapse to 0 along with it.
   const ticketStats = useMemo(() => {
     const counts = { total: statSourceTickets.length };
-    ['Open', 'Active', 'Closed', 'Cancelled'].forEach((s) => {
+    ['Open', 'Pending Approval', 'Active', 'Closed', 'Cancelled'].forEach((s) => {
       counts[s] = statSourceTickets.filter((t) => t.status === s).length;
     });
     return counts;
@@ -12968,6 +14005,10 @@ function ReadinessCheckForm({ vehicle, onCancel, onSubmit }) {
 // registration papers, insurance, etc. Fetches its own data so the parent
 // profile page doesn't need to know about documents at all.
 function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
+  // canManage (Admin + Custodian, from VehicleProfilePage's
+  // canManageDocuments) governs upload only here — VehicleFilesModal reads
+  // the logged-in user itself to further narrow Edit to Admin (any) /
+  // Custodian (their own upload only) and Delete to Admin only.
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -13066,6 +14107,12 @@ function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
 // mounting with the right `initialFile` already pre-filled needs no
 // reset-on-open effect — a new mount already starts from the right state.
 function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged, initialFile, onRequestConfirmation }) {
+  const { user } = useContext(AuthContext);
+  // Phase B4 — document.delete is Admin-only (Custodian lost it); edit stays
+  // Admin (any document) + Custodian, but only on the document THEY uploaded
+  // (added_by is already in the list payload, so this needs no extra fetch —
+  // the backend enforces the same ownership rule and 403s otherwise).
+  const canDeleteDocs = hasRole(user, 'Admin');
   const [selectedId, setSelectedId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
@@ -13078,6 +14125,7 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
   const fileInputRef = useRef(null);
 
   const selected = documents.find((d) => d.document_id === selectedId);
+  const canEditSelected = !!selected && (hasRole(user, 'Admin') || (hasRole(user, 'Custodian') && String(selected.added_by?.id) === String(user.id)));
 
   const handlePick = (file) => {
     setPendingFile(file);
@@ -13155,12 +14203,21 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
                 <button type="button" className="file-card-icon-btn" onClick={() => fileInputRef.current?.click()} title="Add file" aria-label="Add file">
                   <Icon name="plus" size={14} />
                 </button>
-                <button type="button" className="file-card-icon-btn" disabled={!selected} onClick={() => selected && startEdit(selected)} title="Edit selected" aria-label="Edit selected">
+                <button
+                  type="button"
+                  className="file-card-icon-btn"
+                  disabled={!canEditSelected}
+                  onClick={() => canEditSelected && startEdit(selected)}
+                  title={selected && !canEditSelected ? 'You can only edit a file you uploaded yourself' : 'Edit selected'}
+                  aria-label="Edit selected"
+                >
                   <Icon name="edit" size={14} />
                 </button>
-                <button type="button" className="file-card-icon-btn" disabled={!selected} onClick={() => selected && handleDelete(selected)} title="Delete selected" aria-label="Delete selected">
-                  <Icon name="trash" size={14} />
-                </button>
+                {canDeleteDocs && (
+                  <button type="button" className="file-card-icon-btn" disabled={!selected} onClick={() => selected && handleDelete(selected)} title="Delete selected" aria-label="Delete selected">
+                    <Icon name="trash" size={14} />
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -13794,7 +14851,8 @@ function CustodianInspectionModule({
   onViewVehicle,
   stats,
   activeFilter,
-  onFilterChange
+  onFilterChange,
+  tabBar
 }) {
   const isPendingView = activeFilter !== 'Inspected';
 
@@ -13850,6 +14908,7 @@ function CustodianInspectionModule({
           priorityLabel="Priority"
         />
       </section>
+      {tabBar}
       <section className="panel">
         <div className="panel-header-bar">
           {/* Not every ticket in this second bucket was actually inspected —
@@ -13881,6 +14940,11 @@ function InspectTicketPage({ ticket, onBack, onSubmit, ticketLookups, onDirty })
   const [resultValue, setResultValue] = useState(ticket?.inspection_result ?? '');
   const [notes, setNotes] = useState(ticket?.inspection_notes ?? '');
   const [category, setCategory] = useState('');
+  // Phase B4 — catalog.create (maintenance types) is Admin-only now, and
+  // this Inspect page is Custodian-only (ticket.inspect), so the Category
+  // picker below no longer offers CreatableSelect's "+ Add New" — "Other"
+  // + this note stands in for it, folded into Inspection Notes on submit.
+  const [categoryOtherNote, setCategoryOtherNote] = useState('');
   // Root causes are "added" one at a time (type on the left, Add commits it)
   // rather than every row being a permanently-editable input — the
   // confirmed list on the right is plain text with its own Edit/Delete per
@@ -13921,7 +14985,12 @@ function InspectTicketPage({ ticket, onBack, onSubmit, ticketLookups, onDirty })
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const payload = { inspection_result: resultValue, inspection_notes: notes };
+    // Category is "Other" + a typed note instead of a real catalog value —
+    // fold the note into Inspection Notes (the one free-text field this
+    // form already sends) rather than inventing a new backend field.
+    const otherNote = category === CATALOG_OTHER_VALUE ? categoryOtherNote.trim() : '';
+    const finalNotes = otherNote ? `${notes ? `${notes}\n` : ''}Other (specified type): ${otherNote}` : notes;
+    const payload = { inspection_result: resultValue, inspection_notes: finalNotes };
     if (resultValue === 'Needs Maintenance') {
       // A root cause still sitting in the "type a new one" box (not yet
       // clicked Add) shouldn't be silently lost just because Submit was
@@ -13998,13 +15067,14 @@ function InspectTicketPage({ ticket, onBack, onSubmit, ticketLookups, onDirty })
 
             <label style={{ marginBottom: 16 }}>
               <span>Category</span>
-              <CreatableSelect
+              <CatalogOrOtherField
                 value={category}
                 onChange={(v) => { setCategory(v); onDirty?.(); }}
+                note={categoryOtherNote}
+                onNoteChange={(v) => { setCategoryOtherNote(v); onDirty?.(); }}
                 options={ticketLookups?.maintenance_types ?? []}
-                placeholder="Select a category or type to add new"
-                newItemLabel="maintenance type"
-                catalogEndpoint="/maintenance-types"
+                placeholder="Select a category"
+                otherNoteLabel="Describe the issue/type"
               />
             </label>
 
@@ -14091,7 +15161,8 @@ function CustodianVerificationModule({
   onViewVehicle,
   stats,
   activeFilter,
-  onFilterChange
+  onFilterChange,
+  tabBar
 }) {
   const [viewLogsTarget, setViewLogsTarget] = useState(null);
   const isPendingView = activeFilter !== 'Verified';
@@ -14195,6 +15266,7 @@ function CustodianVerificationModule({
           }]}
         />
       </section>
+      {tabBar}
       <section className="panel">
         <div className="panel-header-bar">
           <h3>{isPendingView ? 'Pending Verifications' : 'Verified Repairs'} <span className="count-badge">{tickets.length}</span></h3>
@@ -14307,7 +15379,13 @@ function MechanicWorkOrderModule({
   setSearchQuery,
   stats,
   activeFilter,
-  onFilterChange
+  onFilterChange,
+  // Phase B4 — a Maintenance Personnel account's assigned Maintenance
+  // Schedules, shown as a second section on this same page (null for every
+  // other role, which never sees this section at all).
+  mySchedules = null,
+  onCompleteSchedule,
+  currentUser,
 }) {
   const isPendingView = activeFilter !== 'Submitted';
   const [modalGroup, setModalGroup] = useState(null);
@@ -14398,6 +15476,37 @@ function MechanicWorkOrderModule({
           )}
         </div>
       </section>
+
+      {/* Phase B4 — Condition Monitoring and the standalone Maintenance
+          Schedule module were both removed from Maintenance Personnel's
+          sidebar; their assigned schedules (already scoped server-side to
+          assigned_to = me) surface here instead, as a clearly-labeled second
+          section on the same page. */}
+      {mySchedules !== null && (
+        <section className="panel operations-board work-order-board">
+          <div className="operations-board-head">
+            <div>
+              <span className="operations-kicker">Preventive maintenance</span>
+              <h3>My Assigned Maintenance Schedules <span className="count-badge">{mySchedules.length}</span></h3>
+              <p>Vehicles scheduled for preventive maintenance and assigned to you.</p>
+            </div>
+          </div>
+          <div className="work-tracker-grid operations-card-grid">
+            {mySchedules.length === 0 ? (
+              <p className="empty-state" style={{ gridColumn: '1 / -1' }}>No maintenance schedules assigned to you.</p>
+            ) : (
+              mySchedules.map((row) => (
+                <MaintenanceScheduleCard
+                  key={row.schedule_id}
+                  row={row}
+                  currentUser={currentUser}
+                  onComplete={onCompleteSchedule}
+                />
+              ))
+            )}
+          </div>
+        </section>
+      )}
 
       <FormModal
         open={!!modalGroup}

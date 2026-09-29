@@ -26,8 +26,15 @@ export const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // If logged in but lacks the required role, bounce them to an unauthorized alert view
-  if (allowedRoles && !allowedRoles.includes(user?.role)) {
+  // If logged in but lacks the required role, bounce them to an unauthorized alert view.
+  // Mirrors Workspace.jsx's hasRole(): check the full `roles` set the account holds, not
+  // just the primary `role` string, so a multi-role user isn't bounced from a secondary
+  // role's URL that in-page gates would otherwise allow once there.
+  const roles = user?.roles;
+  const hasAnyAllowedRole = allowedRoles?.some((r) => (
+    Array.isArray(roles) && roles.length ? roles.includes(r) : user?.role === r
+  ));
+  if (allowedRoles && !hasAnyAllowedRole) {
     return <Navigate to="/unauthorized" replace />;
   }
 

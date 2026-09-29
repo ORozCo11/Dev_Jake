@@ -1020,47 +1020,60 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function a_mechanic_cannot_close_their_own_maintenance_record(): void
+    public function a_mechanic_cannot_create_a_standalone_maintenance_record_at_all(): void
     {
+        // Phase B4 — standalone Maintenance Records are now an Admin-only
+        // manual/historical ledger; a Maintenance Personnel account has no
+        // create/edit access to them whatsoever (they log real repairs
+        // through a ticket sub-issue instead). This supersedes the older
+        // version of this test, which exercised the "non-Admin marking
+        // their own repair Completed gets silently downgraded to For
+        // Verification" downgrade inside updateMaintenanceRecord() — that
+        // path is now unreachable by anyone but Admin, since Admin is the
+        // only role able to reach the endpoint in the first place.
         $vehicle = $this->vehicle();
 
         Sanctum::actingAs($this->mechanic, ['*']);
-        $create = $this->postJson('/api/maintenance-records', [
+        $this->postJson('/api/maintenance-records', [
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
             'problem_reason' => 'Routine oil change',
             'progress_status' => 'Under Repair',
-        ]);
-        $create->assertCreated();
-        $recordId = $create->json('maintenance_id');
-
-        $this->putJson("/api/maintenance-records/{$recordId}", [
-            'progress_status' => 'Completed',
-        ])->assertOk();
-
-        $this->assertSame(
-            'For Verification',
-            VehicleMaintenanceRecord::findOrFail($recordId)->progress_status
-        );
+        ])->assertForbidden();
     }
 
     #[Test]
-    public function a_vehicle_cannot_be_double_booked_for_the_same_date(): void
+    public function double_booking_a_vehicle_warns_instead_of_blocking_and_a_confirm_proceeds(): void
     {
+        // Custodian creates schedules now, not Admin — see PhaseB4RoleModelTest
+        // for that reversal's own dedicated coverage. This test is about the
+        // double-booking rule itself, which used to be a hard 422 and is now
+        // a warning the caller can confirm past (see FleetController::
+        // checkScheduleConflicts()).
         $vehicle = $this->vehicle();
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
             'scheduled_date' => '2026-08-01',
         ])->assertCreated();
 
+        $unconfirmed = $this->postJson('/api/maintenance-schedules', [
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Tire Rotation',
+            'scheduled_date' => '2026-08-01',
+        ])->assertStatus(409);
+        $this->assertTrue($unconfirmed->json('same_vehicle_conflict'));
+        $this->assertDatabaseCount('vehicle_maintenance_schedules', 1);
+
         $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Tire Rotation',
             'scheduled_date' => '2026-08-01',
-        ])->assertUnprocessable();
+            'confirm_conflicts' => true,
+        ])->assertCreated();
+        $this->assertDatabaseCount('vehicle_maintenance_schedules', 2);
     }
 
     #[Test]
