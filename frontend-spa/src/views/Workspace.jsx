@@ -777,6 +777,7 @@ function Workspace() {
   // rest so the module-switch reset effect can clear them all in one place.
   const [filterReadiness, setFilterReadiness] = useState([]); // vehicles: Ready to Respond
   const [filterIssueType, setFilterIssueType] = useState([]); // issues
+  const [filterNoTicket, setFilterNoTicket] = useState(false); // issues: still needs a ticket
   const [filterMaintType, setFilterMaintType] = useState([]); // maintenance
   const [filterSource, setFilterSource] = useState([]); // maintenance
   const [filterActive, setFilterActive] = useState([]); // users
@@ -997,6 +998,7 @@ function Workspace() {
      setFilterDomain([]);
      setFilterReadiness([]);
      setFilterIssueType([]);
+     setFilterNoTicket(false);
      setFilterMaintType([]);
      setFilterSource([]);
      setFilterActive([]);
@@ -1689,6 +1691,11 @@ function Workspace() {
       result = result.filter((row) => filterIssueType.includes(row.issue_type));
     }
 
+    // "Needs a ticket" — reports nobody has turned into a ticket yet.
+    if (activeModule === 'issues' && filterNoTicket) {
+      result = result.filter((row) => issueNeedsTicket(row));
+    }
+
     if (activeModule === 'maintenance') {
       if (filterMaintType.length) {
         result = result.filter((row) => filterMaintType.includes(row.maintenance_type));
@@ -1848,7 +1855,7 @@ function Workspace() {
     }
 
     return result;
-  }, [rawRows, searchQuery, filterCategory, filterCapacity, filterLocation, filterDomain, filterStatus, filterPriority, filterReadiness, filterIssueType, filterMaintType, filterSource, filterActive, filterAssignedTo, filterVerdict, filterCheckedBy, filterActivityType, filterVehicle, filterMechanic, filterCustodian, filterDateStart, filterDateEnd, activeModule, condFilterStartDate, condFilterEndDate, archiveStart, archiveEnd, archiveStatusFilter]);
+  }, [rawRows, searchQuery, filterCategory, filterCapacity, filterLocation, filterDomain, filterStatus, filterPriority, filterReadiness, filterIssueType, filterNoTicket, filterMaintType, filterSource, filterActive, filterAssignedTo, filterVerdict, filterCheckedBy, filterActivityType, filterVehicle, filterMechanic, filterCustodian, filterDateStart, filterDateEnd, activeModule, condFilterStartDate, condFilterEndDate, archiveStart, archiveEnd, archiveStatusFilter]);
 
   // Status breakdown for the Vehicle Management stat cards — counted from the
   // full unfiltered fetch so the cards stay accurate regardless of the active
@@ -2055,7 +2062,7 @@ function Workspace() {
   // (show/hide + drag to reorder, persisted per browser) — see
   // ColumnChooserButton/useColumnChooser below.
   const vehicleColumnDefs = useMemo(
-    () => vehicleColumns(user, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile),
+    () => vehicleColumns(user, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile, (row) => setReadinessPromptTarget(row)),
     [user, openVehicleProfile, deleteRecord, restoreRecord, filterStatus, openTicketProfile],
   );
   const vehicleColumnChooser = useColumnChooser('vms_vehicle_columns', vehicleColumnDefs);
@@ -2093,8 +2100,8 @@ function Workspace() {
   const conditionColumnChooser = useColumnChooser('vms_condition_columns', conditionColumnDefs);
 
   const issueColumnDefs = useMemo(
-    () => issueColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}/edit`), handleCreateTicketFromIssue, setUserInfoTarget, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`), deleteRecord, user),
-    [user, navigate, handleCreateTicketFromIssue, deleteRecord],
+    () => issueColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}/edit`), handleCreateTicketFromIssue, setUserInfoTarget, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`), deleteRecord, user, openTicketProfile),
+    [user, navigate, handleCreateTicketFromIssue, deleteRecord, openTicketProfile],
   );
   const issueColumnChooser = useColumnChooser('vms_issue_columns', issueColumnDefs);
 
@@ -3062,6 +3069,7 @@ function Workspace() {
             />
           ) : logRepairsTicketId ? (
             <LogRepairsPage
+              key={flattenSubIssueRows(records.ticketWorkOrders).some((r) => String(r.ticket_id) === String(logRepairsTicketId) && String(r.sub_issue_id) === String(logRepairsSubIssueId)) ? 'ready' : 'loading'}
               ticket={flattenSubIssueRows(records.ticketWorkOrders).find((r) => String(r.ticket_id) === String(logRepairsTicketId) && String(r.sub_issue_id) === String(logRepairsSubIssueId))}
               vehicleOptions={lookups.vehicles ?? []}
               onBack={() => returnToModule('ticketWorkOrders')}
@@ -3375,6 +3383,19 @@ function Workspace() {
             />
           </div>
           <PaginatedTable columns={vehicleColumnChooser.visibleColumns} rows={visibleRows} onRowClick={openVehicleProfile} onReorderColumn={vehicleColumnChooser.reorderColumn} emptyMessage="No vehicles here yet — click the + button to register one." />
+          <FormModal
+            open={!!readinessPromptTarget}
+            title={`Readiness Check — ${readinessPromptTarget?.vehicle_name ?? ''}`}
+            onClose={() => setReadinessPromptTarget(null)}
+          >
+            {readinessPromptTarget && (
+              <ReadinessCheckForm
+                vehicle={readinessPromptTarget}
+                onCancel={() => setReadinessPromptTarget(null)}
+                onSubmit={(payload) => submitReadinessFromPrompt(readinessPromptTarget.vehicle_id, payload)}
+              />
+            )}
+          </FormModal>
         </ModulePanel>
       );
     }
@@ -3851,6 +3872,16 @@ function Workspace() {
         >
           <div className="panel-header-bar">
             <h3>Issue Reports <span className="count-badge">{visibleRows.length}</span></h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {(hasRole(user, 'Admin') || hasRole(user, 'Custodian')) && (
+              <label
+                title="Reports nobody has started a ticket from yet"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                <input type="checkbox" checked={filterNoTicket} onChange={(e) => setFilterNoTicket(e.target.checked)} />
+                Needs a ticket ({(records.issues ?? []).filter(issueNeedsTicket).length})
+              </label>
+            )}
             <LocalSearchInput
               value={searchQuery}
               onChange={setSearchQuery}
@@ -3859,6 +3890,7 @@ function Workspace() {
               onAdd={hasRole(user, 'Custodian') ? () => setActiveModule('reportOrPropose') : undefined}
               addLabel="Report Issue"
             />
+          </div>
           </div>
           <PaginatedTable
             columns={issueColumnChooser.visibleColumns}
@@ -4586,8 +4618,7 @@ function Workspace() {
         <>
           <MechanicWorkOrderModule
             tickets={visibleRows}
-            allRows={rawRows}
-            onOpenLogRepairs={(row) => navigate(`${roleRoutes[user.role]}/work-orders/${row.ticket_id}/${row.sub_issue_id}/log-repairs`)}
+            onViewTicket={openTicketProfile}
             categories={lookups.categories}
             vehicles={lookups.vehicles}
             filterCategory={filterCategory}
@@ -5887,13 +5918,15 @@ function ModulePanel({ children, description, statCards, filterBar, tabBar }) {
   return (
     <div className="module-grid">
       <DismissibleHint description={description} />
+      {/* Tabs switch the whole view (stats, filters, list), so they live at
+          the top — same spot on every tab — not between filters and list. */}
+      {tabBar}
       {statCards}
       {filterBar && (
         <section className="panel module-filter-panel">
           {filterBar}
         </section>
       )}
-      {tabBar}
       <section className="panel">
         {children}
       </section>
@@ -8871,7 +8904,7 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
   );
 }
 
-function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket) {
+function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket, onReadinessCheck) {
   const columns = [
     { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.vehicle_id },
     {
@@ -8952,7 +8985,10 @@ function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus,
   const canEditVehicle = canDo(user, 'vehicle.edit');
   const canRestoreVehicle = canDo(user, 'vehicle.restore');
   const canArchiveVehicle = canDo(user, 'vehicle.archive');
-  if (canEditVehicle || canRestoreVehicle || canArchiveVehicle) {
+  // Readiness checks are a Custodian's hands-on job — give them an Action
+  // column even though they can't edit/restore/archive vehicles.
+  const canCheckReadiness = canDo(user, 'vehicle.readiness_check') && !!onReadinessCheck;
+  if (canEditVehicle || canRestoreVehicle || canArchiveVehicle || canCheckReadiness) {
     columns.push({
       key: 'action',
       label: 'Action',
@@ -8969,6 +9005,13 @@ function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus,
             <button className="btn-view-action icon-btn" onClick={() => onViewTicket({ ticket_id: row.open_ticket_id })} type="button" title={`View Ticket #${row.open_ticket_id}`} aria-label={`View Ticket #${row.open_ticket_id}`}><Icon name="ticket" size={14} /></button>
           ) : (
             <span className="icon-btn-spacer" aria-hidden="true" />
+          )}
+          {canCheckReadiness && (
+            (row.status === 'Inactive' || row.status === 'Decommissioned') ? (
+              <span className="icon-btn-spacer" aria-hidden="true" />
+            ) : (
+              <button className="btn-confirm-action icon-btn" onClick={() => onReadinessCheck(row)} type="button" title="Record Readiness Check" aria-label="Record Readiness Check"><Icon name="checkCircle" size={14} /></button>
+            )
           )}
           {canEditVehicle && (
             <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
@@ -9658,7 +9701,12 @@ function TicketFilterPanel({
   );
 }
 
-function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, onView, deleteRecord, user) {
+// An unresolved report that no ticket has been started from yet.
+function issueNeedsTicket(row) {
+  return ['Pending', 'Under Review'].includes(row.status) && !row.maintenance_ticket;
+}
+
+function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, onView, deleteRecord, user, onViewTicket) {
   const columns = [
     { key: 'id', label: 'ID', width: '5%', locked: true, className: 'cell-center', render: (row) => row.issue_report_id },
     {
@@ -9690,6 +9738,28 @@ function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, 
     },
     { key: 'date', label: 'Date', width: '9%', className: 'cell-center', render: (row) => <DateBadge value={row.created_at} /> },
   ];
+
+  // Which ticket (if any) this report became — a link, or a dash when nobody
+  // has started one. Only roles that can open tickets see it.
+  if (['Admin', 'Custodian'].includes(role) && onViewTicket) {
+    columns.splice(columns.length - 1, 0, {
+      key: 'ticket',
+      label: 'Ticket',
+      width: '8%',
+      className: 'cell-center',
+      render: (row) => (row.maintenance_ticket
+        ? (
+          <button
+            type="button"
+            className="issue-reporter-link"
+            onClick={(e) => { e.stopPropagation(); onViewTicket({ ticket_id: row.maintenance_ticket.ticket_id }); }}
+          >
+            Ticket #{row.maintenance_ticket.ticket_id}
+          </button>
+        )
+        : <span className="muted" title="No ticket has been started for this report yet">—</span>),
+    });
+  }
 
   if (['Admin', 'Maintenance Personnel'].includes(role)) {
     columns.push({
@@ -9723,6 +9793,11 @@ function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, 
       render: (row) => (
         <div className="row-actions" style={{ flexWrap: 'nowrap' }}>
           <button className="btn-view-action icon-btn" onClick={() => onView(row)} type="button" title="View" aria-label="View"><Icon name="eye" size={14} /></button>
+          {/* A Custodian turns a flagged concern into a ticket proposal right
+              from the row — only while the issue can still take one. */}
+          {canDo(user, 'ticket.propose') && onCreateTicketFromIssue && ['Pending', 'Under Review'].includes(row.status) && !row.maintenance_ticket && (
+            <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromIssue(row)} type="button" title="Propose Ticket" aria-label="Propose Ticket"><Icon name="ticket" size={14} /></button>
+          )}
           {row.status === 'Pending' && (
             <>
               <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
@@ -11598,33 +11673,6 @@ function groupWorkTrackerByTicket(rows) {
     });
 }
 
-function WorkOutcomeChip({ tone, label, flag = false }) {
-  const map = {
-    success: { bg: '#dcfce7', bd: '#86efac', fg: '#166534' },
-    warning: { bg: '#fef3c7', bd: '#fcd34d', fg: '#92400e' },
-    info:    { bg: '#e0f2fe', bd: '#7dd3fc', fg: '#075985' },
-    neutral: { bg: '#f1f5f9', bd: '#e2e8f0', fg: '#475569' },
-  };
-  const c = map[tone] ?? map.neutral;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 999, fontSize: '0.78rem', fontWeight: 600, background: c.bg, border: `1px solid ${c.bd}`, color: c.fg }}>
-      {flag && <Icon name="alert" size={12} />}{label}
-    </span>
-  );
-}
-
-function WorkRoleBadge({ row }) {
-  const both = row.isMechanic && row.isVerifier;
-  const style = both
-    ? { bg: '#ede9fe', fg: '#6d28d9' }
-    : row.isMechanic ? { bg: '#fef3c7', fg: '#b45309' } : { bg: '#e0f2fe', fg: '#0369a1' };
-  return (
-    <span style={{ fontSize: '0.74rem', fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: style.bg, color: style.fg, whiteSpace: 'nowrap' }}>
-      {row.relationship}
-    </span>
-  );
-}
-
 // "Vehicles you've worked on and where they stand now." A read-only feed that
 // unifies every workflow phase so a Custodian/Mechanic sees the OUTCOME of their
 // work (approved, rejected, confirmed, reopened) in one place — no notification
@@ -11639,9 +11687,6 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
   const [filterStatus, setFilterStatus] = useState([]);
   const [filterRole, setFilterRole] = useState([]);
   const [filterOutcome, setFilterOutcome] = useState([]);
-  // Card clicked open in the detail popup — a modal instead of an inline
-  // expand so a ticket with many sub-issues doesn't push the whole grid down.
-  const [modalGroup, setModalGroup] = useState(null);
   // Captured once at mount (a 30-day window doesn't need per-render precision),
   // keeping the filter memo below a pure function of its inputs.
   const [nowTs] = useState(() => Date.now());
@@ -11696,15 +11741,9 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
 
   const groupedTickets = useMemo(() => groupWorkTrackerByTicket(visibleRows), [visibleRows]);
 
-  // Keep the open popup in sync with live data (e.g. a poll refresh); if its
-  // ticket drops out of the filtered/visible set, fall back to the last known
-  // snapshot rather than flashing an empty modal while it's still open.
-  const displayGroup = modalGroup
-    ? (groupedTickets.find((g) => g.ticket_id === modalGroup.ticket_id) ?? modalGroup)
-    : null;
-
   return (
     <div className="module-grid">
+      {tabBar}
       <ModuleStatCards
         totalLabel="Total"
         total={allRows.length}
@@ -11737,7 +11776,6 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
           }]}
         />
       </section>
-      {tabBar}
       <section className="panel operations-board work-tracker-board">
         <div className="operations-board-head">
           <div>
@@ -11781,7 +11819,7 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
                   key={group.ticket_id}
                   type="button"
                   className={`work-tracker-card${group.needsAction ? ' needs-action' : ''}`}
-                  onClick={() => setModalGroup(group)}
+                  onClick={() => onViewTicket({ ticket_id: group.ticket_id })}
                 >
                   <span className="work-tracker-thumb">
                     {photo ? <img src={photo} alt="" /> : <Icon name="vehicle" size={18} />}
@@ -11806,43 +11844,6 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
           )}
         </div>
       </section>
-
-      <FormModal
-        open={!!modalGroup}
-        onClose={() => setModalGroup(null)}
-        title={displayGroup ? `${displayGroup.vehicle?.vehicle_name ?? 'Unknown Vehicle'} — #${displayGroup.ticket_id} · ${displayGroup.ticket_title}` : ''}
-      >
-        {displayGroup && (
-          <>
-            <button
-              type="button"
-              className="ghost-button"
-              style={{ marginBottom: 14 }}
-              onClick={() => onViewTicket({ ticket_id: displayGroup.ticket_id })}
-            >
-              View Full Ticket ↗
-            </button>
-            <div className="work-tracker-subissue-list">
-              {displayGroup.subIssues.map((si) => {
-                const outcome = workTrackerOutcome(si);
-                return (
-                  <div key={si.sub_issue_id} className={`work-tracker-subissue-card${workTrackerNeedsAction(si) ? ' needs-action' : ''}`}>
-                    <div className="work-tracker-subissue-top">
-                      <strong>{si.title}</strong>
-                      <WorkRoleBadge row={si} />
-                    </div>
-                    <div className="work-tracker-subissue-bottom">
-                      <TicketStatusBadge value={si.status} />
-                      <WorkOutcomeChip tone={outcome.tone} label={outcome.label} flag={workTrackerNeedsAction(si)} />
-                      <span className="muted" style={{ fontSize: '0.78rem', marginLeft: 'auto' }}>{formatDate(si.lastActivityIso)}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </FormModal>
     </div>
   );
 }
@@ -12213,7 +12214,7 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
 // TICKET DETAIL PANEL — shown when admin clicks a ticket row
 // =========================================================================
 
-function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onAddSubIssue, onDeferSubIssue, onCloseTicket, onCancel, onUncancel, onDelete, onRequestConfirmation, onSendToExternalShop, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
+function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onAddSubIssue, onDeferSubIssue, onCloseTicket, onLogRepairs, onCancel, onUncancel, onDelete, onRequestConfirmation, onSendToExternalShop, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
   const [assigningAll, setAssigningAll] = useState(false);
   // Which sub-issue's Reassign/Defer inline form is open, if any — replaces
   // the old bulk Reassign/Defer modals with a per-card icon + inline panel
@@ -12663,6 +12664,14 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                     </div>
                   )}
 
+                  {onLogRepairs && canDo(user, 'subissue.log_repair') && si.status === 'Under Repair' && String(si.assigned_mechanic_id) === String(userId) && (
+                    <div className="subissue-head-right">
+                      <button className="primary-button" type="button" onClick={() => onLogRepairs(ticket, si)}>
+                        <Icon name="wrench" size={14} /> Log Repairs
+                      </button>
+                    </div>
+                  )}
+
                   {/* Makes every handoff visible — in particular, the Custodian's
                       verification step between the mechanic's repair and the
                       Admin's final confirmation, so it never looks skipped. */}
@@ -13021,6 +13030,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
 }
 
 function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDeleteTicket, onRequestConfirmation, onSendToExternalShop, ticketAction: sendTicketAction }) {
+  const navigate = useNavigate();
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -13089,6 +13099,7 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
       onAddSubIssue={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues`, payload, 'Sub-issue added.', 'post').then(afterAction)}
       onDeferSubIssue={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/defer`, payload, 'Sub-issue deferred — a follow-up issue report was opened.').then(afterAction)}
       onSendToExternalShop={onSendToExternalShop}
+      onLogRepairs={(t, si) => navigate(`${roleRoutes[user.role]}/work-orders/${t.ticket_id}/${si.sub_issue_id}/log-repairs`)}
       onCloseTicket={(t, payload = {}) => sendTicketAction(`/tickets/${t.ticket_id}/close`, payload, payload.deferral_reason ? 'Ticket closed as a decision.' : 'Ticket closed.').then(afterAction)}
       onCancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/cancel`, {}, 'Ticket cancelled.').then(afterAction)}
       onUncancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/uncancel`, {}, 'Ticket restored.').then(afterAction)}
@@ -15103,6 +15114,7 @@ function CustodianInspectionModule({
   return (
     <div className="module-grid">
       <DismissibleHint description="Phase 2 — Vehicle Evaluation. Review tickets assigned to you, submit physical inspection findings, and check back here for anything already diagnosed — either by your own inspection, or pre-diagnosed by an Admin (e.g. reassigned to you mid-repair)." />
+      {tabBar}
       <ModuleStatCards
         totalLabel="Total Assigned"
         total={stats.total}
@@ -15125,7 +15137,6 @@ function CustodianInspectionModule({
           priorityLabel="Priority"
         />
       </section>
-      {tabBar}
       <section className="panel">
         <div className="panel-header-bar">
           {/* Not every ticket in this second bucket was actually inspected —
@@ -15454,6 +15465,7 @@ function CustodianVerificationModule({
   return (
     <div className="module-grid">
       <DismissibleHint description="Phase 4 Tier 1 — Repair Integrity Verification. Review mechanic work, issue your inspection verdict before Admin confirmation, and check back here to see what you've already verified." />
+      {tabBar}
       <ModuleStatCards
         totalLabel="Total Assigned"
         total={stats.total}
@@ -15483,7 +15495,6 @@ function CustodianVerificationModule({
           }]}
         />
       </section>
-      {tabBar}
       <section className="panel">
         <div className="panel-header-bar">
           <h3>{isPendingView ? 'Pending Verifications' : 'Verified Repairs'} <span className="count-badge">{tickets.length}</span></h3>
@@ -15580,8 +15591,7 @@ function CustodianVerificationModule({
 
 function MechanicWorkOrderModule({
   tickets,
-  allRows,
-  onOpenLogRepairs,
+  onViewTicket,
   categories,
   vehicles,
   filterCategory,
@@ -15591,7 +15601,6 @@ function MechanicWorkOrderModule({
   filterPriority,
   setFilterPriority,
   maintTypeOptions,
-  onViewVehicle,
   searchQuery,
   setSearchQuery,
   stats,
@@ -15605,22 +15614,11 @@ function MechanicWorkOrderModule({
   currentUser,
 }) {
   const isPendingView = activeFilter !== 'Submitted';
-  const [modalGroup, setModalGroup] = useState(null);
-
   // One card per ticket/vehicle — a vehicle with several Causes dispatched to
   // this mechanic (Cause A/B/C) no longer repeats its ticket/vehicle info on
-  // every row; clicking the card opens the list of Causes underneath it.
+  // every row; clicking the card opens that ticket's page directly (where the
+  // mechanic logs repairs on each of their work orders).
   const groupedTickets = useMemo(() => groupMechanicRowsByTicket(tickets), [tickets]);
-
-  // The modal itself always reads from the UNFILTERED per-mechanic rows, not
-  // the Pending/Submitted-filtered `tickets` above — otherwise submitting a
-  // repair log flips that sub-issue's status away from "Under Repair", which
-  // drops it out of the Pending filter and makes it vanish out from under the
-  // mechanic mid-click instead of just updating its badge in place.
-  const allGroupedTickets = useMemo(() => groupMechanicRowsByTicket(allRows ?? tickets), [allRows, tickets]);
-  const displayGroup = modalGroup
-    ? (allGroupedTickets.find((g) => g.ticket_id === modalGroup.ticket_id) ?? modalGroup)
-    : null;
 
   return (
     <div className="module-grid">
@@ -15670,7 +15668,7 @@ function MechanicWorkOrderModule({
                   key={group.ticket_id}
                   type="button"
                   className={`work-tracker-card${group.needsAction ? ' needs-action' : ''}`}
-                  onClick={() => setModalGroup(group)}
+                  onClick={() => onViewTicket({ ticket_id: group.ticket_id })}
                 >
                   <span className="work-tracker-thumb">
                     {photo ? <img src={photo} alt="" /> : <Icon name="vehicle" size={18} />}
@@ -15724,55 +15722,6 @@ function MechanicWorkOrderModule({
           </div>
         </section>
       )}
-
-      <FormModal
-        open={!!modalGroup}
-        onClose={() => setModalGroup(null)}
-        title={displayGroup ? `${displayGroup.vehicle?.vehicle_name ?? 'Unknown Vehicle'} — #${displayGroup.ticket_id} · ${displayGroup.ticket_title}` : ''}
-      >
-        {displayGroup && (
-          <>
-            <button
-              type="button"
-              className="ghost-button"
-              style={{ marginBottom: 14 }}
-              onClick={() => displayGroup.vehicle && onViewVehicle(displayGroup.vehicle)}
-            >
-              View Vehicle ↗
-            </button>
-            <div className="work-tracker-subissue-list">
-              {displayGroup.subIssues.map((r) => (
-                <div key={r.sub_issue_id} className={`work-tracker-subissue-card${r.status === 'Under Repair' ? ' needs-action' : ''}`}>
-                  <div className="work-tracker-subissue-top">
-                    <strong>{r.title}</strong>
-                    <TicketStatusBadge value={r.status} />
-                  </div>
-                  {r.confirmation_verdict === 'Reopened' ? (
-                    <span className="status-badge rework-danger" style={{ fontSize: '0.75rem', padding: '3px 8px', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                      <Icon name="alert" size={13} /> Admin Reopened Rework
-                    </span>
-                  ) : r.verification_verdict === 'Rejected' ? (
-                    <span className="status-badge rework-warning" style={{ fontSize: '0.75rem', padding: '3px 8px', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                      <Icon name="alert" size={13} /> Custodian Rejected Rework
-                    </span>
-                  ) : null}
-                  <p className="muted" style={{ margin: '6px 0 0', fontSize: '0.8rem' }}>{r.work_order_notes ?? r.ticket_description}</p>
-                  {!isPendingView && r.repair_logs && <RepairLogEntries text={r.repair_logs} compact />}
-                  <div className="work-tracker-subissue-bottom">
-                    <span className="muted" style={{ fontSize: '0.78rem' }}>{r.maintenance_type ?? '—'}</span>
-                    <span className="muted" style={{ fontSize: '0.78rem' }}><DateBadge value={r.mechanic_assigned_at} /> · {formatTime(r.mechanic_assigned_at)}</span>
-                    <span style={{ marginLeft: 'auto' }}>
-                      {r.status === 'Under Repair'
-                        ? <button className="btn-edit-action icon-btn" type="button" onClick={() => onOpenLogRepairs(r)} title="Log Repairs" aria-label="Log Repairs"><Icon name="wrench" size={14} /></button>
-                        : <span className="muted">Submitted</span>}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </FormModal>
     </div>
   );
 }
