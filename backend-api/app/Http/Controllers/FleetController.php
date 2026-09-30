@@ -1216,11 +1216,8 @@ class FleetController extends Controller
     {
         $this->requireAbility($request, 'condition.edit');
 
-        // Phase B4 — Admin edits any check; a Custodian may only edit the
-        // one they themselves performed.
-        if (!$request->user()->hasRole('Admin')) {
-            abort_unless($condition->checked_by === $request->user()->id, 403, 'You can only edit a condition check you performed yourself.');
-        }
+        // Custodian-only ability — and only the check they themselves performed.
+        abort_unless($condition->checked_by === $request->user()->id, 403, 'You can only edit a condition check you performed yourself.');
 
         $data = $request->validate([
             'vehicle_id' => ['sometimes', 'exists:vehicles,vehicle_id'],

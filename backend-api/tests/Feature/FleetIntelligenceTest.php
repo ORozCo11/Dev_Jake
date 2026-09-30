@@ -381,6 +381,19 @@ class FleetIntelligenceTest extends TestCase
     }
 
     #[Test]
+    public function only_a_custodian_can_record_a_readiness_check(): void
+    {
+        $ambulance = $this->vehicle('Ambulance');
+        $payload = ['checklist' => [['item' => 'Fuel full', 'passed' => true]]];
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", $payload)->assertForbidden();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", $payload)->assertCreated();
+    }
+
+    #[Test]
     public function a_failed_readiness_check_flags_the_vehicle_not_ready(): void
     {
         $ambulance = $this->vehicle('Ambulance');
@@ -648,7 +661,7 @@ class FleetIntelligenceTest extends TestCase
             'decommissioned_at' => now(),
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/conditions', [
             'vehicle_id' => $vehicle->vehicle_id,
             'condition_result' => 'Good',
@@ -677,7 +690,7 @@ class FleetIntelligenceTest extends TestCase
             'decommissioned_at' => now(),
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->putJson("/api/conditions/{$condition->condition_check_id}", [
             'condition_result' => 'Good',
         ])->assertOk();
@@ -718,7 +731,7 @@ class FleetIntelligenceTest extends TestCase
     {
         $vehicle = $this->vehicle(overrides: ['status' => 'Available', 'condition' => 'Good']);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/conditions', [
             'vehicle_id' => $vehicle->vehicle_id,
             'condition_result' => 'Needs Repair',
