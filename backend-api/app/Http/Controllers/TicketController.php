@@ -448,7 +448,17 @@ class TicketController extends Controller
             'fault_category'      => ['nullable', 'string', 'max:150'],
             'ticket_description'  => ['required', 'string'],
             'priority'            => ['required', Rule::in($this->priorities)],
-            'sub_issues'                          => ['required', 'array', 'min:1'],
+            // How the Custodian is reporting it. 'inspection' = the problem
+            // isn't diagnosed yet (no sub-issues; on approval the ticket goes
+            // to this Custodian to inspect). The other three mean the problem
+            // AND its repair type are already known, so sub-issues are
+            // required and the ticket is Active once approved. Omitted =
+            // the older behaviour (known problem, repair type not recorded).
+            'entry_mode'          => ['nullable', Rule::in(['inspection', 'in_house', 'cannibalized', 'external'])],
+            'source_vehicle_id'   => ['nullable', 'required_if:entry_mode,cannibalized', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
+            'external_vendor'     => ['nullable', 'string', 'max:255'],
+            'warranty_until'      => ['nullable', 'date'],
+            'sub_issues'                          => ['required_unless:entry_mode,inspection', 'array'],
             'sub_issues.*.title'                  => ['required', 'string', 'max:255'],
             'sub_issues.*.maintenance_type'        => ['nullable', 'string', 'max:150'],
             // Who the Custodian THINKS should do the repair — a suggestion
@@ -460,12 +470,22 @@ class TicketController extends Controller
         if (!empty($data['fault_category'])) {
             $data['fault_category'] = FaultCategory::resolve($data['fault_category']);
         }
+        $data['sub_issues'] = $data['sub_issues'] ?? [];
         foreach ($data['sub_issues'] as &$sub) {
             if (!empty($sub['maintenance_type'])) {
                 $sub['maintenance_type'] = MaintenanceType::resolve($sub['maintenance_type']);
             }
         }
         unset($sub);
+
+        $entryMode = $data['entry_mode'] ?? null;
+        abort_if(
+            $entryMode === 'inspection' && !empty($data['sub_issues']),
+            422,
+            'A Needs Inspection proposal has no sub-issues yet — the inspection finds them.'
+        );
+        // Only stamped on sub-issues when the repair type is actually known.
+        $repairType = in_array($entryMode, ['in_house', 'cannibalized', 'external'], true) ? $entryMode : null;
 
         $vehicle = Vehicle::findOrFail($data['vehicle_id']);
         abort_if(
@@ -481,6 +501,25 @@ class TicketController extends Controller
             $suggested = User::findOrFail($sub['suggested_mechanic_id']);
             abort_unless($suggested->hasRole('Maintenance Personnel'), 422, 'A suggested mechanic must be Maintenance Personnel.');
             abort_unless($suggested->barangay_id === $vehicle->barangay_id, 422, 'The suggested mechanic does not belong to this barangay.');
+        }
+
+        // Linked records must really belong to this vehicle and not already be
+        // in someone's hands — otherwise a proposal could flip another
+        // vehicle's report or steal a condition check's ticket link.
+        if (!empty($data['issue_report_id'])) {
+            $linkedIssue = VehicleIssueReport::findOrFail($data['issue_report_id']);
+            abort_unless((int) $linkedIssue->vehicle_id === (int) $data['vehicle_id'], 422, 'That issue report belongs to a different vehicle.');
+            abort_unless(in_array($linkedIssue->status, ['Pending', 'Under Review'], true), 422, 'That issue report is already being handled or resolved.');
+        }
+        if (!empty($data['condition_check_id'])) {
+            $linkedCheck = VehicleConditionCheck::findOrFail($data['condition_check_id']);
+            abort_unless((int) $linkedCheck->vehicle_id === (int) $data['vehicle_id'], 422, 'That condition check belongs to a different vehicle.');
+            abort_if($linkedCheck->resulting_ticket_id, 422, 'That condition check already has a ticket.');
+        }
+        if (!empty($data['source_vehicle_id'])) {
+            $donor = Vehicle::findOrFail($data['source_vehicle_id']);
+            abort_unless($donor->barangay_id === $vehicle->barangay_id, 422, 'The donor vehicle must be in the same barangay.');
+            abort_if(in_array($donor->status, ['Inactive', 'Decommissioned'], true), 422, 'The donor vehicle is archived or decommissioned.');
         }
 
         // Same "no duplicate open Main Issue on this vehicle" precheck
@@ -501,7 +540,7 @@ class TicketController extends Controller
         $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $data['fault_category'] ?? null, $data['ticket_title']);
         $recurrence = $recurrenceInfo['count'];
 
-        $ticket = DB::transaction(function () use ($data, $request, $vehicle, $recurrence, $recurrenceInfo, $normalizedIncomingTitle) {
+        $ticket = DB::transaction(function () use ($data, $request, $vehicle, $recurrence, $recurrenceInfo, $normalizedIncomingTitle, $repairType) {
             // Lock the vehicle row first — same TOCTOU fix as createTicket(),
             // serializing concurrent proposals for the SAME vehicle so two
             // requests can't both pass the duplicate check before either has
@@ -541,6 +580,10 @@ class TicketController extends Controller
                     'title'                  => $sub['title'],
                     'maintenance_type'       => $sub['maintenance_type'] ?? null,
                     'suggested_mechanic_id'  => $sub['suggested_mechanic_id'] ?? null,
+                    'repair_type'            => $repairType,
+                    'source_vehicle_id'      => $repairType === 'cannibalized' ? ($data['source_vehicle_id'] ?? null) : null,
+                    'external_vendor'        => $repairType === 'external' ? ($data['external_vendor'] ?? null) : null,
+                    'warranty_until'         => $repairType === 'external' ? ($data['warranty_until'] ?? null) : null,
                     'status'                 => 'Open',
                 ]);
             }
@@ -627,7 +670,17 @@ class TicketController extends Controller
             abort_unless($newCustodian->barangay_id === $ticket->vehicle->barangay_id, 422, 'The selected Custodian does not belong to this barangay.');
         }
 
+        abort_if(
+            in_array($ticket->vehicle->status, ['Inactive', 'Decommissioned'], true),
+            422,
+            'This vehicle has been archived or decommissioned since it was proposed — decline the proposal instead.'
+        );
+
         $ticket = DB::transaction(function () use ($ticket, $data, $request) {
+            // Serialize against a concurrent approve/decline of the same proposal.
+            $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
+            abort_unless($locked && $locked->status === 'Pending Approval', 422, 'This proposal was already approved or declined.');
+
             $ticket->update(array_intersect_key($data, array_flip([
                 'ticket_title', 'fault_category', 'ticket_description', 'priority', 'assigned_custodian_id',
             ])));
@@ -653,6 +706,24 @@ class TicketController extends Controller
             }
 
             $vehicle = $ticket->vehicle;
+
+            // A Needs Inspection proposal has no sub-issues yet: approving it
+            // opens the ticket for the proposing Custodian to inspect, exactly
+            // like an inspection-mode ticket always did. The vehicle stays in
+            // service until the inspection finds something.
+            if ($ticket->subIssues()->count() === 0) {
+                $ticket->update(['status' => 'Open']);
+                $this->log($request, 'Approve Ticket', "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) proposal approved — sent to Custodian for inspection.", $ticket->ticket_id);
+                $this->notifyUser(
+                    $ticket->assigned_custodian_id,
+                    'Ticket Proposal Approved',
+                    "Your proposed ticket \"{$ticket->ticket_title}\" for {$vehicle->vehicle_name} was approved — please inspect the vehicle.",
+                    'inspection_assigned',
+                    $ticket->ticket_id
+                );
+                return $ticket;
+            }
+
             $ticket->update([
                 'status'            => 'Active',
                 'down_since'        => $ticket->down_since ?? now(),
@@ -731,7 +802,12 @@ class TicketController extends Controller
         $ticketTitle = $ticket->ticket_title;
         $vehicleName = $ticket->vehicle->vehicle_name;
 
-        $ticket->delete();
+        DB::transaction(function () use ($ticket) {
+            // The proposal flipped its linked Issue Report to In Maintenance;
+            // put it back so the report doesn't look handled with no ticket.
+            $this->resetLinkedIssueReports($ticket, 'Pending');
+            $ticket->delete();
+        });
 
         $this->notifyUser(
             $custodianId,
@@ -799,11 +875,18 @@ class TicketController extends Controller
                     'condition' => 'Needs Repair',
                     'status'    => 'Under Maintenance',
                 ]);
-            } elseif ($ticket->vehicle->condition !== 'Good') {
-                // "No Issues" clears whatever flagged this vehicle for
-                // inspection in the first place — don't leave it reading
-                // Needs Inspection after it's just been cleared.
-                $ticket->vehicle->update(['condition' => 'Good']);
+            } else {
+                if ($ticket->vehicle->condition !== 'Good') {
+                    // "No Issues" clears whatever flagged this vehicle for
+                    // inspection in the first place — don't leave it reading
+                    // Needs Inspection after it's just been cleared.
+                    $ticket->vehicle->update(['condition' => 'Good']);
+                }
+                // Nothing was wrong, so the Issue Report that triggered this
+                // inspection is settled too — not left stuck In Maintenance.
+                if ($ticket->issue_report_id) {
+                    VehicleIssueReport::where('issue_report_id', $ticket->issue_report_id)->update(['status' => 'Resolved']);
+                }
             }
 
             $count = $data['inspection_result'] === 'Needs Maintenance' ? count($data['sub_issues']) : 0;
@@ -872,6 +955,12 @@ class TicketController extends Controller
 
             if (!empty($data['issue_report_id'])) {
                 VehicleIssueReport::where('issue_report_id', $data['issue_report_id'])->update(['status' => 'In Maintenance']);
+            }
+
+            // A confirmed defect means the vehicle isn't dispatchable, even
+            // if this ticket previously had nothing to repair.
+            if (!in_array($ticket->vehicle->status, ['Inactive', 'Decommissioned'], true)) {
+                $ticket->vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
             }
 
             $progress = $ticket->fresh()->progress;
@@ -1092,7 +1181,7 @@ class TicketController extends Controller
             // Sub-issues not yet at that stage need nothing: they'll pick up
             // the new custodian from the ticket when they reach logRepairs.
             $cascaded = $ticket->subIssues()
-                ->where('status', 'For Inspection')
+                ->whereIn('status', ['For Inspection', 'Pending Approval'])
                 ->update(['verification_assigned_to' => $newCustodian->id]);
 
             $vehicleName = $ticket->vehicle->vehicle_name;
@@ -1165,6 +1254,17 @@ class TicketController extends Controller
         ]);
 
         $effectiveRepairType = $data['repair_type'] ?? $subIssue->repair_type;
+
+        if ($effectiveRepairType === 'cannibalized') {
+            $donorId = $data['source_vehicle_id'] ?? $subIssue->source_vehicle_id;
+            abort_if(!$donorId, 422, 'A cannibalized repair needs a donor vehicle.');
+            $donor = Vehicle::find($donorId);
+            abort_if(!$donor, 422, 'The donor vehicle no longer exists.');
+            abort_if((int) $donor->vehicle_id === (int) $ticket->vehicle_id, 422, 'The donor vehicle must be a different vehicle from the one being repaired.');
+            abort_unless($donor->barangay_id === $ticket->vehicle->barangay_id, 422, 'The donor vehicle must be in the same barangay.');
+            abort_if(in_array($donor->status, ['Inactive', 'Decommissioned'], true), 422, 'The donor vehicle is archived or decommissioned.');
+        }
+
         // A cannibalized repair is really two actions in one — fixing this
         // vehicle by un-fixing another — so it doesn't go straight to
         // Custodian verification like an in_house/external repair does. It
@@ -1251,13 +1351,30 @@ class TicketController extends Controller
         $this->requireAbility($request, 'repair.approve_cannibalized');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
+        abort_unless($ticket->status === 'Active', 422, "A cannibalized repair can only be approved while the ticket is Active. Current status: {$ticket->status}.");
         abort_unless($subIssue->status === 'Pending Approval' && $subIssue->cannibalization_status === 'Pending', 422, 'This sub-issue is not awaiting cannibalization approval.');
 
         $donorVehicle = Vehicle::findOrFail($subIssue->source_vehicle_id);
         $vehicleName = $ticket->vehicle->vehicle_name;
 
         DB::transaction(function () use ($ticket, $subIssue, $request, $donorVehicle, $vehicleName) {
-            $issue = VehicleIssueReport::create([
+            // Re-read under a lock so a double-click (or an approve racing a
+            // reject) can't run this twice and create two donor reports.
+            $fresh = TicketSubIssue::where('sub_issue_id', $subIssue->sub_issue_id)->lockForUpdate()->first();
+            abort_unless(
+                $fresh && $fresh->status === 'Pending Approval' && $fresh->cannibalization_status === 'Pending',
+                422,
+                'This sub-issue is not awaiting cannibalization approval.'
+            );
+
+            // A rejected-then-resubmitted repair to the SAME donor already has
+            // its donor report from the earlier approval — don't add another.
+            $existing = $subIssue->cannibalization_issue_report_id
+                ? VehicleIssueReport::where('issue_report_id', $subIssue->cannibalization_issue_report_id)
+                    ->where('vehicle_id', $donorVehicle->vehicle_id)->first()
+                : null;
+
+            $issue = $existing ?? VehicleIssueReport::create([
                 'vehicle_id'        => $donorVehicle->vehicle_id,
                 'issue_type'        => 'Other',
                 'issue_description' => "Part removed for use on {$vehicleName} (Ticket #{$ticket->ticket_id}: \"{$subIssue->title}\").",
@@ -1267,18 +1384,23 @@ class TicketController extends Controller
                 'remarks'           => 'Auto-created when a cannibalized repair using this vehicle\'s part was approved.',
             ]);
 
-            $donorVehicle->update(['condition' => 'Needs Inspection']);
+            if (!$existing) {
+                $donorVehicle->update(['condition' => 'Needs Inspection']);
 
-            VehicleHistory::create([
-                'vehicle_id'         => $donorVehicle->vehicle_id,
-                'activity_type'      => 'Issue Reported',
-                'description'        => "A part was removed from {$donorVehicle->vehicle_name} for use on {$vehicleName} (Ticket #{$ticket->ticket_id}).",
-                'related_table'      => 'vehicle_issue_reports',
-                'related_record_id'  => (string) $issue->issue_report_id,
-                'updated_by'         => $request->user()->id,
-            ]);
+                VehicleHistory::create([
+                    'vehicle_id'         => $donorVehicle->vehicle_id,
+                    'activity_type'      => 'Issue Reported',
+                    'description'        => "A part was removed from {$donorVehicle->vehicle_name} for use on {$vehicleName} (Ticket #{$ticket->ticket_id}).",
+                    'related_table'      => 'vehicle_issue_reports',
+                    'related_record_id'  => (string) $issue->issue_report_id,
+                    'updated_by'         => $request->user()->id,
+                ]);
+            }
 
             $subIssue->update([
+                // Re-stamp to the ticket's CURRENT custodian — the Custodian
+                // may have been reassigned while this sat awaiting approval.
+                'verification_assigned_to'     => $ticket->assigned_custodian_id,
                 'status'                       => 'For Inspection',
                 'cannibalization_status'       => 'Approved',
                 'cannibalization_reviewed_by'  => $request->user()->id,
@@ -1324,6 +1446,7 @@ class TicketController extends Controller
         $this->requireAbility($request, 'repair.reject_cannibalized');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
+        abort_unless($ticket->status === 'Active', 422, "A cannibalized repair can only be rejected while the ticket is Active. Current status: {$ticket->status}.");
         abort_unless($subIssue->status === 'Pending Approval' && $subIssue->cannibalization_status === 'Pending', 422, 'This sub-issue is not awaiting cannibalization approval.');
 
         $data = $request->validate([
@@ -1333,6 +1456,13 @@ class TicketController extends Controller
         ]);
 
         DB::transaction(function () use ($ticket, $subIssue, $data, $request) {
+            $fresh = TicketSubIssue::where('sub_issue_id', $subIssue->sub_issue_id)->lockForUpdate()->first();
+            abort_unless(
+                $fresh && $fresh->status === 'Pending Approval' && $fresh->cannibalization_status === 'Pending',
+                422,
+                'This sub-issue is not awaiting cannibalization approval.'
+            );
+
             $subIssue->update([
                 'status'                            => 'Under Repair',
                 'cannibalization_status'            => 'Rejected',
@@ -1494,7 +1624,8 @@ class TicketController extends Controller
             // Lock the sub-issue row for the duration of this confirmation
             // so it can't race a concurrent confirm/reopen on the same
             // sub-issue (e.g. closeTicket() finalizing it at the same time).
-            TicketSubIssue::where('sub_issue_id', $subIssue->sub_issue_id)->lockForUpdate()->first();
+            $lockedSub = TicketSubIssue::where('sub_issue_id', $subIssue->sub_issue_id)->lockForUpdate()->first();
+            abort_unless($lockedSub && $lockedSub->status === 'For Confirmation', 422, 'This sub-issue was already confirmed or changed.');
 
             $confirmed = $data['confirmation_verdict'] === 'Confirmed';
             $vehicleName = $ticket->vehicle->vehicle_name;
@@ -1566,7 +1697,22 @@ class TicketController extends Controller
             'reopen_reason' => ['nullable', 'string'],
         ]);
 
+        $data['reopen_reason'] = $data['reopen_reason'] ?? null;
+
         DB::transaction(function () use ($ticket, $subIssue, $data, $request) {
+            // Unconfirming voids the ledger line that confirming wrote —
+            // otherwise re-confirming adds a second record and the repair's
+            // cost is counted twice. Matched on the exact confirmation stamp
+            // finalizeConfirmedSubIssue() copied onto the record.
+            VehicleMaintenanceRecord::where('vehicle_id', $ticket->vehicle_id)
+                ->where('confirmed_by', $subIssue->confirmed_by)
+                ->where('confirmed_at', $subIssue->confirmed_at)
+                ->where('problem_reason', $ticket->ticket_title . ': ' . $subIssue->title)
+                ->delete();
+            if ($subIssue->issue_report_id) {
+                VehicleIssueReport::where('issue_report_id', $subIssue->issue_report_id)->update(['status' => 'In Maintenance']);
+            }
+
             $subIssue->update([
                 'status'                   => 'For Inspection',
                 // Re-stamp to the ticket's CURRENT custodian — not whoever
@@ -1660,14 +1806,20 @@ class TicketController extends Controller
         // A clean close (everything already Done/Deferred) returns the
         // vehicle to service as before; a decision-close honours the
         // Admin's explicit fit-for-service answer.
-        $returnToService = $isDecisionClose ? (bool) $data['returned_to_service'] : true;
+        // (An explicit answer is honoured on a clean close too — e.g. the
+        // only thing left was a For Confirmation item the Admin still judged
+        // unsafe — and only defaults to "fit" when none was given.)
+        $returnToService = array_key_exists('returned_to_service', $data) && $data['returned_to_service'] !== null
+            ? (bool) $data['returned_to_service']
+            : true;
 
         DB::transaction(function () use ($ticket, $data, $request, $toDefer, $toFinalize, $returnToService, $isDecisionClose) {
             // Lock the ticket row for the duration of this close so a
             // concurrent action on the same ticket (another close, a
             // confirm, a defer) serializes behind this one instead of
             // racing it.
-            MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
+            $lockedTicket = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
+            abort_unless($lockedTicket && $lockedTicket->status === 'Active', 422, 'This ticket was already closed or changed.');
 
             $vehicleName = $ticket->vehicle->vehicle_name;
 
@@ -1699,8 +1851,12 @@ class TicketController extends Controller
 
             // Resolve the ticket's originating report only on a fit-for-service
             // close, and never if that same report was just deferred instead.
-            if ($ticket->issue_report_id && $returnToService && !in_array($ticket->issue_report_id, $deferredReportIds, true)) {
-                VehicleIssueReport::where('issue_report_id', $ticket->issue_report_id)->update(['status' => 'Resolved']);
+            if ($ticket->issue_report_id && !in_array($ticket->issue_report_id, $deferredReportIds, true)) {
+                // Fit for service: the report is resolved. Not fit: it goes back
+                // to Pending so the still-unsafe vehicle isn't left with a report
+                // stuck In Maintenance and no open ticket behind it.
+                VehicleIssueReport::where('issue_report_id', $ticket->issue_report_id)
+                    ->update(['status' => $returnToService ? 'Resolved' : 'Pending']);
             }
 
             $ticket->refresh()->load('subIssues');
@@ -1791,6 +1947,7 @@ class TicketController extends Controller
         $this->requireAbility($request, 'ticket.cancel');
 
         abort_unless(!in_array($ticket->status, ['Closed', 'Cancelled'], true), 422, 'This ticket is already closed and cannot be cancelled.');
+        abort_if($ticket->status === 'Pending Approval', 422, 'A proposal awaiting approval cannot be cancelled — approve or decline it instead.');
 
         // Every sub-issue already resolved (fixed or deferred) — this is
         // real, confirmed repair work on record, not something to void.
@@ -1978,14 +2135,27 @@ class TicketController extends Controller
      */
     private function recomputeVehicleStatus(int $vehicleId): void
     {
+        // Only an Active ticket means work is really under way. A Pending
+        // Approval proposal or an Open ticket still awaiting inspection has
+        // not put the vehicle out of service yet (approveTicket() and
+        // submitInspection() are what do that), so they must not either.
         $stillOpen = MaintenanceTicket::where('vehicle_id', $vehicleId)
-            ->whereNotIn('status', ['Closed', 'Cancelled'])
+            ->where('status', 'Active')
             ->exists();
 
+        $vehicle = Vehicle::where('vehicle_id', $vehicleId)->first();
+        // A retired vehicle stays retired.
+        if (!$vehicle || in_array($vehicle->status, ['Inactive', 'Decommissioned'], true)) {
+            return;
+        }
+
         if ($stillOpen) {
-            Vehicle::where('vehicle_id', $vehicleId)->update(['status' => 'Under Maintenance']);
-        } else {
-            Vehicle::where('vehicle_id', $vehicleId)->update([
+            $vehicle->update(['status' => 'Under Maintenance']);
+        } elseif ($vehicle->status === 'Under Maintenance') {
+            // Release only a vehicle that a ticket had actually taken out of
+            // service — don't overwrite the condition of one that was never
+            // down (e.g. a cancelled proposal on an Available vehicle).
+            $vehicle->update([
                 'status'                => 'Available',
                 'condition'             => 'Good',
                 'estimated_return_date' => null,

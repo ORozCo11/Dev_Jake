@@ -305,4 +305,73 @@ class TicketProposalWorkflowTest extends TestCase
         $ids = collect($this->getJson('/api/tickets')->assertOk()->json())->pluck('ticket_id');
         $this->assertTrue($ids->contains($ticket->ticket_id));
     }
+
+    #[Test]
+    public function a_needs_inspection_proposal_needs_no_sub_issues_and_opens_for_inspection_on_approval(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->propose($vehicle, ['entry_mode' => 'inspection', 'sub_issues' => []]);
+        $this->assertSame(0, $ticket->subIssues()->count());
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+
+        $this->assertSame('Open', $ticket->fresh()->status);
+        $this->assertNotSame('Under Maintenance', $vehicle->fresh()->status);
+    }
+
+    #[Test]
+    public function a_needs_inspection_proposal_cannot_carry_sub_issues(): void
+    {
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets/propose', [
+            'vehicle_id' => $this->vehicle()->vehicle_id, 'ticket_title' => 'X', 'ticket_description' => 'x',
+            'priority' => 'High', 'entry_mode' => 'inspection', 'sub_issues' => [['title' => 'Belt']],
+        ])->assertStatus(422);
+    }
+
+    #[Test]
+    public function a_known_repair_mode_requires_sub_issues(): void
+    {
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets/propose', [
+            'vehicle_id' => $this->vehicle()->vehicle_id, 'ticket_title' => 'X', 'ticket_description' => 'x',
+            'priority' => 'High', 'entry_mode' => 'in_house', 'sub_issues' => [],
+        ])->assertStatus(422);
+    }
+
+    #[Test]
+    public function a_cannibalized_proposal_requires_and_stores_the_donor_vehicle(): void
+    {
+        $vehicle = $this->vehicle();
+        $donor = $this->vehicle();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $payload = [
+            'vehicle_id' => $vehicle->vehicle_id, 'ticket_title' => 'X', 'ticket_description' => 'x',
+            'priority' => 'High', 'entry_mode' => 'cannibalized', 'sub_issues' => [['title' => 'Alternator']],
+        ];
+        $this->postJson('/api/tickets/propose', $payload)->assertStatus(422);
+
+        $ticket = $this->propose($vehicle, ['entry_mode' => 'cannibalized', 'source_vehicle_id' => $donor->vehicle_id, 'sub_issues' => [['title' => 'Alternator']]]);
+        $sub = $ticket->subIssues()->first();
+        $this->assertSame('cannibalized', $sub->repair_type);
+        $this->assertSame($donor->vehicle_id, $sub->source_vehicle_id);
+    }
+
+    #[Test]
+    public function an_external_proposal_stores_the_vendor_and_goes_active_on_approval(): void
+    {
+        $ticket = $this->propose($this->vehicle(), [
+            'entry_mode' => 'external', 'external_vendor' => 'ACME Repair Shop', 'warranty_until' => '2027-01-01',
+            'sub_issues' => [['title' => 'Battery replacement']],
+        ]);
+        $sub = $ticket->subIssues()->first();
+        $this->assertSame('external', $sub->repair_type);
+        $this->assertSame('ACME Repair Shop', $sub->external_vendor);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->assertSame('Active', $ticket->fresh()->status);
+    }
 }

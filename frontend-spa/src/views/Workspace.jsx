@@ -87,10 +87,10 @@ const modulesByRole = {
     { section: 'Operations', icon: 'clipboard', items: [
       ['issues', 'Issue Reports'],
       ['tickets', 'Maintenance Tickets'],
-      ['ticketArchives', 'Ticket Archives'],
-      ['conditions', 'Condition Monitoring'],
       ['schedules', 'Maintenance Schedule'],
       ['maintenance', 'Maintenance Records'],
+      ['conditions', 'Condition Monitoring'],
+      ['ticketArchives', 'Ticket Archives'],
     ] },
     { section: 'Fleet & Assets', icon: 'vehicle', items: [
       ['vehicles', 'Vehicle Management'],
@@ -802,6 +802,12 @@ function Workspace() {
   // Draft for the condition filter bar — applied only on "Filter" click.
   const [condDraft, setCondDraft] = useState({ category: [], status: [], capacity: [], checkedBy: [], start: '', end: '' });
   const [prefilledTicketData, setPrefilledTicketData] = useState(null);
+  // Pre-filled proposal data (from a flagged issue / condition check) only
+  // lives while the ticket form is open — leaving it by ANY route (sidebar,
+  // back button, submit) drops it so the next form never re-links stale data.
+  useEffect(() => {
+    if (!isNewTicketPage) setPrefilledTicketData(null);
+  }, [isNewTicketPage]);
   const [prefilledMaintenanceData, setPrefilledMaintenanceData] = useState(null);
   const [allHubs, setAllHubs] = useState([]);
   const [locationsTab, setLocationsTab] = useState('map');
@@ -1132,7 +1138,9 @@ function Workspace() {
       fault_category: issue.issue_type,
       ticket_description: `Original Reported Issue: ${issue.issue_description}\nSeverity: ${issue.severity_level}`,
       issue_report_id: issue.issue_report_id,
-      entry_mode: 'prediagnosed',
+      // A flagged concern usually means the cause isn't diagnosed yet —
+      // default a Custodian's proposal to Needs Inspection (they can switch).
+      entry_mode: canDo(user, 'ticket.propose') ? 'inspection' : 'prediagnosed',
       // The custodian's report is now a list of distinct problems (one per
       // line, see issueFields' 'list' field) — carry each one over as its
       // own sub-issue instead of dumping the whole report into a single line.
@@ -1157,7 +1165,11 @@ function Workspace() {
       vehicle_id: cond.vehicle_id,
       ticket_title: `Condition Check: ${cond.condition_result}`,
       ticket_description: `From condition check #${cond.condition_check_id} by ${cond.checked_by?.name ?? 'custodian'}.\nObservations: ${cond.observations ?? '—'}`,
-      entry_mode: 'prediagnosed',
+      // Needs Repair is a confirmed problem, so a Custodian picks the repair
+      // type; Needs Inspection still needs a closer look first.
+      entry_mode: canDo(user, 'ticket.propose')
+        ? (cond.condition_result === 'Needs Repair' ? null : 'inspection')
+        : 'prediagnosed',
       sub_issues_text: cond.observations || cond.condition_result,
       priority: cond.condition_result === 'Needs Repair' ? 'High' : 'Medium',
       condition_check_id: cond.condition_check_id,
@@ -2074,7 +2086,7 @@ function Workspace() {
       deleteRecord,
       handleCreateTicketFromCondition,
       handleSuggestScheduleFromCondition,
-      () => navigate(`${roleRoutes[user.role]}/conditions/new`),
+      canDo(user, 'condition.create') ? () => navigate(`${roleRoutes[user.role]}/conditions/new`) : undefined,
     ),
     [user, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition],
   );
@@ -2698,7 +2710,10 @@ function Workspace() {
                         // landing here via THIS plain entry (not the My
                         // Tasks tab bar above) means it's the latter.
                         if (key === 'workTracker') setWorkTrackerViaMyTasks(false);
-                        setActiveModule(key);
+                        // "Report / Propose" lands on the Issue Reports list;
+                        // the flag-vs-propose choice is offered when the
+                        // Custodian presses "Report Issue" there.
+                        setActiveModule(key === 'reportOrPropose' ? 'issues' : key);
                       }
                       if (isOnSpecialPage) {
                         navigate(roleRoutes[user.role]);
@@ -2892,8 +2907,9 @@ function Workspace() {
             // third branch below is what a stray deep-link to this URL hits.
             canDo(user, 'ticket.propose') ? (
               <ProposeTicketPage
-                onBack={() => returnToModule('workTracker')}
+                onBack={() => { setPrefilledTicketData(null); returnToModule('workTracker'); }}
                 ticketLookups={ticketLookups}
+                prefilledTicketData={prefilledTicketData}
                 onProposeTicket={proposeTicket}
                 onDirty={() => setHasUnsavedChanges(true)}
               />
@@ -2925,7 +2941,7 @@ function Workspace() {
               // edit-own (VehicleFiles/VehicleFilesModal enforce the
               // ownership half via added_by), Admin unrestricted.
               canManageDocuments={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
-              canCheckReadiness={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
+              canCheckReadiness={canDo(user, 'vehicle.readiness_check')}
               setNotice={setNotice}
               onSaved={refreshCurrent}
               onRequestConfirmation={setConfirmDialog}
@@ -3726,7 +3742,7 @@ function Workspace() {
                 onChange={setSearchQuery}
                 placeholder="Search conditions..."
                 columnChooser={conditionColumnChooser}
-                onAdd={hasRole(user, 'Custodian') ? () => navigate(`${roleRoutes[user.role]}/conditions/new`) : undefined}
+                onAdd={canDo(user, 'condition.create') ? () => navigate(`${roleRoutes[user.role]}/conditions/new`) : undefined}
                 addLabel="Add Condition Check"
               />
             </div>
@@ -3753,17 +3769,18 @@ function Workspace() {
       return (
         <ModulePanel description="Choose how you want to log this.">
           <div className="entry-chooser">
-            <button type="button" className="entry-chooser-card" onClick={() => setActiveModule('issues')}>
+            <button type="button" className="entry-chooser-card" onClick={() => navigate(`${roleRoutes[user.role]}/issues/new`)}>
               <Icon name="alert" size={24} />
               <h3>Just flagging a concern</h3>
               <p>Report something you've noticed on a vehicle — no repair details needed yet. An Admin or Custodian follows up from there.</p>
             </button>
-            <button type="button" className="entry-chooser-card" onClick={() => navigate(`${roleRoutes[user.role]}/tickets/new`)}>
+            <button type="button" className="entry-chooser-card" onClick={() => { setPrefilledTicketData(null); navigate(`${roleRoutes[user.role]}/tickets/new`); }}>
               <Icon name="ticket" size={24} />
               <h3>I have full repair details</h3>
               <p>Already know what's wrong and what work is needed? Propose a ticket directly with the repair details filled in.</p>
             </button>
           </div>
+          <button className="ghost-button" type="button" style={{ marginTop: 16 }} onClick={() => setActiveModule('issues')}>Back to Issue Reports</button>
         </ModulePanel>
       );
     }
@@ -3839,7 +3856,7 @@ function Workspace() {
               onChange={setSearchQuery}
               placeholder="Search issues..."
               columnChooser={issueColumnChooser}
-              onAdd={hasRole(user, 'Custodian') ? () => navigate(`${roleRoutes[user.role]}/issues/new`) : undefined}
+              onAdd={hasRole(user, 'Custodian') ? () => setActiveModule('reportOrPropose') : undefined}
               addLabel="Report Issue"
             />
           </div>
@@ -4988,6 +5005,161 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
+  // Custodian / Maintenance Personnel get their own, leaner dashboard: their
+  // own queues first, then only the fleet context their job actually uses.
+  // The fleet-wide analytics (expenses, risk watch, sites/types, maintenance
+  // load) are Admin's — the backend doesn't even send those numbers to these
+  // roles, so they used to render as misleading zeroes.
+  if (!isAdminDashboard) {
+    const badges = data.badge_counts ?? {};
+    const isCustodianView = hasRole(user, 'Custodian');
+    const needsCheck = readinessWatch.slice(0, 5);
+    const toneFor = (n, hot = 'warn') => (n > 0 ? hot : 'ok');
+    const quick = [];
+    if (isCustodianView) {
+      quick.push(
+        { icon: 'search', label: 'To Inspect', value: badges.ticketInspections ?? 0, go: () => onGoToModule('ticketInspections', []) },
+        { icon: 'checkCircle', label: 'To Verify', value: badges.ticketVerifications ?? 0, go: () => onGoToModule('ticketVerifications', []) },
+        { icon: 'alert', label: 'My Open Reports', value: badges.issues ?? 0, go: () => onGoToModule('issues', []) },
+      );
+    }
+    if (isMaintenanceDashboard) {
+      quick.push(
+        { icon: 'wrench', label: 'Work Orders', value: badges.ticketWorkOrders ?? 0, go: () => onGoToModule('ticketWorkOrders', []) },
+        { icon: 'calendar', label: 'My Schedule', value: myScheduledWork.length, go: onGoToSchedules },
+        { icon: 'alert', label: 'Needs Attention', value: metricValue('Vehicles Needing Attention'), go: () => onGoToModule('vehicles', []) },
+      );
+    }
+
+    return (
+      <div className="dashboard-grid dashboard-grid-smart">
+        <section className={`dashboard-command-center full-span is-${opsTone}`}>
+          <div className="dashboard-command-copy">
+            <span className="dashboard-command-role">{greetingRole}</span>
+            <TextType
+              key={greeting}
+              as="h2"
+              text={[greeting]}
+              typingSpeed={150}
+              pauseDuration={1500}
+              loop={false}
+              showCursor={true}
+              cursorCharacter="|"
+            />
+            <p>{dateStr || 'Today'}</p>
+          </div>
+
+          <div className="dashboard-ready-split">
+            <div className="dashboard-ready-stat" style={{ '--ready-pct': `${totalVehicles ? (availableVehicles / totalVehicles) * 100 : 0}%` }}>
+              <span className="dashboard-hologram-scan" />
+              <div className="dashboard-ready-stat-inner">
+                <div className="dashboard-ready-row is-ready">
+                  <strong>{availableVehicles}</strong>
+                  <span>Ready</span>
+                </div>
+                <div className="dashboard-ready-row is-not-ready">
+                  <strong>{notReadyVehicles}</strong>
+                  <span>Not Ready</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="dashboard-command-side">
+            <div className="dashboard-live-chips">
+              <div>
+                <span>Local time</span>
+                <strong>{timeStr}</strong>
+              </div>
+              {weather && (
+                <div>
+                  <span>Mandaue City, Cebu</span>
+                  <strong><span className="dashboard-weather-mark">{weather.icon}</span>{weather.temp}C</strong>
+                  <small>{weather.desc} / {weather.humidity}% humidity</small>
+                </div>
+              )}
+            </div>
+            <div className="dashboard-command-mini-grid">
+              {quick.slice(0, 4).map((q) => (
+                <DashboardMicroMetric key={q.label} icon={q.icon} label={q.label} value={q.value} tone={toneFor(q.value)} onClick={q.go} />
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {isMaintenanceDashboard && (
+          <section className="panel col-span-7 action-queue-panel dashboard-lean-panel">
+            <div className="panel-header-bar">
+              <h3><Icon name="wrench" size={16} /> My Scheduled Work</h3>
+              {myScheduledWork.length > 0 && <span className="area-chart-tag">{myScheduledWork.length} assigned to you</span>}
+            </div>
+            {myScheduledWork.length === 0 ? (
+              <p className="action-queue-clear"><Icon name="checkCircle" size={16} /> Nothing scheduled for you right now.</p>
+            ) : (
+              <div className="action-queue-list action-queue-list-compact">
+                {myScheduledWork.map((item) => (
+                  <MyScheduledWorkRow key={item.schedule_id} item={item} onClick={onGoToSchedules} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {isCustodianView && (
+          <section className="panel col-span-7 dashboard-lean-panel">
+            <div className="panel-header-bar">
+              <h3><Icon name="checkCircle" size={16} /> Needs a Readiness Check</h3>
+              {readinessWatch.length > 0 && <span className="area-chart-tag">{readinessWatch.length} vehicle{readinessWatch.length === 1 ? '' : 's'}</span>}
+            </div>
+            {needsCheck.length === 0 ? (
+              <p className="action-queue-clear"><Icon name="checkCircle" size={16} /> Every available vehicle has a current readiness check.</p>
+            ) : (
+              <div className="risk-watch-col">
+                {needsCheck.map((r) => (
+                  <button
+                    key={r.vehicle_id}
+                    type="button"
+                    className={`risk-watch-item risk-watch-item-clickable${r.state === 'not_ready' ? ' is-critical' : ''}`}
+                    onClick={() => onNavigate(`${basePath}/vehicles/${r.vehicle_id}`)}
+                  >
+                    <span className={`risk-watch-item-dot${r.state === 'not_ready' ? ' is-critical' : ''}`} />
+                    <div className="risk-watch-item-body">
+                      <span className="risk-watch-item-top">
+                        <span className="risk-watch-item-title">{r.vehicle_name}</span>
+                        <span className={`risk-watch-tag${r.state === 'not_ready' ? ' is-critical' : ''}`}>
+                          {(READINESS_STATE_LABEL[r.state] ?? r.state).toUpperCase()}
+                        </span>
+                      </span>
+                      <span className="risk-watch-item-sub">{r.category ?? '—'}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {readinessWatch.length > needsCheck.length && (
+              <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.78rem' }}>+ {readinessWatch.length - needsCheck.length} more — open Vehicles to see them all.</p>
+            )}
+          </section>
+        )}
+
+        <section className="panel col-span-5 dashboard-lean-panel">
+          <div className="panel-header-bar">
+            <h3>Fleet Condition</h3>
+            <span className="area-chart-tag">{goodConditionRate}% in good condition</span>
+          </div>
+          <div className="fleet-status-compact">
+            <div className="donut-chart-small">
+              <DonutChart centerLabel={totalVehicles} centerSubLabel="Vehicles" segments={vehicleCondition} />
+            </div>
+            <div className="fleet-status-legend-col">
+              <ChartLegend rows={vehicleCondition} />
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard-grid dashboard-grid-smart">
       {soleActiveAdmin && (
@@ -5931,10 +6103,10 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTi
         </div>
         {/* Lets the Admin act on this issue right here instead of going back
             to the Issue Reports list just to click the same button there. */}
-        {(canDo(user, 'ticket.create') || canDo(user, 'record.create')) && (
+        {(canDo(user, 'ticket.create') || canDo(user, 'ticket.propose') || canDo(user, 'record.create')) && (
           <div style={{ display: 'flex', gap: 8 }}>
-            {onCreateTicketFromIssue && canDo(user, 'ticket.create') && (
-              <button className="ghost-button btn-confirm-action" type="button" onClick={() => onCreateTicketFromIssue(issue)}><Icon name="ticket" size={14} /> Create Ticket</button>
+            {onCreateTicketFromIssue && (canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && ['Pending', 'Under Review'].includes(issue.status) && !issue.maintenance_ticket && (
+              <button className="ghost-button btn-confirm-action" type="button" onClick={() => onCreateTicketFromIssue(issue)}><Icon name="ticket" size={14} /> {canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'}</button>
             )}
             {/* Receipt-backed fast close (#5): for a problem that's going to
                 (or already did) get fixed by an outside shop instead of
@@ -8969,10 +9141,9 @@ function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromConditio
       locked: true,
       className: 'cell-center',
       render: (row) => {
-        // Phase B4 — condition.edit stays Admin (any row) + Custodian, but a
-        // Custodian may only edit the check THEY performed (backend now 403s
-        // otherwise); condition.delete narrowed to Admin only.
-        const canEdit = hasRole(user, 'Admin') || (hasRole(user, 'Custodian') && String(row.checked_by?.id) === String(user.id));
+        // condition.edit is Custodian-only, and only for the check THEY
+        // performed (backend 403s otherwise); condition.delete is Admin only.
+        const canEdit = canDo(user, 'condition.edit') && String(row.checked_by?.id) === String(user.id);
         const canDelete = hasRole(user, 'Admin');
         return (
         // A synthesized "Not Checked" row has no condition_check_id — there's
@@ -8994,9 +9165,9 @@ function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromConditio
               removed) even when this row doesn't qualify — otherwise
               Edit/Delete shift left on every row that lacks it, and the
               column stops lining up. */}
-          {canDo(user, 'ticket.create') && onCreateTicketFromCondition && (
+          {(canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && onCreateTicketFromCondition && (
             row.condition_result !== 'Good' ? (
-              <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromCondition(row)} type="button" title="Create Ticket" aria-label="Create Ticket"><Icon name="ticket" size={14} /></button>
+              <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromCondition(row)} type="button" title={canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'} aria-label={canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'}><Icon name="ticket" size={14} /></button>
             ) : (
               <button
                 className="btn-confirm-action icon-btn"
@@ -9536,8 +9707,8 @@ function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, 
           {canDo(user, 'issue.edit') && (
             <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Update" aria-label="Update"><Icon name="edit" size={14} /></button>
           )}
-          {canDo(user, 'ticket.create') && (
-            <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromIssue(row)} type="button" title="Create Ticket" aria-label="Create Ticket"><Icon name="ticket" size={14} /></button>
+          {(canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && ['Pending', 'Under Review'].includes(row.status) && !row.maintenance_ticket && (
+            <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromIssue(row)} type="button" title={canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'} aria-label={canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'}><Icon name="ticket" size={14} /></button>
           )}
         </div>
       ),
@@ -11980,6 +12151,11 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
       </label>
 
       <h5 style={{ margin: '0 0 8px', fontSize: '0.82rem', fontWeight: 700, color: '#475569' }}>Sub-Issues</h5>
+      {subRows.length === 0 && (
+        <p className="muted" style={{ margin: '0 0 8px', fontSize: '0.82rem' }}>
+          No sub-issues yet — this is a Needs Inspection proposal. Approving it sends the ticket to {ticket.assigned_custodian?.name ?? 'the Custodian'} to inspect the vehicle and log what they find.
+        </p>
+      )}
       {subRows.map((row, index) => (
         <div key={row.sub_issue_id} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
           <label style={{ marginBottom: 8 }}>
@@ -12022,7 +12198,7 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
       ) : (
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
-            <Icon name="checkCircle" size={14} /> Approve &amp; Activate
+            <Icon name="checkCircle" size={14} /> {subRows.length === 0 ? 'Approve & Send for Inspection' : 'Approve & Activate'}
           </button>
           <button className="ghost-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
             Decline
@@ -12054,6 +12230,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
   // form is open; Approve has no form of its own (it needs no input beyond
   // the click itself), so it doesn't need a tracked id.
   const [reviewingCannibalizationId, setReviewingCannibalizationId] = useState(null);
+  const [approvingCannibalId, setApprovingCannibalId] = useState(null);
   const [reassigningCustodian, setReassigningCustodian] = useState(false);
   const [editingDoneId, setEditingDoneId] = useState(null);
   const [addingSubIssue, setAddingSubIssue] = useState(false);
@@ -12151,9 +12328,19 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
   const panel = (
       <div className={`ticket-detail-panel${asPage ? ' is-page' : ''}`} onClick={asPage ? undefined : (e) => e.stopPropagation()}>
         <section className={`ticket-process-hero is-${nextSignal.tone}`}>
+          <div className="ticket-process-meter" style={{ '--ticket-progress': `${resolvedPercent}%` }}>
+            <div className="ticket-process-meter-core">
+              <span>Resolved</span>
+              <strong>{resolvedPercent}%</strong>
+              <small>{resolvedCount}/{progress.total || 0} items</small>
+            </div>
+          </div>
           <div className="ticket-process-hero-main">
             <div className="ticket-process-kicker">
               <span>Ticket #{ticket.ticket_id}</span>
+              {typeof daysOpen === 'number' && (
+                <span>{daysOpen === 0 ? 'Opened today' : `${daysOpen} day${daysOpen === 1 ? '' : 's'} open`}</span>
+              )}
             </div>
             <h3 className="ticket-detail-title">{ticket.ticket_title}</h3>
             <div className="ticket-detail-meta">
@@ -12176,14 +12363,6 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                 <span><Icon name="alert" size={12} /> {progress.deferred} deferred</span>
               </div>
             )}
-          </div>
-
-          <div className="ticket-process-meter" style={{ '--ticket-progress': `${resolvedPercent}%` }}>
-            <div className="ticket-process-meter-core">
-              <span>Resolved</span>
-              <strong>{resolvedPercent}%</strong>
-              <small>{resolvedCount}/{progress.total || 0} items</small>
-            </div>
           </div>
 
           <div className="ticket-process-next-card">
@@ -12297,7 +12476,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                   ]}
                   key={`reassign-custodian-${ticket.ticket_id}`}
                   onCancel={() => setReassigningCustodian(false)}
-                  onSubmit={(payload) => onReassignCustodian(ticket, payload).then(() => setReassigningCustodian(false))}
+                  onSubmit={(payload) => onReassignCustodian(ticket, payload).then((ok) => { if (ok !== false) setReassigningCustodian(false); })}
                   submitLabel="Reassign Custodian"
                   title=""
                 />
@@ -12394,7 +12573,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                   <SmartForm
                     fields={allOpenHaveType ? mechanicAssignFields(lookups).filter((f) => f.name !== 'maintenance_type') : mechanicAssignFields(lookups)}
                     onCancel={() => setAssigningAll(false)}
-                    onSubmit={(payload) => Promise.all(openSubIssues.map((si) => onAssignMechanic(ticket, si, { ...payload, maintenance_type: si.maintenance_type || payload.maintenance_type }))).then(() => setAssigningAll(false))}
+                    onSubmit={(payload) => Promise.all(openSubIssues.map((si) => onAssignMechanic(ticket, si, { ...payload, maintenance_type: si.maintenance_type || payload.maintenance_type }))).then((results) => { if (results.every((ok) => ok !== false)) setAssigningAll(false); })}
                     submitLabel="Assign & Dispatch"
                     title=""
                   />
@@ -12583,7 +12762,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                           ]}
                           key={`reject-cannibalization-${si.sub_issue_id}`}
                           onCancel={() => setReviewingCannibalizationId(null)}
-                          onSubmit={(payload) => onRejectCannibalization(ticket, si, payload).then(() => setReviewingCannibalizationId(null))}
+                          onSubmit={(payload) => onRejectCannibalization(ticket, si, payload).then((ok) => { if (ok !== false) setReviewingCannibalizationId(null); })}
                           submitLabel="Reject Repair"
                           title=""
                         />
@@ -12595,7 +12774,15 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                         </p>
                         <div style={{ display: 'flex', gap: 8 }}>
                           {canDo(user, 'repair.approve_cannibalized') && (
-                            <button className="primary-button" type="button" onClick={() => onApproveCannibalization(ticket, si, {})}>
+                            <button
+                              className="primary-button"
+                              type="button"
+                              disabled={approvingCannibalId === si.sub_issue_id}
+                              onClick={async () => {
+                                setApprovingCannibalId(si.sub_issue_id);
+                                try { await onApproveCannibalization(ticket, si, {}); } finally { setApprovingCannibalId(null); }
+                              }}
+                            >
                               <Icon name="checkCircle" size={14} /> Approve Cannibalization
                             </button>
                           )}
@@ -12618,13 +12805,13 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                       Not restricted to just that case — a general fallback,
                       same as every other Custodian action Admin can stand
                       in for. */}
-                  {canDo(user, 'subissue.verify') && (isAdminUser || idOf(si.verification_assigned_to) === userId) && onVerify && si.status === 'For Inspection' && (
+                  {canDo(user, 'subissue.verify') && (isAdminUser || idOf(si.verification_assigned_to) === userId) && String(si.assigned_mechanic_id) !== String(userId) && onVerify && si.status === 'For Inspection' && (
                     verifyingId === si.sub_issue_id ? (
                       <div className="ticket-inline-form" style={{ marginTop: 8, padding: '10px 12px' }}>
                         <VerificationForm
                           target={{ ...si, vehicle: ticket.vehicle }}
                           onCancel={() => setVerifyingId(null)}
-                          onSubmit={(payload) => onVerify(ticket, si, payload).then(() => setVerifyingId(null))}
+                          onSubmit={(payload) => onVerify(ticket, si, payload).then((ok) => { if (ok !== false) setVerifyingId(null); })}
                         />
                       </div>
                     ) : (
@@ -12641,7 +12828,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                           fields={confirmTicketFields}
                           key={`confirm-${si.sub_issue_id}`}
                           onCancel={() => setConfirmingId(null)}
-                          onSubmit={(payload) => onConfirm(ticket, si, payload).then(() => setConfirmingId(null))}
+                          onSubmit={(payload) => onConfirm(ticket, si, payload).then((ok) => { if (ok !== false) setConfirmingId(null); })}
                           submitLabel="Submit Verdict"
                           title=""
                         />
@@ -12661,7 +12848,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                           ]}
                           key={`unconfirm-done-${si.sub_issue_id}`}
                           onCancel={() => setEditingDoneId(null)}
-                          onSubmit={(payload) => onReopenDone(ticket, si, payload).then(() => setEditingDoneId(null))}
+                          onSubmit={(payload) => onReopenDone(ticket, si, payload).then((ok) => { if (ok !== false) setEditingDoneId(null); })}
                           submitLabel="Unconfirm"
                           title=""
                         />
@@ -12685,7 +12872,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                           ]}
                           key={`reassign-${si.sub_issue_id}`}
                           onCancel={() => setSubIssuePanel(null)}
-                          onSubmit={(payload) => onReassignMechanic(ticket, si, payload).then(() => setSubIssuePanel(null))}
+                          onSubmit={(payload) => onReassignMechanic(ticket, si, payload).then((ok) => { if (ok !== false) setSubIssuePanel(null); })}
                           submitLabel="Reassign Work Order"
                           title=""
                         />
@@ -12694,7 +12881,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                           fields={[{ label: 'Reason for deferring', name: 'deferred_reason', required: true, type: 'textarea', rows: 2 }]}
                           key={`defer-${si.sub_issue_id}`}
                           onCancel={() => setSubIssuePanel(null)}
-                          onSubmit={(payload) => onDeferSubIssue(ticket, si, payload).then(() => setSubIssuePanel(null))}
+                          onSubmit={(payload) => onDeferSubIssue(ticket, si, payload).then((ok) => { if (ok !== false) setSubIssuePanel(null); })}
                           submitLabel="Defer This Sub-Issue"
                           title=""
                         />
@@ -12723,7 +12910,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                       ]}
                       key="add-sub-issue"
                       onCancel={() => setAddingSubIssue(false)}
-                      onSubmit={(payload) => onAddSubIssue(ticket, payload).then(() => setAddingSubIssue(false))}
+                      onSubmit={(payload) => onAddSubIssue(ticket, payload).then((ok) => { if (ok !== false) setAddingSubIssue(false); })}
                       submitLabel="Add Sub-Issue"
                       title=""
                     />
@@ -12786,7 +12973,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                 onSubmit={(payload) => onCloseTicket(ticket, {
                   deferral_reason: payload.deferral_reason,
                   returned_to_service: payload.returned_to_service === 'yes',
-                }).then(() => setDecisionClosing(false))}
+                }).then((ok) => { if (ok !== false) setDecisionClosing(false); })}
                 submitLabel="Close Ticket as Decision"
                 title=""
               />
@@ -12851,12 +13038,20 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
 
   useEffect(() => { loadTicket(); }, [loadTicket]);
 
+  // After an action: refresh in place (no full-page spinner, which would
+  // unmount the panel and wipe whatever the user typed if it failed) and
+  // hand the action's success flag on so forms only close on success.
+  const afterAction = (ok) => api.get(`/tickets/${ticketId}`)
+    .then((response) => setTicket(response.data))
+    .catch(() => {})
+    .then(() => ok);
+
   // Silent background refresh — same request as loadTicket, but doesn't
   // flip the page back to the loading spinner, so it can run on an interval
   // without being disruptive. This is what makes the board reflect a
   // mechanic's or custodian's action on this same ticket while it's still
   // open on screen, instead of only updating on this viewer's own actions
-  // (which already refetch via the .then(loadTicket) chains below) or the
+  // (which already refetch via the .then(afterAction) chains below) or the
   // next time they happen to reopen it.
   useEffect(() => {
     const interval = setInterval(() => {
@@ -12883,25 +13078,25 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
       userId={userId}
       ticket={ticket}
       lookups={ticketLookups}
-      onAssignMechanic={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/assign-mechanic`, payload, 'Mechanic assigned — work order dispatched.').then(loadTicket)}
-      onReassignMechanic={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reassign-mechanic`, payload, 'Work order reassigned.').then(loadTicket)}
-      onReassignCustodian={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/reassign-custodian`, payload, 'Custodian reassigned.').then(loadTicket)}
-      onConfirm={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/confirm`, payload, 'Confirmation verdict submitted.').then(loadTicket)}
-      onReopenDone={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reopen-confirmed`, payload, 'Sub-issue reopened for re-verification.').then(loadTicket)}
-      onVerify={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/verify`, payload, 'Repair verification submitted.').then(loadTicket)}
-      onApproveCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/approve-cannibalization`, payload, 'Cannibalized repair approved — a donor-vehicle issue report was opened.').then(loadTicket)}
-      onRejectCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reject-cannibalization`, payload, 'Cannibalized repair rejected.').then(loadTicket)}
-      onAddSubIssue={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues`, payload, 'Sub-issue added.', 'post').then(loadTicket)}
-      onDeferSubIssue={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/defer`, payload, 'Sub-issue deferred — a follow-up issue report was opened.').then(loadTicket)}
+      onAssignMechanic={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/assign-mechanic`, payload, 'Mechanic assigned — work order dispatched.').then(afterAction)}
+      onReassignMechanic={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reassign-mechanic`, payload, 'Work order reassigned.').then(afterAction)}
+      onReassignCustodian={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/reassign-custodian`, payload, 'Custodian reassigned.').then(afterAction)}
+      onConfirm={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/confirm`, payload, 'Confirmation verdict submitted.').then(afterAction)}
+      onReopenDone={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reopen-confirmed`, payload, 'Sub-issue reopened for re-verification.').then(afterAction)}
+      onVerify={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/verify`, payload, 'Repair verification submitted.').then(afterAction)}
+      onApproveCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/approve-cannibalization`, payload, 'Cannibalized repair approved — a donor-vehicle issue report was opened.').then(afterAction)}
+      onRejectCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reject-cannibalization`, payload, 'Cannibalized repair rejected.').then(afterAction)}
+      onAddSubIssue={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues`, payload, 'Sub-issue added.', 'post').then(afterAction)}
+      onDeferSubIssue={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/defer`, payload, 'Sub-issue deferred — a follow-up issue report was opened.').then(afterAction)}
       onSendToExternalShop={onSendToExternalShop}
-      onCloseTicket={(t, payload = {}) => sendTicketAction(`/tickets/${t.ticket_id}/close`, payload, payload.deferral_reason ? 'Ticket closed as a decision.' : 'Ticket closed.').then(loadTicket)}
-      onCancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/cancel`, {}, 'Ticket cancelled.').then(loadTicket)}
-      onUncancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/uncancel`, {}, 'Ticket restored.').then(loadTicket)}
+      onCloseTicket={(t, payload = {}) => sendTicketAction(`/tickets/${t.ticket_id}/close`, payload, payload.deferral_reason ? 'Ticket closed as a decision.' : 'Ticket closed.').then(afterAction)}
+      onCancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/cancel`, {}, 'Ticket cancelled.').then(afterAction)}
+      onUncancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/uncancel`, {}, 'Ticket restored.').then(afterAction)}
       onDelete={(t) => onDeleteTicket(t).then(onBack)}
-      onApproveProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/approve`, payload, 'Ticket proposal approved.').then(loadTicket)}
+      onApproveProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/approve`, payload, 'Ticket proposal approved.').then(afterAction)}
       // Declining deletes the ticket server-side — nothing left to reload,
       // so this navigates away instead, same as onDelete just above.
-      onDeclineProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/decline`, payload, 'Ticket proposal declined.').then(onBack)}
+      onDeclineProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/decline`, payload, 'Ticket proposal declined.').then((ok) => { if (ok) onBack(); return ok; })}
       onRequestConfirmation={onRequestConfirmation}
       onClose={onBack}
     />
@@ -13408,12 +13603,29 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
 // sub-issue carries its own maintenance type + an optional suggested
 // mechanic instead. Keeping it fully separate means Admin's existing form is
 // untouched by this addition.
-function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) {
-  const draftKeyBase = 'draft:propose-ticket';
-  const [liveValues, setLiveValues] = useDraftState(`${draftKeyBase}:values`, {});
-  const [subIssueRows, setSubIssueRows] = useDraftState(`${draftKeyBase}:sub-issues`, () => (
-    [{ title: '', maintenance_type: '', suggested_mechanic_id: '' }]
-  ));
+function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, prefilledTicketData }) {
+  // Opened from a flagged Issue Report / Condition Check the form arrives
+  // pre-filled and linked; from the chooser's "full repair details" card it
+  // starts blank. Separate draft keys so the two never overwrite each other.
+  const linkedIssueId = prefilledTicketData?.issue_report_id ?? null;
+  const linkedConditionId = prefilledTicketData?.condition_check_id ?? null;
+  const fromFlag = Boolean(linkedIssueId || linkedConditionId);
+  const draftSuffix = linkedIssueId ? 'issue-' + linkedIssueId : linkedConditionId ? 'condition-' + linkedConditionId : 'blank';
+  const draftKeyBase = 'draft:propose-ticket:' + draftSuffix;
+  const [liveValues, setLiveValues] = useDraftState(draftKeyBase + ':values', () => (prefilledTicketData ? {
+    vehicle_id: prefilledTicketData.vehicle_id ?? '',
+    ticket_title: prefilledTicketData.ticket_title ?? '',
+    ticket_description: prefilledTicketData.ticket_description ?? '',
+    fault_category: prefilledTicketData.fault_category ?? '',
+    priority: prefilledTicketData.priority ?? '',
+    entry_mode: prefilledTicketData.entry_mode ?? null,
+  } : {}));
+  const [subIssueRows, setSubIssueRows] = useDraftState(draftKeyBase + ':sub-issues', () => {
+    const seeded = (prefilledTicketData?.sub_issues_text ?? '').split('\n').map((t) => t.trim()).filter(Boolean);
+    return seeded.length
+      ? seeded.map((title) => ({ title, maintenance_type: '', suggested_mechanic_id: '' }))
+      : [{ title: '', maintenance_type: '', suggested_mechanic_id: '' }];
+  });
   const [submitting, setSubmitting] = useState(false);
   const [validationLines, setValidationLines] = useState(null);
 
@@ -13430,6 +13642,23 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) 
   const addSubIssueRow = () => setSubIssueRows((rows) => [...rows, { title: '', maintenance_type: '', suggested_mechanic_id: '' }]);
   const removeSubIssueRow = (index) => setSubIssueRows((rows) => rows.filter((_, i) => i !== index));
 
+  // Same four ways to report as the old Admin form. Needs Inspection has no
+  // sub-issues yet (the inspection finds them); the other three mean the
+  // problem and its repair type are already known.
+  // Needs Inspection means "cause not known yet" — that belongs with flagging
+  // a concern, so it's only offered when proposing from a flagged issue or
+  // condition check. The chooser's "full repair details" path has the three
+  // known-repair modes only.
+  const modeOptions = fromFlag ? ENTRY_MODE_OPTIONS : ENTRY_MODE_OPTIONS.filter((o) => o.value !== 'inspection');
+  const entryMode = modeOptions.some((o) => o.value === liveValues.entry_mode) ? liveValues.entry_mode : null;
+  const isKnownRepair = entryMode != null && entryMode !== 'inspection';
+  const isCannibalized = entryMode === 'cannibalized';
+  const isExternal = entryMode === 'external';
+  const selectEntryMode = (value) => {
+    setLiveValues((v) => ({ ...v, entry_mode: value, source_vehicle_id: '', external_vendor: '', warranty_until: '' }));
+    onDirty?.();
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const errors = [];
@@ -13437,8 +13666,10 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) 
     if (!(liveValues.ticket_title ?? '').trim()) errors.push('Ticket Title is required.');
     if (!(liveValues.ticket_description ?? '').trim()) errors.push('Description / Details is required.');
     if (!liveValues.priority) errors.push('Priority is required.');
+    if (!entryMode) errors.push('Pick how this is being reported, above.');
     const cleanedRows = subIssueRows.filter((row) => (row.title ?? '').trim());
-    if (!cleanedRows.length) errors.push('At least one sub-issue is required.');
+    if (isKnownRepair && !cleanedRows.length) errors.push('At least one sub-issue is required.');
+    if (isCannibalized && !liveValues.source_vehicle_id) errors.push('Source Vehicle (donor) is required.');
     if (errors.length) {
       setValidationLines(errors);
       return;
@@ -13452,12 +13683,20 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) 
         ticket_description: liveValues.ticket_description,
         priority: liveValues.priority,
         fault_category: liveValues.fault_category || undefined,
-        sub_issues: cleanedRows.map((row) => ({
+        entry_mode: entryMode,
+        issue_report_id: linkedIssueId || undefined,
+        condition_check_id: linkedConditionId || undefined,
+        sub_issues: isKnownRepair ? cleanedRows.map((row) => ({
           title: row.title.trim(),
           maintenance_type: row.maintenance_type || null,
           suggested_mechanic_id: row.suggested_mechanic_id || null,
-        })),
+        })) : [],
       };
+      if (isCannibalized) out.source_vehicle_id = liveValues.source_vehicle_id;
+      if (isExternal) {
+        out.external_vendor = liveValues.external_vendor || undefined;
+        out.warranty_until = liveValues.warranty_until || undefined;
+      }
       const created = await onProposeTicket(out);
       if (created) { clearProposeDraft(); onBack(); }
     } finally {
@@ -13470,9 +13709,18 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) 
   const priorityOptions = ticketLookups.priorities ?? [];
   const mechanicOptions = ticketLookups.maintenance_personnel ?? [];
   const selectedVehicle = vehicleOptions.find((v) => String(v.vehicle_id) === String(liveValues.vehicle_id)) ?? null;
+  const sourceVehicleOptions = vehicleOptions.filter((v) => String(v.vehicle_id) !== String(liveValues.vehicle_id));
 
   return (
-    <ModulePanel description="Propose a maintenance ticket for Admin review — your own diagnosis, including who you think should handle each repair. It stays Pending Approval until an Admin approves or declines it.">
+    <ModulePanel description="Propose a maintenance ticket for Admin review. Pick how it's being reported first — it stays Pending Approval until an Admin approves or declines it.">
+      {fromFlag && (
+        <div className="info-callout" style={{ marginBottom: '16px', background: 'rgba(59, 130, 246, 0.1)', borderColor: '#3b82f6' }}>
+          <span style={{ marginRight: '8px', color: '#3b82f6', display: 'inline-flex' }}><Icon name="link" size={16} /></span>
+          <p className="module-description" style={{ color: '#3b82f6', margin: 0 }}>
+            Linking this proposal to <strong>{linkedIssueId ? 'Issue Report #' + linkedIssueId : 'Condition Check #' + linkedConditionId}</strong>.
+          </p>
+        </div>
+      )}
       <form className="smart-form ticket-create-form" onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {validationLines && (
           <div className="toast-notice-overlay" onClick={() => setValidationLines(null)}>
@@ -13487,6 +13735,57 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) 
             </div>
           </div>
         )}
+
+        <section className="veh-card">
+          <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>How Is This Being Reported?</h4></div>
+          <div style={{ padding: 18 }}>
+            <div className="entry-mode-toggle" role="radiogroup" aria-label="Entry mode">
+              {modeOptions.map((opt) => {
+                const checked = entryMode === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    className={`entry-mode-btn entry-mode-btn--${opt.value} ${checked ? 'primary-button' : 'ghost-button'}`}
+                    onClick={() => selectEntryMode(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="muted" style={{ margin: '10px 0 0', fontSize: '0.82rem' }}>
+              {entryMode == null
+                ? 'Pick whichever matches what you already know about this repair.'
+                : isKnownRepair
+                  ? 'The problem and how it will be fixed are already known — once an Admin approves, it goes straight to repair with no inspection step.'
+                  : "Nobody has confirmed what's wrong yet — once an Admin approves, you'll inspect the vehicle first."}
+            </p>
+            {isCannibalized && (
+              <label style={{ marginTop: 12, maxWidth: 320 }}>
+                <span>Source Vehicle (donor) <span className="required-asterisk">*</span></span>
+                <select required value={liveValues.source_vehicle_id ?? ''} onChange={(e) => setField('source_vehicle_id', e.target.value)}>
+                  <option value="">{' '}</option>
+                  {sourceVehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
+                </select>
+              </label>
+            )}
+            {isExternal && (
+              <div className="ticket-form-grid-2" style={{ padding: 0, marginTop: 12, maxWidth: 500 }}>
+                <label>
+                  <span>External Vendor / Shop Name</span>
+                  <input type="text" placeholder="e.g. Dela Cruz Auto Repair" value={liveValues.external_vendor ?? ''} onChange={(e) => setField('external_vendor', e.target.value)} />
+                </label>
+                <label>
+                  <span>Warranty Until</span>
+                  <DateFilterInput value={liveValues.warranty_until ?? ''} onChange={(v) => setField('warranty_until', v)} />
+                </label>
+              </div>
+            )}
+          </div>
+        </section>
 
         <section className="veh-card">
           <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Vehicle</h4></div>
@@ -13550,6 +13849,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) 
           </div>
         </section>
 
+        {isKnownRepair && (
         <section className="veh-card veh-card-form">
           <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Sub-Issues</h4></div>
           <div style={{ padding: 18 }}>
@@ -13606,6 +13906,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty }) 
             <button type="button" className="primary-button" style={{ marginTop: 10 }} onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
           </div>
         </section>
+        )}
 
         <div className="form-actions">
           <button className="ghost-button" onClick={() => { clearProposeDraft(); onBack(); }} type="button" disabled={submitting}>Cancel</button>

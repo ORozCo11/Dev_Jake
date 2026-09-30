@@ -25,7 +25,7 @@ return [
     'vehicle.archive' => ['Admin'],
     'vehicle.restore' => ['Admin'],
     'vehicle.decommission' => ['Admin'],
-    'vehicle.readiness_check' => ['Admin', 'Custodian'],
+    'vehicle.readiness_check' => ['Custodian'],
     'vehicle.mark_available' => ['Admin', 'Custodian'],
     'vehicle.update_location' => ['Admin'],
     'vehicle.view_history' => ['Admin'],
@@ -36,10 +36,12 @@ return [
     'hub.delete' => ['Admin'],
 
     // Condition checks
-    'condition.create' => ['Admin', 'Custodian'],
-    // Custodian may still edit, but only their OWN check (FleetController
-    // enforces the ownership half via checked_by) — Admin edits any.
-    'condition.edit' => ['Admin', 'Custodian'],
+    // Recording a condition is a Custodian's hands-on job — Admin no longer
+    // records or edits checks (Admin still deletes a mistaken one).
+    'condition.create' => ['Custodian'],
+    // ...and a Custodian may only edit the check THEY performed
+    // (FleetController enforces the ownership half via checked_by).
+    'condition.edit' => ['Custodian'],
     // Phase B4 — delete narrowed to Admin only (was Admin+Custodian, any row).
     'condition.delete' => ['Admin'],
 

@@ -1517,4 +1517,204 @@ class TicketWorkflowTest extends TestCase
         $this->assertSame('For Inspection', $subIssue->status);
         $this->assertNull($subIssue->cannibalization_status);
     }
+
+    // ---- Ticketing-process review fixes -----------------------------------
+
+    private function pendingIssue(Vehicle $vehicle, string $status = 'Pending'): VehicleIssueReport
+    {
+        return VehicleIssueReport::create([
+            'vehicle_id' => $vehicle->vehicle_id, 'issue_type' => 'Engine Problem',
+            'issue_description' => 'Overheating.', 'severity_level' => 'High',
+            'reported_by' => $this->custodian->id, 'status' => $status,
+        ]);
+    }
+
+    private function propose(Vehicle $vehicle, array $extra = []): \Illuminate\Testing\TestResponse
+    {
+        Sanctum::actingAs($this->custodian, ['*']);
+
+        return $this->postJson('/api/tickets/propose', array_merge([
+            'vehicle_id' => $vehicle->vehicle_id, 'ticket_title' => 'Engine Problem',
+            'ticket_description' => 'Overheating.', 'priority' => 'High',
+            'sub_issues' => [['title' => 'Overheating']],
+        ], $extra));
+    }
+
+    #[Test]
+    public function declining_a_proposal_puts_its_linked_issue_report_back_to_pending(): void
+    {
+        $vehicle = $this->vehicle();
+        $issue = $this->pendingIssue($vehicle);
+        $ticketId = $this->propose($vehicle, ['issue_report_id' => $issue->issue_report_id])->assertCreated()->json('ticket_id');
+        $this->assertSame('In Maintenance', $issue->fresh()->status);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/decline", ['decline_reason' => 'Not needed.'])->assertOk();
+
+        $this->assertSame('Pending', $issue->fresh()->status);
+    }
+
+    #[Test]
+    public function a_proposal_awaiting_approval_cannot_be_cancelled(): void
+    {
+        $ticketId = $this->propose($this->vehicle())->assertCreated()->json('ticket_id');
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/cancel", [])->assertStatus(422);
+        $this->assertSame('Pending Approval', MaintenanceTicket::find($ticketId)->status);
+    }
+
+    #[Test]
+    public function a_proposal_cannot_link_another_vehicles_issue_or_an_already_handled_one(): void
+    {
+        $vehicle = $this->vehicle();
+        $other = $this->vehicle();
+
+        $this->propose($vehicle, ['issue_report_id' => $this->pendingIssue($other)->issue_report_id])->assertStatus(422);
+        $this->propose($vehicle, ['issue_report_id' => $this->pendingIssue($vehicle, 'In Maintenance')->issue_report_id])->assertStatus(422);
+    }
+
+    #[Test]
+    public function a_pending_proposal_does_not_hold_a_vehicle_out_of_service_when_another_ticket_ends(): void
+    {
+        $vehicle = $this->vehicle();
+        $activeId = $this->propose($vehicle, ['ticket_title' => 'Brakes'])->assertCreated()->json('ticket_id');
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$activeId}/approve", [])->assertOk();
+        $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
+
+        // A second, still-unapproved proposal on the same vehicle.
+        $this->propose($vehicle, ['ticket_title' => 'Radio'])->assertCreated();
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$activeId}/cancel", [])->assertOk();
+
+        $this->assertSame('Available', $vehicle->fresh()->status);
+    }
+
+    #[Test]
+    public function an_unrelated_ticket_ending_does_not_touch_a_vehicle_that_was_never_taken_out_of_service(): void
+    {
+        $vehicle = $this->vehicle(['status' => 'Available', 'condition' => 'Needs Inspection']);
+        $ticket = $this->createTicket($vehicle); // Open, awaiting inspection
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/cancel", [])->assertOk();
+
+        $this->assertSame('Needs Inspection', $vehicle->fresh()->condition);
+    }
+
+    #[Test]
+    public function a_no_issues_inspection_resolves_the_linked_issue_report(): void
+    {
+        $vehicle = $this->vehicle();
+        $issue = $this->pendingIssue($vehicle, 'In Maintenance');
+        $ticket = $this->createTicket($vehicle);
+        $ticket->update(['issue_report_id' => $issue->issue_report_id]);
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/inspect", ['inspection_result' => 'No Issues'])->assertOk();
+
+        $this->assertSame('Resolved', $issue->fresh()->status);
+    }
+
+    #[Test]
+    public function adding_a_sub_issue_to_a_ticket_that_had_nothing_to_repair_takes_the_vehicle_out_of_service(): void
+    {
+        $vehicle = $this->vehicle(['status' => 'Available', 'condition' => 'Good']);
+        $ticket = $this->createTicket($vehicle);
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/inspect", ['inspection_result' => 'No Issues'])->assertOk();
+
+        $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", ['title' => 'Found a leak'])->assertCreated();
+
+        $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
+        $this->assertSame('Needs Repair', $vehicle->fresh()->condition);
+    }
+
+    #[Test]
+    public function unconfirming_and_reconfirming_a_repair_does_not_duplicate_the_ledger_record(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->inspectWithSubIssues($this->createTicket($vehicle), ['Low coolant level']);
+        $subIssue = $ticket->subIssues->first();
+        $this->driveSubIssueToDone($ticket, $subIssue);
+        $this->assertSame(1, VehicleMaintenanceRecord::where('vehicle_id', $vehicle->vehicle_id)->count());
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/reopen-confirmed", [])->assertOk();
+        $this->assertSame(0, VehicleMaintenanceRecord::where('vehicle_id', $vehicle->vehicle_id)->count());
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/verify", [
+            'verification_verdict' => 'Approved', 'test_attested' => true,
+            'functional_test' => [['item' => 'Engine starts / powers on', 'passed' => true]],
+        ])->assertOk();
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/confirm", ['confirmation_verdict' => 'Confirmed'])->assertOk();
+
+        $this->assertSame(1, VehicleMaintenanceRecord::where('vehicle_id', $vehicle->vehicle_id)->count());
+    }
+
+    #[Test]
+    public function a_clean_close_honours_an_explicit_not_fit_for_service_answer(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->inspectWithSubIssues($this->createTicket($vehicle), ['Loose bolt']);
+        $this->driveSubIssueToDone($ticket, $ticket->subIssues->first());
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/close", ['returned_to_service' => false])->assertOk();
+
+        $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
+    }
+
+    #[Test]
+    public function a_cannibalized_repair_cannot_use_its_own_vehicle_as_the_donor(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->inspectWithSubIssues($this->createTicket($vehicle), ['Alternator']);
+        $subIssue = $ticket->subIssues->first();
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+            'assigned_mechanic_id' => $this->mechanic->id, 'maintenance_type' => 'Electrical',
+        ])->assertOk();
+
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/log-repairs", [
+            'repair_logs' => 'Swapped it.', 'repair_type' => 'cannibalized', 'source_vehicle_id' => $vehicle->vehicle_id,
+        ])->assertStatus(422);
+    }
+
+    #[Test]
+    public function approving_a_cannibalization_on_a_cancelled_ticket_is_refused(): void
+    {
+        $vehicle = $this->vehicle();
+        $donor = $this->vehicle();
+        $ticket = $this->inspectWithSubIssues($this->createTicket($vehicle), ['Alternator']);
+        $subIssue = $ticket->subIssues->first();
+        $this->logCannibalizedRepair($ticket, $subIssue, $donor);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/cancel", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/approve-cannibalization", [])->assertStatus(422);
+        $this->assertSame(0, VehicleIssueReport::where('vehicle_id', $donor->vehicle_id)->count());
+    }
+
+    #[Test]
+    public function reassigning_the_custodian_also_moves_a_repair_awaiting_cannibalization_approval(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->inspectWithSubIssues($this->createTicket($vehicle), ['Alternator']);
+        $subIssue = $ticket->subIssues->first();
+        $this->logCannibalizedRepair($ticket, $subIssue, $this->vehicle());
+
+        $newCustodian = User::factory()->create(['role' => 'Custodian']);
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/reassign-custodian", [
+            'assigned_custodian_id' => $newCustodian->id, 'reassign_reason' => 'Left the barangay.',
+        ])->assertOk();
+
+        $this->assertSame($newCustodian->id, $subIssue->fresh()->verification_assigned_to);
+    }
 }

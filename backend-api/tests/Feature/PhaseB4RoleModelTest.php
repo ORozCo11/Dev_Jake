@@ -105,7 +105,7 @@ class PhaseB4RoleModelTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_edit_any_condition_check(): void
+    public function admin_can_no_longer_record_or_edit_a_condition_check(): void
     {
         $vehicle = $this->vehicle();
         $condition = VehicleConditionCheck::create([
@@ -117,7 +117,11 @@ class PhaseB4RoleModelTest extends TestCase
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/conditions/{$condition->condition_check_id}", [
             'observations' => 'Admin override.',
-        ])->assertOk();
+        ])->assertForbidden();
+        $this->postJson('/api/conditions', [
+            'vehicle_id' => $vehicle->vehicle_id,
+            'condition_result' => 'Good',
+        ])->assertForbidden();
     }
 
     #[Test]
