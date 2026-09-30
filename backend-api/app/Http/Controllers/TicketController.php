@@ -177,7 +177,14 @@ class TicketController extends Controller
     }
 
     // ===================================================================
-    // PHASE 1 — Admin: Create Ticket (Main Issue) & Assign to Custodian
+    // PHASE 1 — Create Ticket (Main Issue) & Assign to Custodian
+    // Deliberately unreachable now — ticket.create has no role assigned
+    // (config/permissions.php). Every ticket must originate as a Custodian's
+    // proposal (proposeTicket() below) that an Admin reviews/edits/approves.
+    // Left in place (not deleted) since its business rules — duplicate-Main-
+    // Issue guard, recurrence stamping, entry-mode/repair-type handling —
+    // document what a ticket "being created" means; proposeTicket() reuses
+    // the first two directly.
     // ===================================================================
 
     public function createTicket(Request $request)
@@ -423,9 +430,11 @@ class TicketController extends Controller
     /**
      * A Custodian's own version of createTicket()'s pre-diagnosed mode —
      * they log what's wrong and who they think should fix it, but nothing
-     * goes live until an Admin approves it (see approveTicket()). Admin
-     * keeps createTicket() too, for when THEY spot something themselves;
-     * this is an additional path in, not a replacement.
+     * goes live until an Admin approves it (see approveTicket()). This is
+     * now the ONLY way a ticket comes into existence — createTicket() above
+     * is unreachable (ticket.create has no role) — so it carries the same
+     * duplicate-Main-Issue guard, recurrence stamping, and Issue Report /
+     * Condition Check linking that endpoint used to be the sole source of.
      */
     public function proposeTicket(Request $request)
     {
@@ -433,6 +442,8 @@ class TicketController extends Controller
 
         $data = $request->validate([
             'vehicle_id'          => ['required', 'exists:vehicles,vehicle_id'],
+            'issue_report_id'     => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
+            'condition_check_id'  => ['nullable', 'exists:vehicle_condition_checks,condition_check_id'],
             'ticket_title'        => ['required', 'string', 'max:255'],
             'fault_category'      => ['nullable', 'string', 'max:150'],
             'ticket_description'  => ['required', 'string'],
@@ -472,17 +483,55 @@ class TicketController extends Controller
             abort_unless($suggested->barangay_id === $vehicle->barangay_id, 422, 'The suggested mechanic does not belong to this barangay.');
         }
 
-        $ticket = DB::transaction(function () use ($data, $request, $vehicle) {
+        // Same "no duplicate open Main Issue on this vehicle" precheck
+        // createTicket() does — a fast, friendly rejection before the real,
+        // row-locked recheck inside the transaction below.
+        $normalizedIncomingTitle = $this->normalizeTicketTitle($data['ticket_title']);
+        $duplicateMainIssue = MaintenanceTicket::where('vehicle_id', $data['vehicle_id'])
+            ->whereNotIn('status', ['Closed', 'Cancelled'])
+            ->get(['ticket_id', 'ticket_title'])
+            ->first(fn ($t) => $this->normalizeTicketTitle($t->ticket_title) === $normalizedIncomingTitle);
+
+        if ($duplicateMainIssue) {
+            return response()->json([
+                'message' => "This vehicle already has an open ticket for \"{$data['ticket_title']}\" (Ticket #{$duplicateMainIssue->ticket_id}). Add this as a sub-issue on that ticket instead of proposing a new one."
+            ], 422);
+        }
+
+        $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $data['fault_category'] ?? null, $data['ticket_title']);
+        $recurrence = $recurrenceInfo['count'];
+
+        $ticket = DB::transaction(function () use ($data, $request, $vehicle, $recurrence, $recurrenceInfo, $normalizedIncomingTitle) {
+            // Lock the vehicle row first — same TOCTOU fix as createTicket(),
+            // serializing concurrent proposals for the SAME vehicle so two
+            // requests can't both pass the duplicate check before either has
+            // inserted.
+            Vehicle::where('vehicle_id', $data['vehicle_id'])->lockForUpdate()->first();
+
+            $duplicateMainIssue = MaintenanceTicket::where('vehicle_id', $data['vehicle_id'])
+                ->whereNotIn('status', ['Closed', 'Cancelled'])
+                ->get(['ticket_id', 'ticket_title'])
+                ->first(fn ($t) => $this->normalizeTicketTitle($t->ticket_title) === $normalizedIncomingTitle);
+
+            abort_if(
+                $duplicateMainIssue,
+                422,
+                "This vehicle already has an open ticket for \"{$data['ticket_title']}\" (Ticket #{$duplicateMainIssue?->ticket_id}). Add this as a sub-issue on that ticket instead of proposing a new one."
+            );
+
             $ticket = MaintenanceTicket::create([
-                'vehicle_id'            => $data['vehicle_id'],
-                'created_by'            => $request->user()->id,
-                'ticket_title'          => $data['ticket_title'],
-                'fault_category'        => $data['fault_category'] ?? null,
-                'ticket_description'    => $data['ticket_description'],
-                'priority'              => $data['priority'],
-                'status'                => 'Pending Approval',
-                'assigned_custodian_id' => $request->user()->id,
-                'assigned_at'           => now(),
+                'vehicle_id'              => $data['vehicle_id'],
+                'issue_report_id'         => $data['issue_report_id'] ?? null,
+                'created_by'              => $request->user()->id,
+                'ticket_title'            => $data['ticket_title'],
+                'fault_category'          => $data['fault_category'] ?? null,
+                'ticket_description'      => $data['ticket_description'],
+                'priority'                => $data['priority'],
+                'status'                  => 'Pending Approval',
+                'assigned_custodian_id'   => $request->user()->id,
+                'assigned_at'             => now(),
+                'recurrence_count'        => $recurrence,
+                'recurrence_of_ticket_id' => $recurrenceInfo['last_type'] === 'ticket' ? $recurrenceInfo['last_id'] : null,
             ]);
 
             foreach ($data['sub_issues'] as $sub) {
@@ -496,6 +545,21 @@ class TicketController extends Controller
                 ]);
             }
 
+            if (!empty($data['issue_report_id'])) {
+                VehicleIssueReport::where('issue_report_id', $data['issue_report_id'])->update([
+                    'status' => 'In Maintenance',
+                ]);
+            }
+
+            // Set once, never touched again — Condition Monitoring reads the
+            // linked ticket's live status through this instead of a snapshot,
+            // so the historical check row itself never has to change.
+            if (!empty($data['condition_check_id'])) {
+                VehicleConditionCheck::where('condition_check_id', $data['condition_check_id'])->update([
+                    'resulting_ticket_id' => $ticket->ticket_id,
+                ]);
+            }
+
             $this->log($request, 'Propose Ticket', "Ticket proposal \"{$data['ticket_title']}\" for {$vehicle->vehicle_name} submitted for Admin review.", $ticket->ticket_id);
 
             $this->notifyAdmins(
@@ -505,6 +569,20 @@ class TicketController extends Controller
                 $ticket->ticket_id,
                 $vehicle->barangay_id
             );
+
+            if ($recurrence > 0) {
+                $lastFixSource = $recurrenceInfo['last_type'] === 'record'
+                    ? "Maintenance Record #{$recurrenceInfo['last_id']}"
+                    : "Ticket #{$recurrenceInfo['last_id']}";
+                $ordinal = ['st', 'nd', 'rd'][$recurrence] ?? 'th';
+                $this->notifyAdmins(
+                    'Recurring Fault Detected',
+                    "This is the " . ($recurrence + 1) . "{$ordinal} time \"" . ($data['fault_category'] ?? $data['ticket_title']) . "\" has been logged on {$vehicle->vehicle_name} in 90 days — last fixed via {$lastFixSource} (Ticket #{$ticket->ticket_id}). Consider a deeper fix or decommission review.",
+                    'recurring_fault',
+                    $ticket->ticket_id,
+                    $vehicle->barangay_id
+                );
+            }
 
             return $ticket;
         });

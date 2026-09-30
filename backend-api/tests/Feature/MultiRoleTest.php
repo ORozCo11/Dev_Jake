@@ -89,15 +89,19 @@ class MultiRoleTest extends TestCase
         $juan = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian', 'Maintenance Personnel']]);
         $vehicle = $this->vehicle();
 
-        // Admin creates the ticket and assigns Juan (as Custodian) to inspect.
-        Sanctum::actingAs($admin, ['*']);
-        $ticketId = $this->postJson('/api/tickets', [
+        // A ticket assigning Juan (as Custodian) to inspect — built directly
+        // rather than through the (now permission-less) create-ticket
+        // endpoint, since this test isn't about who may create a ticket.
+        $ticketId = MaintenanceTicket::create([
             'vehicle_id' => $vehicle->vehicle_id,
+            'created_by' => $admin->id,
             'ticket_title' => 'Overheating',
             'ticket_description' => 'Runs hot.',
             'priority' => 'High',
+            'status' => 'Open',
             'assigned_custodian_id' => $juan->id,
-        ])->assertCreated()->json('ticket_id');
+            'assigned_at' => now(),
+        ])->ticket_id;
 
         // Juan (as Custodian) inspects and logs a sub-issue.
         Sanctum::actingAs($juan, ['*']);

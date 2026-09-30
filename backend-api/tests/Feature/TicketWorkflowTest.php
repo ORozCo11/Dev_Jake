@@ -66,19 +66,27 @@ class TicketWorkflowTest extends TestCase
         ], $overrides));
     }
 
+    /**
+     * Pure test scaffolding — builds an Open ticket directly (bypassing
+     * HTTP) exactly like createTicket()'s default 'inspection' entry mode
+     * used to. That endpoint is gated by ticket.create, which no role holds
+     * any more (nobody can create a ticket directly; only propose+approve),
+     * so tests that just need "an Open ticket exists" build one straight
+     * via the model instead of depending on a permission this suite is
+     * itself proving is gone.
+     */
     private function createTicket(Vehicle $vehicle, string $title = 'Overheating'): MaintenanceTicket
     {
-        Sanctum::actingAs($this->admin, ['*']);
-        $response = $this->postJson('/api/tickets', [
+        return MaintenanceTicket::create([
             'vehicle_id' => $vehicle->vehicle_id,
+            'created_by' => $this->admin->id,
             'ticket_title' => $title,
             'ticket_description' => 'Engine runs hot after 10 minutes.',
             'priority' => 'High',
+            'status' => 'Open',
             'assigned_custodian_id' => $this->custodian->id,
+            'assigned_at' => now(),
         ]);
-        $response->assertCreated();
-
-        return MaintenanceTicket::findOrFail($response->json('ticket_id'));
     }
 
     /** Inspects and populates the sub-issue list in one call. */
@@ -273,56 +281,66 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function only_an_admin_can_create_a_ticket(): void
+    public function nobody_can_create_a_ticket_directly_any_more(): void
     {
+        // ticket.create has no role (config/permissions.php) — every ticket
+        // must now originate as a Custodian's proposal (see
+        // TicketProposalWorkflowTest) that an Admin reviews and approves.
         $vehicle = $this->vehicle();
-
-        Sanctum::actingAs($this->custodian, ['*']);
-        $this->postJson('/api/tickets', [
+        $payload = [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Nope',
-            'ticket_description' => 'Custodians cannot open tickets.',
+            'ticket_description' => 'Nobody can open a ticket directly.',
             'priority' => 'Low',
             'assigned_custodian_id' => $this->custodian->id,
-        ])->assertForbidden();
+        ];
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets', $payload)->assertForbidden();
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->postJson('/api/tickets', $payload)->assertForbidden();
     }
 
     #[Test]
-    public function the_same_main_issue_cannot_open_twice_while_one_is_still_active(): void
+    public function the_same_main_issue_cannot_be_proposed_twice_while_one_is_still_active(): void
     {
+        // Duplicate-Main-Issue guard used to live only in createTicket();
+        // proposeTicket() now carries the same check since it's the only
+        // way a ticket comes into existence.
         $vehicle = $this->vehicle();
         $this->createTicket($vehicle, 'Overheating');
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'overheating', // case/whitespace-insensitive match
             'ticket_description' => 'Reported again.',
             'priority' => 'Medium',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => 'Still overheating']],
         ])->assertUnprocessable();
     }
 
     #[Test]
-    public function a_different_main_issue_can_open_concurrently_on_the_same_vehicle(): void
+    public function a_different_main_issue_can_be_proposed_concurrently_on_the_same_vehicle(): void
     {
         $vehicle = $this->vehicle();
         $this->createTicket($vehicle, 'Overheating');
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Flat Tire',
             'ticket_description' => 'Rear right tire is flat.',
             'priority' => 'Medium',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => 'Replace rear right tire']],
         ])->assertCreated();
 
         $this->assertSame(2, MaintenanceTicket::where('vehicle_id', $vehicle->vehicle_id)->count());
     }
 
     #[Test]
-    public function creating_a_ticket_from_an_issue_report_links_them_both_ways(): void
+    public function proposing_a_ticket_from_an_issue_report_links_them_both_ways(): void
     {
         $vehicle = $this->vehicle();
         $issue = VehicleIssueReport::create([
@@ -334,17 +352,18 @@ class TicketWorkflowTest extends TestCase
             'status' => 'Pending',
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $ticketId = $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $ticketId = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Engine Problem',
             'ticket_description' => $issue->issue_description,
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
             'issue_report_id' => $issue->issue_report_id,
+            'sub_issues' => [['title' => 'Overheating on long drives']],
         ])->assertCreated()->json('ticket_id');
 
-        // The issue moves out of Pending...
+        // The issue moves out of Pending as soon as it's proposed, not only
+        // once an Admin approves — same timing createTicket() used to have.
         $this->assertSame('In Maintenance', $issue->fresh()->status);
 
         // ...and the /issues listing exposes the link back to that ticket, so
@@ -817,7 +836,7 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function creating_a_ticket_from_a_condition_check_links_it_and_stays_live(): void
+    public function proposing_a_ticket_from_a_condition_check_links_it_and_stays_live(): void
     {
         $vehicle = $this->vehicle();
         $condition = VehicleConditionCheck::create([
@@ -827,21 +846,23 @@ class TicketWorkflowTest extends TestCase
             'checked_by' => $this->custodian->id,
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $response = $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Condition Check: Needs Repair',
             'ticket_description' => 'From condition check.',
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
-            'entry_mode' => 'in_house',
             'condition_check_id' => $condition->condition_check_id,
             'sub_issues' => [['title' => 'Brakes feel soft.']],
         ])->assertCreated();
         $ticketId = $response->json('ticket_id');
 
-        // The link is set once, immediately...
+        // The link is set once, immediately at proposal time...
         $this->assertSame($ticketId, $condition->fresh()->resulting_ticket_id);
+
+        // ...and stays 'Pending Approval' until an Admin approves it.
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/approve", [])->assertOk();
 
         // ...and the listing endpoint reads the ticket's LIVE status through
         // it, not a snapshot — no change to the condition check itself.
@@ -966,16 +987,7 @@ class TicketWorkflowTest extends TestCase
         $overheating = $this->createTicket($vehicle, 'Overheating');
         $overheating = $this->inspectWithSubIssues($overheating, ['Low coolant level']);
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $flatTire = MaintenanceTicket::findOrFail(
-            $this->postJson('/api/tickets', [
-                'vehicle_id' => $vehicle->vehicle_id,
-                'ticket_title' => 'Flat Tire',
-                'ticket_description' => 'Rear right tire is flat.',
-                'priority' => 'Medium',
-                'assigned_custodian_id' => $this->custodian->id,
-            ])->assertCreated()->json('ticket_id')
-        );
+        $flatTire = $this->createTicket($vehicle, 'Flat Tire');
         $flatTire = $this->inspectWithSubIssues($flatTire, ['Replace rear right tire']);
 
         // Close the Flat Tire ticket first — Overheating is still open.

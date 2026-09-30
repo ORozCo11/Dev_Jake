@@ -128,13 +128,13 @@ class FleetIntelligenceTest extends TestCase
             'closed_at' => now(),
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $response = $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Overheating',
             'ticket_description' => "it's back",
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => "it's back"]],
         ])->assertCreated();
 
         $this->assertSame(1, $response->json('recurrence_count'));
@@ -159,13 +159,13 @@ class FleetIntelligenceTest extends TestCase
         ]);
         $prior->forceFill(['created_at' => now()->subDays(120)])->save();
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $response = $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Overheating',
             'ticket_description' => "it's back again",
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => "it's back again"]],
         ])->assertCreated();
 
         $this->assertSame(1, $response->json('recurrence_count'));
@@ -188,13 +188,13 @@ class FleetIntelligenceTest extends TestCase
             'closed_at' => now()->subDays(200),
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $response = $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Overheating',
             'ticket_description' => "it's back",
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => "it's back"]],
         ])->assertCreated();
 
         $this->assertSame(0, $response->json('recurrence_count'));
@@ -282,12 +282,13 @@ class FleetIntelligenceTest extends TestCase
         $this->assertFalse($ids->contains($vehicle->vehicle_id));
 
         // ...and can't be ticketed directly.
-        $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Overheating',
             'ticket_description' => 'x',
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => 'x']],
         ])->assertUnprocessable();
     }
 

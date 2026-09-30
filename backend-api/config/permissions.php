@@ -97,11 +97,13 @@ return [
     'ticket.view_open_for_vehicle' => ['Admin'],
     'ticket.view_archives' => ['Admin'],
     'ticket.check_recurrence' => ['Admin', 'Custodian'],
-    'ticket.create' => ['Admin'],
-    // Custodian's own path in — a proposal that needs Admin's approve/
-    // decline before it's a real, live ticket. Admin keeps ticket.create
-    // for when they spot something themselves; this is additive, not a
-    // replacement.
+    // Nobody holds this any more — every ticket must originate as a
+    // Custodian's proposal (ticket.propose) that Admin then reviews, edits,
+    // and approves or declines (ticket.approve/decline). Kept as an explicit
+    // empty grant, not deleted, so the POST /tickets endpoint it gates
+    // (TicketController::createTicket) stays documented as intentionally
+    // unreachable rather than looking like an oversight.
+    'ticket.create' => [],
     'ticket.propose' => ['Custodian'],
     'ticket.approve' => ['Admin'],
     'ticket.decline' => ['Admin'],
