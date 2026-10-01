@@ -67,11 +67,6 @@ return [
     // Personnel has no involvement at all outside the auto-generated ledger
     // line a confirmed ticket sub-issue creates.
     'record.create' => ['Admin'],
-    // Narrow carve-out: lets a Custodian resolve their OWN deferred/needs-
-    // inspection issue report (choosing in-house/cannibalized/external)
-    // without reopening general manual ledger entry to them. Controller only
-    // honors this when the request is tied to an issue_report_id.
-    'record.create_from_issue' => ['Admin', 'Custodian'],
     'record.edit' => ['Admin'],
     'record.verify' => ['Custodian'],
     'record.confirm' => ['Admin'],
