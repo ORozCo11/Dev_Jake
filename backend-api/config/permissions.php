@@ -53,6 +53,10 @@ return [
     // existing own-report-while-Pending narrowing is unaffected.
     'issue.edit' => ['Admin', 'Custodian'],
     'issue.delete' => ['Admin'],
+    // Admin's next steps on an open report: nudge the Custodians to propose a
+    // ticket for it (Admin can't start a ticket themselves), or dismiss it.
+    'issue.request_ticket' => ['Admin'],
+    'issue.dismiss' => ['Admin'],
 
     // Vehicle documents — Phase B4: Maintenance Personnel is view-only
     // (dropped from all three); Custodian may upload and edit their OWN
@@ -118,7 +122,6 @@ return [
     'ticket.reopen_archived' => ['Admin'],
 
     // Sub-issues
-    'subissue.create' => ['Custodian', 'Maintenance Personnel'],
     'subissue.assign_mechanic' => ['Admin'],
     'subissue.reassign_mechanic' => ['Admin'],
     'subissue.log_repair' => ['Maintenance Personnel'],

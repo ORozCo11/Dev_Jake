@@ -174,6 +174,8 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/issues', [FleetController::class, 'storeIssue']);
     Route::put('/issues/{issue}', [FleetController::class, 'updateIssue']);
     Route::delete('/issues/{issue}', [FleetController::class, 'destroyIssue']);
+    Route::post('/issues/{issue}/request-ticket', [FleetController::class, 'requestTicketForIssue']);
+    Route::put('/issues/{issue}/dismiss', [FleetController::class, 'dismissIssue']);
     Route::delete('/issue-attachments/{attachment}', [FleetController::class, 'destroyIssueAttachment']);
 
     Route::get('/maintenance-records', [FleetController::class, 'maintenanceRecords']);
@@ -216,9 +218,6 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     // Phase 2 — Custodian: Submit inspection, populate the sub-issue list
     Route::put('/tickets/{ticket}/inspect', [TicketController::class, 'submitInspection']);
-
-    // Append a newly discovered root cause while the ticket is still Active
-    Route::post('/tickets/{ticket}/sub-issues', [TicketController::class, 'addSubIssue']);
 
     // Phase 3 — Admin: Dispatch work order to a mechanic, per sub-issue
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/assign-mechanic', [TicketController::class, 'assignMechanic']);

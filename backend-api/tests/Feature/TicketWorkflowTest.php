@@ -414,66 +414,17 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function a_sub_issue_can_be_appended_while_the_ticket_is_active_and_grows_the_denominator(): void
+    public function an_existing_ticket_cannot_take_any_more_sub_issues(): void
     {
-        $vehicle = $this->vehicle();
-        $ticket = $this->createTicket($vehicle);
-        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level', 'Faulty radiator']);
+        // A ticket's sub-issues are fixed at proposal or inspection. A newly
+        // found problem is reported on its own (Report Issue), not appended.
+        $ticket = $this->inspectWithSubIssues($this->createTicket($this->vehicle()), ['Low coolant level']);
 
-        // The assigned Custodian — not Admin — appends the newly found issue.
-        Sanctum::actingAs($this->custodian, ['*']);
-        $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", [
-            'title' => 'Broken water pump',
-        ])->assertCreated();
-
-        $this->assertSame(['done' => 0, 'deferred' => 0, 'total' => 3], $ticket->fresh()->progress);
-    }
-
-    #[Test]
-    public function a_mechanic_already_working_the_ticket_can_also_append_a_sub_issue(): void
-    {
-        $vehicle = $this->vehicle();
-        $ticket = $this->createTicket($vehicle);
-        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
-        $this->driveSubIssueToInspection($ticket, $ticket->subIssues->first(), $this->mechanic);
-
-        // The mechanic found something else while repairing the first issue.
-        Sanctum::actingAs($this->mechanic, ['*']);
-        $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", [
-            'title' => 'Cracked brake fluid line',
-        ])->assertCreated();
-
-        $this->assertSame(2, $ticket->fresh()->progress['total']);
-    }
-
-    #[Test]
-    public function admin_cannot_add_a_sub_issue(): void
-    {
-        // Admin never has firsthand contact with the vehicle — only the
-        // assigned Custodian or a mechanic already on this ticket may
-        // declare a newly discovered problem.
-        $vehicle = $this->vehicle();
-        $ticket = $this->createTicket($vehicle);
-        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
-
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", [
-            'title' => 'Reported by phone call',
-        ])->assertForbidden();
-    }
-
-    #[Test]
-    public function a_mechanic_not_assigned_to_this_ticket_cannot_add_a_sub_issue(): void
-    {
-        $vehicle = $this->vehicle();
-        $ticket = $this->createTicket($vehicle);
-        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
-        // mechanic2 has no work order on this ticket at all.
-
-        Sanctum::actingAs($this->mechanic2, ['*']);
-        $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", [
-            'title' => 'Unrelated finding',
-        ])->assertForbidden();
+        foreach ([$this->custodian, $this->mechanic, $this->admin] as $who) {
+            Sanctum::actingAs($who, ['*']);
+            $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", ['title' => 'Another problem'])->assertNotFound();
+        }
+        $this->assertSame(1, $ticket->fresh()->subIssues()->count());
     }
 
     #[Test]
@@ -897,13 +848,6 @@ class TicketWorkflowTest extends TestCase
 
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/close", [])->assertOk();
-
-        // No new sub-issue can ever be appended to a Closed ticket — checked
-        // as the assigned Custodian, who otherwise has standing to add one.
-        Sanctum::actingAs($this->custodian, ['*']);
-        $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", [
-            'title' => 'New problem found later',
-        ])->assertUnprocessable();
 
         // ...and it cannot be cancelled/uncancelled either — Closed is final.
         Sanctum::actingAs($this->admin, ['*']);
@@ -1616,20 +1560,6 @@ class TicketWorkflowTest extends TestCase
         $this->putJson("/api/tickets/{$ticket->ticket_id}/inspect", ['inspection_result' => 'No Issues'])->assertOk();
 
         $this->assertSame('Resolved', $issue->fresh()->status);
-    }
-
-    #[Test]
-    public function adding_a_sub_issue_to_a_ticket_that_had_nothing_to_repair_takes_the_vehicle_out_of_service(): void
-    {
-        $vehicle = $this->vehicle(['status' => 'Available', 'condition' => 'Good']);
-        $ticket = $this->createTicket($vehicle);
-        Sanctum::actingAs($this->custodian, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/inspect", ['inspection_result' => 'No Issues'])->assertOk();
-
-        $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", ['title' => 'Found a leak'])->assertCreated();
-
-        $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
-        $this->assertSame('Needs Repair', $vehicle->fresh()->condition);
     }
 
     #[Test]

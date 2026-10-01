@@ -13887,3 +13887,52 @@ html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-colum
   html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-7,
   html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-column: 1 / -1; }
 }
+
+
+/* ── QA walkthrough fixes ─────────────────────────────────────────────── */
+/* Fleet Condition donut on the lean Custodian / Maintenance dashboards was a
+   64px ring with its centre label spilling over it. */
+html .dashboard-lean-panel .fleet-status-compact { gap: 28px; padding: 14px 22px 22px; justify-content: center; }
+html .dashboard-lean-panel .donut-chart-small .donut-chart { width: 150px; }
+html .dashboard-lean-panel .fleet-status-legend-col { min-width: 160px; }
+
+/* Two badges on one sidebar row (count + awaiting-review pill) pushed the
+   second one past the sidebar edge. */
+.module-nav button span:not(.module-nav-badge) { min-width: 0; overflow-wrap: anywhere; }
+.module-nav button span.module-nav-badge + span.module-nav-badge { margin-left: -2px; }
+
+/* ── Sidebar: fixed, like the top bar ─────────────────────────────────────
+   It used to be `position: sticky` beside a `position: fixed` top bar. Those
+   two are positioned by the browser differently, so on some graphics setups a
+   blank band flashed between the top bar and the sidebar/content while
+   scrolling (worst near the bottom of a page). A fixed sidebar is positioned
+   the same way as the top bar, so they can't drift apart. The grid column
+   still reserves the sidebar's width so the content doesn't move. */
+/* One width variable per theme (252px dark / 224px light, 76px collapsed or on
+   narrow screens) drives BOTH the grid column and the fixed sidebar. */
+.workspace { --sidebar-w: 252px; }
+html[data-theme="light"] .workspace { --sidebar-w: 224px; }
+.workspace.sidebar-collapsed,
+html[data-theme="light"] .workspace.sidebar-collapsed { --sidebar-w: 76px; }
+@media (max-width: 1100px) {
+  .workspace,
+  html[data-theme="light"] .workspace { --sidebar-w: 76px; }
+}
+.workspace,
+html[data-theme="light"] .workspace,
+.workspace.sidebar-collapsed,
+html[data-theme="light"] .workspace.sidebar-collapsed {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+}
+.workspace > .sidebar {
+  position: fixed;
+  top: var(--topbar-height, 64px);
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-w);
+  height: auto;
+  box-sizing: border-box;
+  z-index: 90;
+  transition: width 0.18s ease;
+}
+.workspace > .content-area { grid-column: 2; }

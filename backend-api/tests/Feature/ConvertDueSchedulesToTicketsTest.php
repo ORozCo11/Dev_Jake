@@ -171,4 +171,93 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
 
         $this->assertStringContainsString((string) $schedule->fresh()->resulting_ticket_id, $response->json('message'));
     }
+
+    // ---- Ticket end finishes the schedule it came from ----------------------
+
+    private function convertedSchedule(array $overrides = []): array
+    {
+        $vehicle = $this->vehicle();
+        $schedule = VehicleMaintenanceSchedule::create(array_merge([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Brake Inspection',
+            'scheduled_date' => now()->toDateString(),
+            'created_by' => $this->custodian->id,
+            'assigned_to' => $this->mechanic->id,
+            'status' => 'Scheduled',
+        ], $overrides));
+        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
+
+        return [$vehicle, $schedule->fresh(), MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id)];
+    }
+
+    private function driveToClosed(MaintenanceTicket $ticket): void
+    {
+        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        $sub = $ticket->subIssues->first();
+
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$sub->sub_issue_id}/log-repairs", ['repair_logs' => 'Done.'])->assertOk();
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$sub->sub_issue_id}/verify", [
+            'verification_verdict' => 'Approved', 'test_attested' => true,
+            'functional_test' => [['item' => 'Brakes respond properly', 'passed' => true]],
+        ])->assertOk();
+        Sanctum::actingAs($admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$sub->sub_issue_id}/confirm", ['confirmation_verdict' => 'Confirmed'])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/close", [])->assertOk();
+    }
+
+    #[Test]
+    public function closing_the_auto_created_ticket_completes_its_schedule(): void
+    {
+        [, $schedule, $ticket] = $this->convertedSchedule();
+        $this->assertSame('Scheduled', $schedule->status);
+
+        $this->driveToClosed($ticket);
+
+        $this->assertSame('Completed', $schedule->fresh()->status);
+    }
+
+    #[Test]
+    public function closing_the_ticket_of_a_recurring_schedule_seeds_the_next_occurrence(): void
+    {
+        [$vehicle, , $ticket] = $this->convertedSchedule(['recurrence_months' => 3]);
+
+        $this->driveToClosed($ticket);
+
+        $next = VehicleMaintenanceSchedule::where('vehicle_id', $vehicle->vehicle_id)->where('status', 'Scheduled')->first();
+        $this->assertNotNull($next, 'A recurring service must keep recurring after its ticket closes.');
+        $this->assertSame(now()->addMonthsNoOverflow(3)->toDateString(), substr((string) $next->scheduled_date, 0, 10));
+        $this->assertSame(3, $next->recurrence_months);
+        $this->assertSame($this->mechanic->id, $next->assigned_to);
+        $this->assertNull($next->resulting_ticket_id);
+    }
+
+    #[Test]
+    public function a_schedule_being_worked_as_a_ticket_is_not_counted_overdue(): void
+    {
+        $this->convertedSchedule(['scheduled_date' => now()->subDays(2)->toDateString()]);
+        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+
+        Sanctum::actingAs($admin, ['*']);
+        $dash = $this->getJson('/api/dashboard')->assertOk();
+
+        $overdue = collect($dash->json('metrics'))->firstWhere('label', 'Overdue Maintenance')['value'];
+        $this->assertSame(0, $overdue);
+        $this->assertSame([], $dash->json('overdue_schedules'));
+    }
+
+    #[Test]
+    public function cancelling_the_ticket_cancels_its_schedule_and_restoring_it_brings_it_back(): void
+    {
+        [, $schedule, $ticket] = $this->convertedSchedule();
+        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+
+        Sanctum::actingAs($admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/cancel", [])->assertOk();
+        $this->assertSame('Cancelled', $schedule->fresh()->status);
+
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/uncancel", [])->assertOk();
+        $this->assertSame('Scheduled', $schedule->fresh()->status);
+    }
 }
