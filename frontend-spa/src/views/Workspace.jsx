@@ -12199,45 +12199,62 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
     }
   };
 
+  const custodianName = ticket.assigned_custodian?.name ?? 'the Custodian';
+  const repairTypeLabel = { in_house: 'In-House', cannibalized: 'Cannibalized Part', external: 'External Shop' };
+
   return (
-    <section className="ticket-section smart-form">
-      <h4><Icon name="checkCircle" size={14} /> Review Proposal</h4>
-      <p className="muted" style={{ marginTop: -4, marginBottom: 10, fontSize: '0.82rem' }}>
-        Proposed by {ticket.assigned_custodian?.name ?? 'the Custodian'}. Edit anything below before approving, or decline with a reason — declining permanently deletes this proposal.
-      </p>
-
-      <div className="ticket-form-grid-2" style={{ padding: 0, marginBottom: 10 }}>
-        <label>
-          <span>Ticket Title</span>
-          <input type="text" value={fields.ticket_title} onChange={(e) => setField('ticket_title', e.target.value)} />
-        </label>
-        <label>
-          <span>Priority</span>
-          <select value={fields.priority} onChange={(e) => setField('priority', e.target.value)}>
-            {(lookups.priorities ?? []).map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </label>
+    <section className="ticket-section smart-form proposal-review">
+      <div className="proposal-review-head">
+        <span className="proposal-review-head-icon"><Icon name="checkCircle" size={18} /></span>
+        <div className="proposal-review-head-text">
+          <h4>Review Proposal</h4>
+          <p>Proposed by <strong>{custodianName}</strong></p>
+        </div>
+        <span className="proposal-review-pill">Pending Approval</span>
       </div>
-      <label style={{ marginBottom: 14 }}>
-        <span>Description / Details</span>
-        <textarea rows={3} value={fields.ticket_description} onChange={(e) => setField('ticket_description', e.target.value)} />
-      </label>
 
-      <h5 style={{ margin: '0 0 8px', fontSize: '0.82rem', fontWeight: 700, color: '#475569' }}>Sub-Issues</h5>
+      <div className="proposal-review-body">
+        <div className="proposal-review-group">
+          <div className="proposal-review-group-title"><Icon name="clipboard" size={14} /> Ticket Details</div>
+          <div className="ticket-form-grid-2" style={{ padding: 0, marginBottom: 12 }}>
+            <label>
+              <span>Ticket Title</span>
+              <input type="text" value={fields.ticket_title} onChange={(e) => setField('ticket_title', e.target.value)} />
+            </label>
+            <label>
+              <span>Priority</span>
+              <select value={fields.priority} onChange={(e) => setField('priority', e.target.value)}>
+                {(lookups.priorities ?? []).map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </label>
+          </div>
+          <label>
+            <span>Description / Details</span>
+            <textarea rows={3} value={fields.ticket_description} onChange={(e) => setField('ticket_description', e.target.value)} />
+          </label>
+        </div>
+
+        <div className="proposal-review-group">
+          <div className="proposal-review-group-title">
+            <Icon name="wrench" size={14} /> Sub-Issues
+            {subRows.length > 0 && <span className="proposal-review-count">{subRows.length}</span>}
+          </div>
       {subRows.length === 0 && (
-        <p className="muted" style={{ margin: '0 0 8px', fontSize: '0.82rem' }}>
-          No sub-issues yet — this is a Needs Inspection proposal. Approving it sends the ticket to {ticket.assigned_custodian?.name ?? 'the Custodian'} to inspect the vehicle and log what they find.
-        </p>
+        <div className="proposal-review-empty">
+          <Icon name="search" size={16} />
+          <span>No sub-issues yet — this is a <strong>Needs Inspection</strong> proposal. Approving sends it to {custodianName} to inspect the vehicle and log what they find.</span>
+        </div>
       )}
       {subRows.map((row, index) => {
         const original = (ticket.sub_issues ?? []).find((s) => s.sub_issue_id === row.sub_issue_id);
         const repairType = original?.repair_type;
         return (
-        <div key={row.sub_issue_id} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
-          <label style={{ marginBottom: 8 }}>
-            <span>Title</span>
-            <input type="text" value={row.title} onChange={(e) => updateSubRow(index, { title: e.target.value })} />
-          </label>
+        <div key={row.sub_issue_id} className={`proposal-subissue is-${repairType ?? 'none'}`}>
+          <div className="proposal-subissue-head">
+            <span className="proposal-subissue-num">{index + 1}</span>
+            <input className="proposal-subissue-title" type="text" aria-label="Sub-issue title" value={row.title} onChange={(e) => updateSubRow(index, { title: e.target.value })} />
+            {repairType && <span className={`proposal-subissue-type is-${repairType}`}>{repairTypeLabel[repairType] ?? repairType}</span>}
+          </div>
           {/* An external-shop repair has no in-house mechanic to pick. */}
           <div className="ticket-form-grid-2" style={{ padding: 0 }}>
             <label>
@@ -12264,9 +12281,11 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
         </div>
         );
       })}
+        </div>
+      </div>
 
       {declining ? (
-        <div className="ticket-inline-form" style={{ marginTop: 10, padding: '10px 12px' }}>
+        <div className="proposal-review-actions is-declining">
           <SmartForm
             fields={[{ label: 'Decline Reason', name: 'decline_reason', type: 'textarea', rows: 2, required: true, placeholder: 'Let the Custodian know why this was declined' }]}
             key={`decline-proposal-${ticket.ticket_id}`}
@@ -12277,13 +12296,16 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
           />
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
-            <Icon name="checkCircle" size={14} /> {subRows.length === 0 ? 'Approve & Send for Inspection' : 'Approve & Activate'}
-          </button>
-          <button className="ghost-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
-            Decline
-          </button>
+        <div className="proposal-review-actions">
+          <p className="proposal-review-hint">Edit anything above before approving. Declining permanently deletes this proposal.</p>
+          <div className="proposal-review-buttons">
+            <button className="proposal-decline-btn" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
+              <Icon name="close" size={14} /> Decline
+            </button>
+            <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
+              <Icon name="checkCircle" size={14} /> {subRows.length === 0 ? 'Approve & Send for Inspection' : 'Approve & Activate'}
+            </button>
+          </div>
         </div>
       )}
     </section>
