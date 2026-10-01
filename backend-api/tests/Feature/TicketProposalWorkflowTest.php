@@ -307,26 +307,24 @@ class TicketProposalWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function a_needs_inspection_proposal_needs_no_sub_issues_and_opens_for_inspection_on_approval(): void
+    public function needs_inspection_is_no_longer_a_proposal_mode(): void
     {
-        $vehicle = $this->vehicle();
-        $ticket = $this->propose($vehicle, ['entry_mode' => 'inspection', 'sub_issues' => []]);
-        $this->assertSame(0, $ticket->subIssues()->count());
-
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
-
-        $this->assertSame('Open', $ticket->fresh()->status);
-        $this->assertNotSame('Under Maintenance', $vehicle->fresh()->status);
-    }
-
-    #[Test]
-    public function a_needs_inspection_proposal_cannot_carry_sub_issues(): void
-    {
+        // A Custodian only proposes when something is wrong, so a proposal
+        // always states the repair — there is no "inspect it first" option.
         Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $this->vehicle()->vehicle_id, 'ticket_title' => 'X', 'ticket_description' => 'x',
             'priority' => 'High', 'entry_mode' => 'inspection', 'sub_issues' => [['title' => 'Belt']],
+        ])->assertStatus(422);
+    }
+
+    #[Test]
+    public function a_proposal_without_sub_issues_is_rejected(): void
+    {
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets/propose', [
+            'vehicle_id' => $this->vehicle()->vehicle_id, 'ticket_title' => 'X', 'ticket_description' => 'x',
+            'priority' => 'High', 'sub_issues' => [],
         ])->assertStatus(422);
     }
 
@@ -353,7 +351,10 @@ class TicketProposalWorkflowTest extends TestCase
         ];
         $this->postJson('/api/tickets/propose', $payload)->assertStatus(422);
 
-        $ticket = $this->propose($vehicle, ['entry_mode' => 'cannibalized', 'source_vehicle_id' => $donor->vehicle_id, 'sub_issues' => [['title' => 'Alternator']]]);
+        $ticket = $this->propose($vehicle, [
+            'entry_mode' => 'cannibalized', 'source_vehicle_id' => $donor->vehicle_id,
+            'sub_issues' => [['title' => 'Alternator', 'part_missing' => 'Alternator', 'part_needed' => 'Alternator']],
+        ]);
         $sub = $ticket->subIssues()->first();
         $this->assertSame('cannibalized', $sub->repair_type);
         $this->assertSame($donor->vehicle_id, $sub->source_vehicle_id);
@@ -364,6 +365,8 @@ class TicketProposalWorkflowTest extends TestCase
     {
         $ticket = $this->propose($this->vehicle(), [
             'entry_mode' => 'external', 'external_vendor' => 'ACME Repair Shop', 'warranty_until' => '2027-01-01',
+            'external_reason' => \App\Http\Controllers\TicketController::EXTERNAL_REASONS[0],
+            'external_work_scope' => 'Replace the battery.',
             'sub_issues' => [['title' => 'Battery replacement']],
         ]);
         $sub = $ticket->subIssues()->first();

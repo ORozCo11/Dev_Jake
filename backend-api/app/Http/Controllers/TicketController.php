@@ -17,6 +17,7 @@ use App\Models\Vehicle;
 use App\Models\VehicleConditionCheck;
 use App\Models\VehicleHistory;
 use App\Models\VehicleIssueReport;
+use App\Models\VehicleMaintenanceSchedule;
 use App\Models\VehicleMaintenanceRecord;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -452,13 +453,11 @@ class TicketController extends Controller
             'ticket_title'        => ['required', 'string', 'max:255'],
             'ticket_description'  => ['required', 'string'],
             'priority'            => ['required', Rule::in($this->priorities)],
-            // How the Custodian is reporting it. 'inspection' = the problem
-            // isn't diagnosed yet (no sub-issues; on approval the ticket goes
-            // to this Custodian to inspect). The other three mean the problem
-            // AND its repair type are already known, so sub-issues are
-            // required and the ticket is Active once approved. Omitted =
-            // the older behaviour (known problem, repair type not recorded).
-            'entry_mode'          => ['nullable', Rule::in(['inspection', 'in_house', 'cannibalized', 'external'])],
+            // How the repair will be done. A proposal always states what is
+            // wrong and how it will be fixed (the Custodian has already seen
+            // the vehicle; Admin's approval is the check), so there is no
+            // "needs inspection" mode and sub-issues are always required.
+            'entry_mode'          => ['nullable', Rule::in(['in_house', 'cannibalized', 'external'])],
             'source_vehicle_id'   => ['nullable', 'required_if:entry_mode,cannibalized', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
             'external_vendor'     => ['nullable', 'string', 'max:255'],
             // The basis for sending it out must be an objective reason Admin
@@ -469,7 +468,7 @@ class TicketController extends Controller
             'external_sent_by'        => ['nullable', 'string', 'max:255'],
             'external_contact_person' => ['nullable', 'string', 'max:255'],
             'external_estimated_cost' => ['nullable', 'numeric', 'min:0'],
-            'sub_issues'                          => ['required_unless:entry_mode,inspection', 'array'],
+            'sub_issues'                          => ['required', 'array', 'min:1'],
             'sub_issues.*.title'                  => ['required', 'string', 'max:255'],
             'sub_issues.*.maintenance_type'        => ['nullable', 'string', 'max:150'],
             // Cannibalized: one row per part — what's missing here, and the
@@ -494,11 +493,6 @@ class TicketController extends Controller
         unset($sub);
 
         $entryMode = $data['entry_mode'] ?? null;
-        abort_if(
-            $entryMode === 'inspection' && !empty($data['sub_issues']),
-            422,
-            'A Needs Inspection proposal has no sub-issues yet — the inspection finds them.'
-        );
         // Only stamped on sub-issues when the repair type is actually known.
         $repairType = in_array($entryMode, ['in_house', 'cannibalized', 'external'], true) ? $entryMode : null;
 
@@ -694,6 +688,7 @@ class TicketController extends Controller
             422,
             'This vehicle has been archived or decommissioned since it was proposed — decline the proposal instead.'
         );
+        abort_if($ticket->subIssues()->count() === 0, 422, 'A proposal needs at least one sub-issue before it can be approved.');
 
         $ticket = DB::transaction(function () use ($ticket, $data, $request) {
             // Serialize against a concurrent approve/decline of the same proposal.
@@ -725,23 +720,6 @@ class TicketController extends Controller
             }
 
             $vehicle = $ticket->vehicle;
-
-            // A Needs Inspection proposal has no sub-issues yet: approving it
-            // opens the ticket for the proposing Custodian to inspect, exactly
-            // like an inspection-mode ticket always did. The vehicle stays in
-            // service until the inspection finds something.
-            if ($ticket->subIssues()->count() === 0) {
-                $ticket->update(['status' => 'Open']);
-                $this->log($request, 'Approve Ticket', "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) proposal approved — sent to Custodian for inspection.", $ticket->ticket_id);
-                $this->notifyUser(
-                    $ticket->assigned_custodian_id,
-                    'Ticket Proposal Approved',
-                    "Your proposed ticket \"{$ticket->ticket_title}\" for {$vehicle->vehicle_name} was approved — please inspect the vehicle.",
-                    'inspection_assigned',
-                    $ticket->ticket_id
-                );
-                return $ticket;
-            }
 
             $ticket->update([
                 'status'            => 'Active',
@@ -923,72 +901,6 @@ class TicketController extends Controller
         });
 
         return $ticket->fresh($this->eagerLoads());
-    }
-
-    /**
-     * PUT /tickets/:ticket/sub-issues — append a newly discovered root
-     * cause to a still-Active ticket. Once the ticket is Closed, this is
-     * never available — a new issue at that point must open a fresh ticket.
-     *
-     * Deliberately NOT available to Admin. Declaring "there's another real
-     * problem with this vehicle" requires firsthand contact with it — the
-     * same reason the initial inspection is Custodian-only. Only the
-     * assigned Custodian (re-inspecting) or a mechanic already working a
-     * sub-issue on this ticket (found something else mid-repair) has that
-     * standing. An Admin who genuinely needs to log a discovery does it by
-     * holding the Custodian/Maintenance role on their account and acting
-     * under that hat — not through an office role with no firsthand basis.
-     */
-    public function addSubIssue(Request $request, MaintenanceTicket $ticket)
-    {
-        $this->requireAbility($request, 'subissue.create');
-        $user = $request->user();
-
-        $isAssignedCustodian = $user->hasRole('Custodian') && $ticket->assigned_custodian_id === $user->id;
-        $isAssignedMechanic = $user->hasRole('Maintenance Personnel')
-            && $ticket->subIssues()->where('assigned_mechanic_id', $user->id)->exists();
-
-        abort_unless($isAssignedCustodian || $isAssignedMechanic, 403, 'You are not currently assigned to this ticket.');
-
-        abort_unless($ticket->status === 'Active', 422, "Sub-issues can only be added while the ticket is Active. Current status: {$ticket->status}.");
-
-        $data = $request->validate([
-            'title'            => ['required', 'string', 'max:255'],
-            'maintenance_type' => ['nullable', 'string', 'max:150'],
-            'issue_report_id'  => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
-        ]);
-
-        if (!empty($data['maintenance_type'])) {
-            $data['maintenance_type'] = MaintenanceType::resolve($data['maintenance_type']);
-        }
-
-        $subIssue = DB::transaction(function () use ($ticket, $data, $request) {
-            $subIssue = TicketSubIssue::create([
-                'ticket_id'        => $ticket->ticket_id,
-                'issue_report_id'  => $data['issue_report_id'] ?? null,
-                'created_by'       => $request->user()->id,
-                'title'            => $data['title'],
-                'maintenance_type' => $data['maintenance_type'] ?? null,
-                'status'           => 'Open',
-            ]);
-
-            if (!empty($data['issue_report_id'])) {
-                VehicleIssueReport::where('issue_report_id', $data['issue_report_id'])->update(['status' => 'In Maintenance']);
-            }
-
-            // A confirmed defect means the vehicle isn't dispatchable, even
-            // if this ticket previously had nothing to repair.
-            if (!in_array($ticket->vehicle->status, ['Inactive', 'Decommissioned'], true)) {
-                $ticket->vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
-            }
-
-            $progress = $ticket->fresh()->progress;
-            $this->log($request, 'Sub-Issue Added', "Ticket #{$ticket->ticket_id} — sub-issue \"{$data['title']}\" added. Progress {$progress['done']}/{$progress['total']}.", $ticket->ticket_id);
-
-            return $subIssue;
-        });
-
-        return response()->json($subIssue, 201);
     }
 
     // ===================================================================
@@ -1881,6 +1793,12 @@ class TicketController extends Controller
             $ticket->refresh()->load('subIssues');
             $this->archiveCompleted($ticket, $request->user()->id, 'Closed');
 
+            // A ticket that was auto-created from a due Maintenance Schedule
+            // finishes that schedule too — otherwise it stays "Scheduled"
+            // forever (counted overdue) and a recurring service never
+            // seeds its next occurrence.
+            $this->completeLinkedSchedule($ticket, $request->user()->id);
+
             // Single choke point + fit-for-service gate: closing frees the
             // vehicle ONLY if the Admin judged it fit. If not, the ticket is
             // closed but the vehicle stays flagged out of service (the
@@ -1989,6 +1907,9 @@ class TicketController extends Controller
             ]);
 
             $this->resetLinkedIssueReports($ticket, 'Pending');
+            // The job the schedule asked for was abandoned with the ticket.
+            VehicleMaintenanceSchedule::where('resulting_ticket_id', $ticket->ticket_id)
+                ->where('status', 'Scheduled')->update(['status' => 'Cancelled']);
             $this->recomputeVehicleStatus($ticket->vehicle_id);
 
             $this->log($request, 'Ticket Cancelled', "Ticket #{$ticket->ticket_id} was cancelled by admin.", $ticket->ticket_id);
@@ -2017,6 +1938,8 @@ class TicketController extends Controller
             ]);
 
             $this->resetLinkedIssueReports($ticket, 'In Maintenance');
+            VehicleMaintenanceSchedule::where('resulting_ticket_id', $ticket->ticket_id)
+                ->where('status', 'Cancelled')->update(['status' => 'Scheduled']);
             $this->recomputeVehicleStatus($ticket->vehicle_id);
 
             $this->log($request, 'Ticket Restored', "Ticket #{$ticket->ticket_id} was restored back to '{$restoredStatus}' by Admin.", $ticket->ticket_id);
@@ -2152,6 +2075,24 @@ class TicketController extends Controller
      * vehicle's status, which is what prevents an emergency vehicle from
      * being marked ready while a second, unrelated ticket is still open.
      */
+    /**
+     * Marks the Maintenance Schedule a ticket was auto-created from as
+     * Completed and, if it repeats, seeds the next occurrence. No-op for a
+     * ticket that didn't come from a schedule.
+     */
+    private function completeLinkedSchedule(MaintenanceTicket $ticket, int $userId): void
+    {
+        $schedule = VehicleMaintenanceSchedule::where('resulting_ticket_id', $ticket->ticket_id)
+            ->where('status', 'Scheduled')
+            ->first();
+        if (!$schedule) {
+            return;
+        }
+
+        $schedule->update(['status' => 'Completed']);
+        $schedule->seedNextRecurrence(now()->toDateString(), $userId);
+    }
+
     private function recomputeVehicleStatus(int $vehicleId): void
     {
         // Only an Active ticket means work is really under way. A Pending

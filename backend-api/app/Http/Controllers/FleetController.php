@@ -96,6 +96,7 @@ class FleetController extends Controller
             ->whereDate('scheduled_date', '>=', now()->toDateString())
             ->count();
         $overdueMaintenance = VehicleMaintenanceSchedule::where('status', 'Scheduled')
+            ->whereNull('resulting_ticket_id')
             ->whereDate('scheduled_date', '<', now()->toDateString())
             ->count();
 
@@ -248,6 +249,7 @@ class FleetController extends Controller
             ],
             'overdue_schedules' => VehicleMaintenanceSchedule::with('vehicle:vehicle_id,vehicle_name,plate_number')
                 ->where('status', 'Scheduled')
+                ->whereNull('resulting_ticket_id')
                 ->whereDate('scheduled_date', '<', now()->toDateString())
                 ->orderBy('scheduled_date')
                 ->get(['schedule_id', 'vehicle_id', 'maintenance_type', 'scheduled_date']),
@@ -293,6 +295,7 @@ class FleetController extends Controller
             'my_scheduled_work' => $user->hasRole('Maintenance Personnel')
                 ? VehicleMaintenanceSchedule::with('vehicle:vehicle_id,vehicle_name,plate_number')
                     ->where('status', 'Scheduled')
+                    ->whereNull('resulting_ticket_id')
                     ->where('assigned_to', $user->id)
                     ->orderBy('scheduled_date')
                     ->get(['schedule_id', 'vehicle_id', 'maintenance_type', 'scheduled_date', 'scheduled_time', 'status'])
@@ -617,6 +620,7 @@ class FleetController extends Controller
 
         return VehicleMaintenanceSchedule::with('vehicle:vehicle_id,vehicle_name,plate_number,status')
             ->where('status', 'Scheduled')
+            ->whereNull('resulting_ticket_id')
             ->whereDate('scheduled_date', '<=', $soon)
             ->orderBy('scheduled_date')
             ->get()
@@ -1513,6 +1517,76 @@ class FleetController extends Controller
         });
 
         return $issue->fresh(['vehicle.category', 'reportedBy']);
+    }
+
+    /**
+     * Admin's "what now?" on an open issue report. Admin never starts a
+     * ticket themselves (every ticket begins as a Custodian's proposal), so
+     * this asks the barangay's Custodians to do it — they get a notification
+     * and the report shows their Propose Ticket action. The report moves to
+     * Under Review so it's clear someone has been asked.
+     */
+    public function requestTicketForIssue(Request $request, VehicleIssueReport $issue)
+    {
+        $this->requireAbility($request, 'issue.request_ticket');
+
+        abort_unless(in_array($issue->status, ['Pending', 'Under Review'], true), 422, "This issue is already {$issue->status} — a ticket can't be requested for it.");
+        abort_if($issue->maintenanceTicket()->exists(), 422, 'A ticket already exists for this issue.');
+
+        $vehicle = $issue->vehicle;
+
+        DB::transaction(function () use ($issue, $vehicle, $request) {
+            $issue->update(['status' => 'Under Review']);
+
+            $this->notifyCustodians(
+                'Ticket Requested',
+                "{$request->user()->name} asked for a ticket to be proposed for {$vehicle->vehicle_name}: {$issue->issue_type}. Open Report / Propose and use Propose Ticket on issue #{$issue->issue_report_id}.",
+                'ticket_requested',
+                $vehicle->barangay_id
+            );
+
+            $this->log($request, 'Edit', 'Vehicle Issue Reports', $issue->issue_report_id, "Asked Custodians to propose a ticket for issue report #{$issue->issue_report_id}");
+        });
+
+        return $issue->fresh(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments']);
+    }
+
+    /**
+     * Admin closes an open issue report that doesn't need a ticket — not a
+     * real problem, or already handled. A reason is required and goes to the
+     * reporter. Deliberately does NOT touch the vehicle's status (unlike the
+     * generic status edit), since nothing about the vehicle changed.
+     */
+    public function dismissIssue(Request $request, VehicleIssueReport $issue)
+    {
+        $this->requireAbility($request, 'issue.dismiss');
+
+        abort_unless(in_array($issue->status, ['Pending', 'Under Review'], true), 422, "This issue is already {$issue->status} and can't be dismissed.");
+        abort_if($issue->maintenanceTicket()->exists(), 422, 'A ticket exists for this issue — close or cancel the ticket instead.');
+
+        $data = $request->validate([
+            'dismiss_reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        DB::transaction(function () use ($issue, $data, $request) {
+            $issue->update([
+                'status'  => 'Resolved',
+                'remarks' => "Dismissed by {$request->user()->name}: {$data['dismiss_reason']}",
+            ]);
+
+            if ($issue->reported_by && (int) $issue->reported_by !== (int) $request->user()->id) {
+                $this->notifyUser(
+                    $issue->reported_by,
+                    'Issue Report Dismissed',
+                    "Your report \"{$issue->issue_type}\" on {$issue->vehicle->vehicle_name} was dismissed. Reason: {$data['dismiss_reason']}",
+                    'issue_dismissed'
+                );
+            }
+
+            $this->log($request, 'Edit', 'Vehicle Issue Reports', $issue->issue_report_id, "Dismissed issue report #{$issue->issue_report_id}: {$data['dismiss_reason']}");
+        });
+
+        return $issue->fresh(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments']);
     }
 
     public function destroyIssue(Request $request, VehicleIssueReport $issue)
@@ -2611,44 +2685,7 @@ class FleetController extends Controller
             }
 
             // 3) If recurring, seed the next one at completed date + interval.
-            // Same double-booking rule as the manual create/edit paths — an
-            // auto-generated recurrence is not exempt from it. If the natural
-            // next date already has a Scheduled entry on this vehicle (e.g.
-            // another recurring service drifted onto the same day), nudge
-            // forward a day at a time until a free date is found instead of
-            // silently creating a duplicate booking.
-            $next = null;
-            if ($schedule->recurrence_months) {
-                // addMonthsNoOverflow(), not addMonths(): plain addMonths()
-                // overflows past a shorter target month (e.g. Jan 31 + 1
-                // month lands on Mar 3, not Feb 28) instead of clamping to
-                // that month's last day.
-                $nextDate = \Illuminate\Support\Carbon::parse($completedDate)->addMonthsNoOverflow($schedule->recurrence_months);
-                for ($shift = 0; $shift < 60; $shift++) {
-                    $candidate = $nextDate->copy()->addDays($shift);
-                    $collides = VehicleMaintenanceSchedule::where('vehicle_id', $schedule->vehicle_id)
-                        ->whereDate('scheduled_date', $candidate->toDateString())
-                        ->where('status', 'Scheduled')
-                        ->exists();
-                    if (!$collides) {
-                        $nextDate = $candidate;
-                        break;
-                    }
-                }
-
-                $next = VehicleMaintenanceSchedule::create([
-                    'vehicle_id'        => $schedule->vehicle_id,
-                    'maintenance_type'  => $schedule->maintenance_type,
-                    'scheduled_date'    => $nextDate->toDateString(),
-                    'scheduled_time'    => $schedule->scheduled_time,
-                    'service_location'  => $schedule->service_location,
-                    'notes'             => $schedule->notes,
-                    'status'            => 'Scheduled',
-                    'created_by'        => $request->user()->id,
-                    'assigned_to'       => $schedule->assigned_to,
-                    'recurrence_months' => $schedule->recurrence_months,
-                ]);
-            }
+            $next = $schedule->seedNextRecurrence($completedDate, $request->user()->id);
 
             $this->history($vehicle, 'Preventive Maintenance Completed', "{$schedule->maintenance_type} completed for {$vehicle->vehicle_name}." . ($next ? " Next due {$next->scheduled_date}." : ''), 'vehicle_maintenance_schedules', $schedule->schedule_id, $request);
             $this->log($request, 'Complete', 'Vehicle Maintenance Schedule', $schedule->schedule_id, "Completed schedule #{$schedule->schedule_id}" . ($next ? " (recurring — next #{$next->schedule_id})" : ''));
