@@ -823,6 +823,10 @@
   position: sticky;
   top: var(--topbar-height, 64px);
   overflow-y: auto;
+  /* Same compositing-layer fix as .topbar — a sticky sidebar can lag a
+     frame behind the fixed header on fast scroll otherwise. */
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .sidebar-brand {
   display: flex; align-items: center; gap: 12px;
@@ -1180,6 +1184,12 @@
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   min-height: var(--topbar-height, 64px);
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  /* Promotes the fixed header to its own GPU compositing layer — without
+     this, some Chrome/Windows setups repaint a `position: fixed` element a
+     frame late during a fast scroll, showing a brief gap between it and the
+     content underneath before it "catches up". */
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .topbar-left { display: flex; align-items: center; gap: 14px; }
 
