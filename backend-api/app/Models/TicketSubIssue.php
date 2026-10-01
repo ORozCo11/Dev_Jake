@@ -39,9 +39,17 @@ class TicketSubIssue extends Model
         // known, or at the Log Repairs step once a mechanic starts the work.
         'repair_type',
         'source_vehicle_id',
+        'part_missing',
+        'part_needed',
         // Only meaningful when repair_type is 'external' — which shop did
         // the work, and how long the repair is warrantied for.
         'external_vendor',
+        'external_reason',
+        'external_work_scope',
+        'external_shop_contact',
+        'external_sent_by',
+        'external_contact_person',
+        'external_estimated_cost',
         'warranty_until',
         'work_order_notes',
         'mechanic_assigned_at',
@@ -89,6 +97,7 @@ class TicketSubIssue extends Model
         'deferred_at'          => 'datetime',
         'cannibalization_reviewed_at' => 'datetime',
         'maintenance_cost'     => 'decimal:2',
+        'external_estimated_cost' => 'decimal:2',
         'functional_test'      => 'array',
         'test_attested'        => 'boolean',
     ];
