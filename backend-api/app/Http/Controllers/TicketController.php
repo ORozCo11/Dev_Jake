@@ -9,6 +9,7 @@ use App\Models\ActivityLog;
 use App\Models\FaultCategory;
 use App\Models\MaintenanceTicket;
 use App\Models\MaintenanceType;
+use App\Models\ReportedPerson;
 use App\Models\TicketArchiveLog;
 use App\Models\TicketSubIssue;
 use App\Models\User;
@@ -58,6 +59,16 @@ class TicketController extends Controller
     use AuthorizesAbilities;
 
     private array $priorities       = ['Low', 'Medium', 'High'];
+
+    // Objective grounds for sending a repair outside — each is something the
+    // Admin can verify, rather than a Custodian's opinion of the mechanics.
+    public const EXTERNAL_REASONS = [
+        'Covered by dealer / manufacturer warranty',
+        'Parts or service only available from an authorized shop',
+        'Needs specialized shop equipment (e.g. alignment, A/C recovery, dyno)',
+        'Requires licensed / certified service (e.g. emissions, LTO inspection)',
+        'Mechanic assessed and recommended external repair',
+    ];
 
     // ===================================================================
     // READ ENDPOINTS
@@ -134,8 +145,14 @@ class TicketController extends Controller
             'priorities'            => $this->priorities,
             'fault_categories'      => FaultCategory::orderBy('name')->pluck('name'),
             'maintenance_types'     => MaintenanceType::orderBy('name')->pluck('name'),
-            'ticket_statuses'       => ['Open', 'Active', 'Closed', 'Cancelled'],
+            // 'Pending Approval' included so a Custodian's proposal has a
+            // checkbox of its own in the ticket list's status filter — it
+            // used to have none, so narrowing by any of the other 4 statuses
+            // silently hid every pending proposal with no way to bring it
+            // back except clicking the "Proposals" stat card specifically.
+            'ticket_statuses'       => ['Open', 'Pending Approval', 'Active', 'Closed', 'Cancelled'],
             'sub_issue_statuses'    => ['Open', 'Under Repair', 'Pending Approval', 'For Inspection', 'For Confirmation', 'Done', 'Deferred'],
+            'external_reasons'      => self::EXTERNAL_REASONS,
         ]);
     }
 
@@ -457,10 +474,21 @@ class TicketController extends Controller
             'entry_mode'          => ['nullable', Rule::in(['inspection', 'in_house', 'cannibalized', 'external'])],
             'source_vehicle_id'   => ['nullable', 'required_if:entry_mode,cannibalized', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
             'external_vendor'     => ['nullable', 'string', 'max:255'],
-            'warranty_until'      => ['nullable', 'date'],
+            // The basis for sending it out must be an objective reason Admin
+            // can check, not a judgment call about the in-house mechanics.
+            'external_reason'     => ['nullable', 'required_if:entry_mode,external', Rule::in(self::EXTERNAL_REASONS)],
+            'external_work_scope' => ['nullable', 'required_if:entry_mode,external', 'string', 'max:5000'],
+            'external_shop_contact'   => ['nullable', 'string', 'max:255'],
+            'external_sent_by'        => ['nullable', 'string', 'max:255'],
+            'external_contact_person' => ['nullable', 'string', 'max:255'],
+            'external_estimated_cost' => ['nullable', 'numeric', 'min:0'],
             'sub_issues'                          => ['required_unless:entry_mode,inspection', 'array'],
             'sub_issues.*.title'                  => ['required', 'string', 'max:255'],
             'sub_issues.*.maintenance_type'        => ['nullable', 'string', 'max:150'],
+            // Cannibalized: one row per part — what's missing here, and the
+            // part pulled off the (single, shared) donor to replace it.
+            'sub_issues.*.part_missing'           => ['nullable', 'required_if:entry_mode,cannibalized', 'string', 'max:255'],
+            'sub_issues.*.part_needed'            => ['nullable', 'required_if:entry_mode,cannibalized', 'string', 'max:255'],
             // Who the Custodian THINKS should do the repair — a suggestion
             // only. Doesn't become a real work-order dispatch (and doesn't
             // notify the mechanic) unless an Admin approves it.
@@ -469,6 +497,9 @@ class TicketController extends Controller
 
         if (!empty($data['fault_category'])) {
             $data['fault_category'] = FaultCategory::resolve($data['fault_category']);
+        }
+        if (!empty($data['external_sent_by'])) {
+            $data['external_sent_by'] = ReportedPerson::resolve($data['external_sent_by']);
         }
         $data['sub_issues'] = $data['sub_issues'] ?? [];
         foreach ($data['sub_issues'] as &$sub) {
@@ -582,8 +613,15 @@ class TicketController extends Controller
                     'suggested_mechanic_id'  => $sub['suggested_mechanic_id'] ?? null,
                     'repair_type'            => $repairType,
                     'source_vehicle_id'      => $repairType === 'cannibalized' ? ($data['source_vehicle_id'] ?? null) : null,
+                    'part_missing'           => $repairType === 'cannibalized' ? ($sub['part_missing'] ?? null) : null,
+                    'part_needed'            => $repairType === 'cannibalized' ? ($sub['part_needed'] ?? null) : null,
                     'external_vendor'        => $repairType === 'external' ? ($data['external_vendor'] ?? null) : null,
-                    'warranty_until'         => $repairType === 'external' ? ($data['warranty_until'] ?? null) : null,
+                    'external_reason'        => $repairType === 'external' ? ($data['external_reason'] ?? null) : null,
+                    'external_work_scope'    => $repairType === 'external' ? ($data['external_work_scope'] ?? null) : null,
+                    'external_shop_contact'  => $repairType === 'external' ? ($data['external_shop_contact'] ?? null) : null,
+                    'external_sent_by'       => $repairType === 'external' ? ($data['external_sent_by'] ?? null) : null,
+                    'external_contact_person' => $repairType === 'external' ? ($data['external_contact_person'] ?? null) : null,
+                    'external_estimated_cost' => $repairType === 'external' ? ($data['external_estimated_cost'] ?? null) : null,
                     'status'                 => 'Open',
                 ]);
             }

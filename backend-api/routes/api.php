@@ -95,6 +95,10 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/maintenance-types', [CatalogController::class, 'storeMaintenanceType']);
     Route::put('/maintenance-types/{maintenanceType}', [CatalogController::class, 'updateMaintenanceType']);
     Route::delete('/maintenance-types/{maintenanceType}', [CatalogController::class, 'destroyMaintenanceType']);
+    Route::get('/reported-persons', [CatalogController::class, 'reportedPersons']);
+    Route::post('/reported-persons', [CatalogController::class, 'storeReportedPerson']);
+    Route::put('/reported-persons/{reportedPerson}', [CatalogController::class, 'updateReportedPerson']);
+    Route::delete('/reported-persons/{reportedPerson}', [CatalogController::class, 'destroyReportedPerson']);
 
     Route::get('/categories', [FleetController::class, 'categories']);
     Route::post('/categories', [FleetController::class, 'storeCategory']);
@@ -170,6 +174,7 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/issues', [FleetController::class, 'storeIssue']);
     Route::put('/issues/{issue}', [FleetController::class, 'updateIssue']);
     Route::delete('/issues/{issue}', [FleetController::class, 'destroyIssue']);
+    Route::delete('/issue-attachments/{attachment}', [FleetController::class, 'destroyIssueAttachment']);
 
     Route::get('/maintenance-records', [FleetController::class, 'maintenanceRecords']);
     Route::get('/maintenance-records/{record}', [FleetController::class, 'showMaintenanceRecord']);

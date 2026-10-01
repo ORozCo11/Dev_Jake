@@ -412,7 +412,12 @@ class AuthController extends Controller
         // ordinary login tokens instead. 30 minutes (not the 4 hours this
         // used to be): long enough for one support task, short enough that a
         // forgotten/abandoned session doesn't sit live for hours.
-        $token = $user->createToken('impersonation_token', [...$user->allRoles(), 'impersonated'], now()->addMinutes(30))->plainTextToken;
+        // In 'local' only, no expiry at all — a dev jumping between many
+        // accounts to test a feature shouldn't get logged out mid-session
+        // ("Unauthenticated") just for taking longer than 30 minutes.
+        // Production/Super Admin support use is unaffected.
+        $impersonationExpiry = app()->environment('local') ? null : now()->addMinutes(30);
+        $token = $user->createToken('impersonation_token', [...$user->allRoles(), 'impersonated'], $impersonationExpiry)->plainTextToken;
 
         $actingAsSuperAdmin = $request->user()?->hasRole('Super Admin');
         ActivityLog::create([

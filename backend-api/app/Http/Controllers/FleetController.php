@@ -8,8 +8,10 @@ use App\Http\Controllers\Concerns\GuardsLastAdmin;
 use App\Http\Controllers\Concerns\UploadsImages;
 use App\Models\ActivityLog;
 use App\Models\FaultCategory;
+use App\Models\IssueReportAttachment;
 use App\Models\MaintenanceTicket;
 use App\Models\MaintenanceType;
+use App\Models\ReportedPerson;
 use App\Models\TicketSubIssue;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -1300,7 +1302,7 @@ class FleetController extends Controller
     {
         $this->requireAbility($request, 'issue.view');
 
-        return $issue->load(['vehicle.category', 'reportedBy', 'maintenanceTicket']);
+        return $issue->load(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments.uploadedBy']);
     }
 
     /**
@@ -1339,7 +1341,7 @@ class FleetController extends Controller
         // Issues on retired (Inactive/Decommissioned) vehicles are excluded —
         // a retired vehicle is out of the fleet, so its reports shouldn't
         // clutter the list.
-        $query = VehicleIssueReport::with(['vehicle.category', 'reportedBy', 'maintenanceTicket'])
+        $query = VehicleIssueReport::with(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments'])
             ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']));
 
         if ($request->boolean('mine')) {
@@ -1379,11 +1381,17 @@ class FleetController extends Controller
             'issue_description' => ['required', 'string'],
             'severity_level' => ['required', Rule::in(['Low', 'Medium', 'High'])],
             'reported_on_behalf_of' => ['nullable', 'string', 'max:255'],
-            'photo' => ['nullable', 'image', 'max:4096'],
+            // Was a single 'photo' (image only) — now any number of files of
+            // any common type, matching VehicleDocument's "file cabinet".
+            'attachments' => ['nullable', 'array'],
+            'attachments.*' => ['file', 'mimes:jpg,jpeg,png,pdf,doc,docx', 'max:10240'],
             'remarks' => ['nullable', 'string'],
         ]);
 
         $data['issue_type'] = FaultCategory::resolve($data['issue_type']);
+        if (!empty($data['reported_on_behalf_of'])) {
+            $data['reported_on_behalf_of'] = ReportedPerson::resolve($data['reported_on_behalf_of']);
+        }
 
         // A retired/archived vehicle is out of the fleet — no new reports on it.
         $reportedVehicle = Vehicle::findOrFail($data['vehicle_id']);
@@ -1393,18 +1401,24 @@ class FleetController extends Controller
             'Cannot report an issue on an archived or decommissioned vehicle.'
         );
 
-        if ($request->hasFile('photo')) {
-            $data['photo_url'] = $this->storeUploadedImage($request->file('photo'), 'issue-attachments');
-        }
+        $uploadedFiles = $request->file('attachments', []);
+        unset($data['attachments']);
 
-        unset($data['photo']);
-
-        $issue = DB::transaction(function () use ($data, $request) {
+        $issue = DB::transaction(function () use ($data, $request, $uploadedFiles) {
             $vehicle = Vehicle::findOrFail($data['vehicle_id']);
             $issue = VehicleIssueReport::create($data + [
                 'reported_by' => $request->user()->id,
                 'status' => 'Pending',
             ]);
+
+            foreach ($uploadedFiles as $file) {
+                IssueReportAttachment::create([
+                    'issue_report_id' => $issue->issue_report_id,
+                    'file_url' => $this->storeUploadedImage($file, 'issue-attachments'),
+                    'original_name' => $file->getClientOriginalName(),
+                    'uploaded_by' => $request->user()->id,
+                ]);
+            }
 
             $vehicle->update([
                 'condition' => 'Needs Inspection',
@@ -1416,7 +1430,7 @@ class FleetController extends Controller
             return $issue;
         });
 
-        return response()->json($issue->load(['vehicle.category', 'reportedBy']), 201);
+        return response()->json($issue->load(['vehicle.category', 'reportedBy', 'attachments']), 201);
     }
 
     public function updateIssue(Request $request, VehicleIssueReport $issue)
@@ -1431,23 +1445,34 @@ class FleetController extends Controller
                 'issue_type' => ['sometimes', 'string', 'max:150'],
                 'issue_description' => ['sometimes', 'string'],
                 'severity_level' => ['sometimes', Rule::in(['Low', 'Medium', 'High'])],
-                'photo' => ['nullable', 'image', 'max:4096'],
+                'reported_on_behalf_of' => ['nullable', 'string', 'max:255'],
+                'attachments' => ['nullable', 'array'],
+                'attachments.*' => ['file', 'mimes:jpg,jpeg,png,pdf,doc,docx', 'max:10240'],
                 'remarks' => ['nullable', 'string'],
             ]);
 
             if (isset($data['issue_type'])) {
                 $data['issue_type'] = FaultCategory::resolve($data['issue_type']);
             }
-
-            if ($request->hasFile('photo')) {
-                $data['photo_url'] = $this->storeUploadedImage($request->file('photo'), 'issue-attachments');
+            if (!empty($data['reported_on_behalf_of'])) {
+                $data['reported_on_behalf_of'] = ReportedPerson::resolve($data['reported_on_behalf_of']);
             }
-            unset($data['photo']);
+
+            $uploadedFiles = $request->file('attachments', []);
+            unset($data['attachments']);
 
             $issue->update($data);
+            foreach ($uploadedFiles as $file) {
+                IssueReportAttachment::create([
+                    'issue_report_id' => $issue->issue_report_id,
+                    'file_url' => $this->storeUploadedImage($file, 'issue-attachments'),
+                    'original_name' => $file->getClientOriginalName(),
+                    'uploaded_by' => $request->user()->id,
+                ]);
+            }
             $this->log($request, 'Edit', 'Vehicle Issue Reports', $issue->issue_report_id, "Updated issue report #{$issue->issue_report_id}");
 
-            return $issue->fresh(['vehicle.category', 'reportedBy']);
+            return $issue->fresh(['vehicle.category', 'reportedBy', 'attachments']);
         }
 
         $data = $request->validate([
@@ -1511,6 +1536,29 @@ class FleetController extends Controller
         $issue->delete();
 
         return response()->json(['message' => 'Issue report deleted.']);
+    }
+
+    /**
+     * Remove one file from an issue report's attachment list — same
+     * ownership rule as editing the report itself (own, still Pending,
+     * unless Admin/Maintenance Personnel).
+     */
+    public function destroyIssueAttachment(Request $request, IssueReportAttachment $attachment)
+    {
+        $user = $request->user();
+        $issue = $attachment->issueReport;
+
+        if ($user->hasRole('Custodian') && !$user->hasAnyRole(['Admin', 'Maintenance Personnel'])) {
+            abort_unless($issue->reported_by === $user->id, 403, 'You can only edit your own issue reports.');
+            abort_unless($issue->status === 'Pending', 422, 'This issue has already been reviewed and can no longer be edited.');
+        } else {
+            $this->requireAbility($request, 'issue.edit');
+        }
+
+        $this->log($request, 'Delete', 'Vehicle Issue Reports', $issue->issue_report_id, "Removed attachment \"{$attachment->original_name}\" from issue report #{$issue->issue_report_id}");
+        $attachment->delete();
+
+        return response()->json(['message' => 'Attachment removed.']);
     }
 
     /**
@@ -1663,7 +1711,13 @@ class FleetController extends Controller
 
     public function storeMaintenanceRecord(Request $request)
     {
-        $this->requireAbility($request, 'record.create');
+        // A Custodian may only reach this via the "resolve my deferred issue"
+        // bridge (issue_report_id set) — anything else still needs the full
+        // Admin-only record.create ability.
+        $resolvingOwnIssue = $request->filled('issue_report_id') && $request->user()->canDo('record.create_from_issue');
+        if (!$resolvingOwnIssue) {
+            $this->requireAbility($request, 'record.create');
+        }
 
         $data = $request->validate([
             'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
@@ -1671,6 +1725,7 @@ class FleetController extends Controller
             // rather than newly acquired. Optional — only set when that's
             // actually what happened.
             'source_vehicle_id' => ['nullable', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
+            'part_name' => ['nullable', 'string', 'max:255'],
             'issue_report_id' => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
             'maintenance_type' => ['required', 'string', 'max:150'],
             'problem_reason' => ['required', 'string'],
@@ -1825,6 +1880,7 @@ class FleetController extends Controller
 
         $data = $request->validate([
             'source_vehicle_id' => ['nullable', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
+            'part_name' => ['nullable', 'string', 'max:255'],
             'issue_report_id' => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
             'maintenance_type' => ['sometimes', 'string', 'max:150'],
             'problem_reason' => ['sometimes', 'string'],

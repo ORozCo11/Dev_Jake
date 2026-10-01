@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\AuthorizesAbilities;
 use App\Models\FaultCategory;
 use App\Models\MaintenanceTicket;
 use App\Models\MaintenanceType;
+use App\Models\ReportedPerson;
 use App\Models\TicketSubIssue;
 use App\Models\VehicleIssueReport;
 use App\Models\VehicleMaintenanceRecord;
@@ -133,6 +134,56 @@ class CatalogController extends Controller
         ]);
 
         $maintenanceType->delete();
+
+        return response()->noContent();
+    }
+
+    public function reportedPersons()
+    {
+        return ReportedPerson::orderBy('name')->get(['id', 'name']);
+    }
+
+    public function storeReportedPerson(Request $request)
+    {
+        // Custodians are the ones naming drivers (Reported On Behalf Of,
+        // Sent By) while filling forms — adding a name is harmless, so it
+        // follows issue.create; renaming/deleting stay catalog.* (Admin).
+        $this->requireAbility($request, 'issue.create');
+        $data = $request->validate(['name' => ['required', 'string', 'max:150']]);
+
+        return response()->json(ReportedPerson::findOrCreateByName($data['name']), 201);
+    }
+
+    public function updateReportedPerson(Request $request, ReportedPerson $reportedPerson)
+    {
+        $this->requireAbility($request, 'catalog.edit');
+        $data = $request->validate(['name' => ['required', 'string', 'max:150']]);
+        $newName = trim($data['name']);
+
+        $duplicate = ReportedPerson::whereRaw('LOWER(name) = ?', [mb_strtolower($newName)])
+            ->where('id', '!=', $reportedPerson->id)
+            ->first();
+        abort_if($duplicate, 422, "\"{$newName}\" already exists — pick a different name, or delete this one and use that instead.");
+
+        $oldName = $reportedPerson->name;
+
+        DB::transaction(function () use ($reportedPerson, $newName, $oldName) {
+            $reportedPerson->update(['name' => $newName]);
+            VehicleIssueReport::withoutGlobalScopes()->where('reported_on_behalf_of', $oldName)->update(['reported_on_behalf_of' => $newName]);
+        });
+
+        return $reportedPerson->fresh();
+    }
+
+    public function destroyReportedPerson(Request $request, ReportedPerson $reportedPerson)
+    {
+        $this->requireAbility($request, 'catalog.delete');
+
+        $this->abortIfInUse($reportedPerson->name, [
+            'issue report' => VehicleIssueReport::withoutGlobalScopes()->where('reported_on_behalf_of', $reportedPerson->name)->count(),
+        ]);
+
+        $reportedPerson->delete();
 
         return response()->noContent();
     }
