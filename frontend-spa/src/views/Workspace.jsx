@@ -471,10 +471,6 @@ function Workspace() {
     || (editLocationVehicleId && 'Update Location')
     || null;
   const { user, logout, refreshUser } = useContext(AuthContext);
-  // Declared ahead of the access-guard effect below, which reads it to let a
-  // Custodian through to /maintenance/new when arriving via the "resolve my
-  // deferred issue" bridge (see handleResolveDeferredIssue further down).
-  const [prefilledMaintenanceData, setPrefilledMaintenanceData] = useState(null);
   // Phase B2 — UX-only redirect for every full-page create/edit route: the
   // backend independently (and exhaustively) enforces each of these
   // abilities on the actual endpoint, so this just keeps someone without the
@@ -493,7 +489,7 @@ function Workspace() {
       || (editIssueId && !canDo(user, 'issue.edit'))
       || (isNewConditionPage && !canDo(user, 'condition.create'))
       || (editConditionId && !canDo(user, 'condition.edit'))
-      || (isNewMaintenancePage && !canDo(user, 'record.create') && !(prefilledMaintenanceData?.issue_report_id && canDo(user, 'record.create_from_issue')))
+      || (isNewMaintenancePage && !canDo(user, 'record.create'))
       || (editMaintenanceId && !canDo(user, 'record.edit'))
       || (isNewUserPage && !canDo(user, 'user.create'))
       || (editUserId && !canDo(user, 'user.edit'))
@@ -507,7 +503,6 @@ function Workspace() {
     isNewSchedulePage, editScheduleId, isNewIssuePage, editIssueId,
     isNewConditionPage, editConditionId, isNewMaintenancePage, editMaintenanceId,
     isNewUserPage, editUserId, isNewLocationPage, editLocationVehicleId,
-    prefilledMaintenanceData,
   ]);
   const moduleGroups = useMemo(() => resolveModuleGroups(user), [user.role, user.roles]);
   const modules = useMemo(() => moduleGroups.flatMap((g) => g.items), [moduleGroups]);
@@ -1143,7 +1138,6 @@ function Workspace() {
     setPrefilledTicketData({
       vehicle_id: issue.vehicle_id,
       ticket_title: `[Issue #${issue.issue_report_id}] ${issue.issue_type}`,
-      fault_category: issue.issue_type,
       ticket_description: `Original Reported Issue: ${issue.issue_description}\nSeverity: ${issue.severity_level}`,
       issue_report_id: issue.issue_report_id,
       // A flagged concern usually means the cause isn't diagnosed yet —
@@ -1196,20 +1190,6 @@ function Workspace() {
       notes: `Suggested from condition check #${cond.condition_check_id} (${cond.condition_result})${cond.observations ? `: ${cond.observations}` : ''}`,
     });
     navigate(`${roleRoutes[user.role]}/schedules/new`);
-  };
-
-  // Whether the issue is standalone or the follow-up breadcrumb from a
-  // deferred sub-issue, this jumps straight to Add Maintenance Record with
-  // the vehicle and issue already linked. Repair type is left for the
-  // Custodian/Admin to choose on that form (in-house, cannibalized, or
-  // external) — this bridge no longer assumes it must go to an outside shop.
-  const handleResolveDeferredIssue = ({ vehicle_id, issue_report_id, problem_reason }) => {
-    setPrefilledMaintenanceData({
-      vehicle_id,
-      issue_report_id,
-      problem_reason,
-    });
-    navigate(`${roleRoutes[user.role]}/maintenance/new`);
   };
 
   const deleteTicket = async (ticket) => {
@@ -2967,7 +2947,6 @@ function Workspace() {
               onBack={() => returnToModule('tickets')}
               onDeleteTicket={deleteTicket}
               onRequestConfirmation={setConfirmDialog}
-              onResolveDeferredIssue={handleResolveDeferredIssue}
               ticketAction={ticketAction}
             />
           ) : maintenanceProfileId ? (
@@ -3010,7 +2989,6 @@ function Workspace() {
               allHubs={allHubs}
               user={user}
               onCreateTicketFromIssue={handleCreateTicketFromIssue}
-              onResolveDeferredIssue={handleResolveDeferredIssue}
             />
           ) : (isNewIssuePage || editIssueId) ? (
             <FormPage
@@ -3043,9 +3021,9 @@ function Workspace() {
           ) : (isNewMaintenancePage || editMaintenanceId) ? (
             <FormPage
               description="Directly log external, historical, or third-party vehicle maintenance records and expenses without running the 5-phase ticket workflow."
-              onBack={() => { setPrefilledMaintenanceData(null); returnToModule('maintenance'); }}
+              onBack={() => returnToModule('maintenance')}
               fields={(vals) => maintenanceFields(lookups, user.role, vals)}
-              initialValues={editMaintenanceId ? withPerformedBy(withRepairType((records.maintenance ?? []).find((m) => String(m.maintenance_id) === String(editMaintenanceId)))) : (prefilledMaintenanceData ?? EMPTY_OBJ)}
+              initialValues={editMaintenanceId ? withPerformedBy(withRepairType((records.maintenance ?? []).find((m) => String(m.maintenance_id) === String(editMaintenanceId)))) : EMPTY_OBJ}
               onSubmit={(payload) => submitFormPage('maintenance', editMaintenanceId ? { maintenance_id: editMaintenanceId } : null, applyPerformedBy(applyRepairType(payload)))}
               submitLabel={editMaintenanceId ? 'Update Maintenance' : 'Add Maintenance'}
               contextVehicles={lookups.vehicles}
@@ -3971,11 +3949,8 @@ function Workspace() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <ViewModeDropdown value={maintenanceViewMode} onChange={changeMaintenanceViewMode} />
               {/* No general "+ Add" entry point here anymore — repair data
-                  is now entered through Tickets. This form still exists and
-                  is still reachable from the "Send to External Shop" bridge
-                  off a deferred ticket sub-issue (handleResolveDeferredIssue)
-                  and from Maintenance Schedule completions, which create
-                  records through their own dedicated paths, not this list. */}
+                  is now entered through Tickets; Maintenance Schedule
+                  completions create records through their own path. */}
               <LocalSearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
@@ -6077,7 +6052,7 @@ const ISSUE_STATUS_COLORS = {
 // a pure Custodian's own list is filtered to "mine", but a "View" link from
 // the duplicate-issue warning is specifically for a report FILED BY SOMEONE
 // ELSE on the same vehicle, which that filtered list would never contain.
-function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTicketFromIssue, onResolveDeferredIssue }) {
+function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTicketFromIssue }) {
   const actions = useContext(RowActionsContext);
   const [issue, setIssue] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -6099,7 +6074,7 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTi
   useEffect(() => {
     if (!issue?.vehicle_id) { setRecurrence(null); return; }
     let cancelled = false;
-    api.get(`/vehicles/${issue.vehicle_id}/recurrence`, { params: { fault_category: issue.issue_type, title: issue.issue_type } })
+    api.get(`/vehicles/${issue.vehicle_id}/recurrence`, { params: { issue_type: issue.issue_type, title: issue.issue_type } })
       .then((r) => { if (!cancelled) setRecurrence(r.data); })
       .catch(() => { if (!cancelled) setRecurrence(null); });
     return () => { cancelled = true; };
@@ -6140,31 +6115,11 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTi
             <StatusBadge value={issue.status} />
           </div>
         </div>
-        {/* Lets the Admin act on this issue right here instead of going back
-            to the Issue Reports list just to click the same button there. */}
-        {(canDo(user, 'ticket.create') || canDo(user, 'ticket.propose') || canDo(user, 'record.create')) && (
+        {/* A repair starts only as a Custodian's proposal, which the Admin
+            then approves or declines — so this is the only action here. */}
+        {onCreateTicketFromIssue && (canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && ['Pending', 'Under Review'].includes(issue.status) && !issue.maintenance_ticket && (
           <div style={{ display: 'flex', gap: 8 }}>
-            {onCreateTicketFromIssue && (canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && ['Pending', 'Under Review'].includes(issue.status) && !issue.maintenance_ticket && (
-              <button className="ghost-button btn-confirm-action" type="button" onClick={() => onCreateTicketFromIssue(issue)}><Icon name="ticket" size={14} /> {canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'}</button>
-            )}
-            {/* Fast close: jumps to Add Maintenance Record with this issue
-                already linked, where in-house/cannibalized/external is
-                chosen. Admin can do this for any issue; a Custodian can only
-                reach it here via record.create_from_issue, which the backend
-                only honors when an issue_report_id is attached. */}
-            {onResolveDeferredIssue && (canDo(user, 'record.create') || canDo(user, 'record.create_from_issue')) && (
-              <button
-                className="ghost-button btn-edit-action"
-                type="button"
-                onClick={() => onResolveDeferredIssue({
-                  vehicle_id: issue.vehicle_id,
-                  issue_report_id: issue.issue_report_id,
-                  problem_reason: `${issue.issue_type}: ${issue.issue_description}`,
-                })}
-              >
-                <Icon name="wrench" size={14} /> Send for Repair
-              </button>
-            )}
+            <button className="ghost-button btn-confirm-action" type="button" onClick={() => onCreateTicketFromIssue(issue)}><Icon name="ticket" size={14} /> {canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'}</button>
           </div>
         )}
       </div>
@@ -6211,9 +6166,6 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTi
                 <div>
                   <span className="veh-remarks-label">Reported By</span>
                   <div style={{ marginTop: 4 }}><UserAvatarName user={issue.reported_by} /></div>
-                  {issue.reported_on_behalf_of && (
-                    <div className="muted" style={{ marginTop: 2, fontSize: '0.85rem' }}>on behalf of {issue.reported_on_behalf_of}</div>
-                  )}
                 </div>
               </div>
 
@@ -6260,39 +6212,7 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTi
         </div>
 
         <div className="issue-view-side">
-          <section className="veh-card issue-view-photo-card">
-            <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Files</h4></div>
-            {/* A legacy single photo_url (old reports, from before this was
-                a multi-file list) shows first, then every row in the newer
-                attachments table — same view either way. */}
-            {issue.photo_url || issue.attachments?.length > 0 ? (
-              <div className="issue-view-attachment-list">
-                {issue.photo_url && (
-                  <a href={resolvePhotoUrl(issue.photo_url)} target="_blank" rel="noreferrer" className="issue-view-photo">
-                    <img src={resolvePhotoUrl(issue.photo_url)} alt="Issue attachment" />
-                  </a>
-                )}
-                {(issue.attachments ?? []).map((att) => {
-                  const url = resolvePhotoUrl(att.file_url);
-                  const isImage = /\.(png|jpe?g|gif|webp)$/i.test(att.original_name ?? att.file_url ?? '');
-                  return isImage ? (
-                    <a key={att.attachment_id} href={url} target="_blank" rel="noreferrer" className="issue-view-photo">
-                      <img src={url} alt={att.original_name ?? 'Issue attachment'} />
-                    </a>
-                  ) : (
-                    <a key={att.attachment_id} href={url} target="_blank" rel="noreferrer" className="issue-view-file">
-                      <Icon name="clipboard" size={16} /> {att.original_name ?? 'Attachment'}
-                    </a>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="issue-view-photo-empty">
-                <Icon name="clipboard" size={22} />
-                <p>No files attached.</p>
-              </div>
-            )}
-          </section>
+          <IssueFilesCard issue={issue} />
 
           <section className="veh-card">
             <div className="veh-card-head"><Icon name="calendar" size={16} /><h4>Report Timeline</h4></div>
@@ -8485,10 +8405,6 @@ function issueFields(lookups, editTarget, role, onAddVehicle) {
       // whole description getting dumped into a single sub-issue.
       { label: 'Issues Found', name: 'issue_description', required: true, type: 'list', placeholder: 'e.g. Low coolant level', addLabel: 'Add another issue' },
       { label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select' },
-      {
-        label: 'Reported On Behalf Of (driver, optional)', name: 'reported_on_behalf_of', type: 'creatable-select',
-        options: lookups.reported_persons ?? [], newItemLabel: 'person', catalogEndpoint: '/reported-persons',
-      },
       { label: 'Files', name: 'attachments', type: 'multi-file', existingAttachments: editTarget.attachments },
     ];
   }
@@ -8516,10 +8432,6 @@ function issueFields(lookups, editTarget, role, onAddVehicle) {
       : { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'catalog-or-other', otherNoteField: 'remarks', otherNoteLabel: 'Describe the issue/type' }),
     { label: 'Issue Description', name: 'issue_description', required: true, type: 'textarea' },
     { label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select' },
-    {
-      label: 'Reported On Behalf Of (driver, optional)', name: 'reported_on_behalf_of', type: 'creatable-select',
-      options: lookups.reported_persons ?? [], newItemLabel: 'person', catalogEndpoint: '/reported-persons',
-    },
     { label: 'Files', name: 'attachments', type: 'multi-file' },
   ];
 }
@@ -12255,7 +12167,6 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
     ticket_title: ticket.ticket_title ?? '',
     ticket_description: ticket.ticket_description ?? '',
     priority: ticket.priority ?? '',
-    fault_category: ticket.fault_category ?? '',
   });
   const [subRows, setSubRows] = useState(() => (ticket.sub_issues ?? []).map((si) => ({
     sub_issue_id: si.sub_issue_id,
@@ -12276,7 +12187,6 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
         ticket_title: fields.ticket_title,
         ticket_description: fields.ticket_description,
         priority: fields.priority,
-        fault_category: fields.fault_category || null,
         sub_issues: subRows.map((r) => ({
           sub_issue_id: r.sub_issue_id,
           title: r.title,
@@ -12308,16 +12218,6 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
           </select>
         </label>
       </div>
-      <label style={{ marginBottom: 10 }}>
-        <span>Fault Category</span>
-        <CreatableSelect
-          value={fields.fault_category}
-          onChange={(v) => setField('fault_category', v)}
-          options={lookups.fault_categories ?? []}
-          newItemLabel="fault category"
-          catalogEndpoint="/fault-categories"
-        />
-      </label>
       <label style={{ marginBottom: 14 }}>
         <span>Description / Details</span>
         <textarea rows={3} value={fields.ticket_description} onChange={(e) => setField('ticket_description', e.target.value)} />
@@ -12338,11 +12238,8 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
             <span>Title</span>
             <input type="text" value={row.title} onChange={(e) => updateSubRow(index, { title: e.target.value })} />
           </label>
-          {/* An external-shop repair has no in-house mechanic or maintenance
-              type to pick; a cannibalized one only needs who does the swap. */}
-          {repairType !== 'external' && (
+          {/* An external-shop repair has no in-house mechanic to pick. */}
           <div className="ticket-form-grid-2" style={{ padding: 0 }}>
-            {repairType !== 'cannibalized' && (
             <label>
               <span>Maintenance Type</span>
               <CreatableSelect
@@ -12353,7 +12250,7 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
                 catalogEndpoint="/maintenance-types"
               />
             </label>
-            )}
+            {repairType !== 'external' && (
             <label>
               <span>Suggested Mechanic</span>
               <select value={row.suggested_mechanic_id ?? ''} onChange={(e) => updateSubRow(index, { suggested_mechanic_id: e.target.value })}>
@@ -12361,8 +12258,8 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
                 {(lookups.maintenance_personnel ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </label>
+            )}
           </div>
-          )}
           <RepairContextDetails si={original} />
         </div>
         );
@@ -12397,7 +12294,7 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
 // TICKET DETAIL PANEL — shown when admin clicks a ticket row
 // =========================================================================
 
-function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onAddSubIssue, onDeferSubIssue, onCloseTicket, onLogRepairs, onCancel, onUncancel, onDelete, onRequestConfirmation, onResolveDeferredIssue, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
+function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onAddSubIssue, onDeferSubIssue, onCloseTicket, onLogRepairs, onCancel, onUncancel, onDelete, onRequestConfirmation, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
   const [assigningAll, setAssigningAll] = useState(false);
   // Which sub-issue's Reassign/Defer inline form is open, if any — replaces
   // the old bulk Reassign/Defer modals with a per-card icon + inline panel
@@ -12916,26 +12813,9 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                         <Icon name="alert" size={14} /> <strong>Deferred{si.deferred_by?.name ? ` by ${si.deferred_by.name}` : ''}</strong>
                       </div>
                       {si.deferred_reason && <p style={{ margin: '4px 0 0' }}>{si.deferred_reason}</p>}
-                      <p style={{ margin: '4px 0 0', fontStyle: 'italic', opacity: 0.85 }}>A follow-up issue report was opened so this defect isn't forgotten.</p>
-                      {/* The Custodian who owns this vehicle decides how the
-                          follow-up gets fixed (in-house, cannibalized, or an
-                          external shop) — jumps to Add Maintenance Record
-                          with the follow-up issue and vehicle already linked,
-                          repair type left for them to pick there. */}
-                      {(canDo(user, 'record.create') || canDo(user, 'record.create_from_issue')) && onResolveDeferredIssue && si.deferred_issue_report_id && (
-                        <button
-                          className="ghost-button btn-edit-action"
-                          type="button"
-                          style={{ marginTop: 8 }}
-                          onClick={() => onResolveDeferredIssue({
-                            vehicle_id: ticket.vehicle_id,
-                            issue_report_id: si.deferred_issue_report_id,
-                            problem_reason: `${si.title}${si.deferred_reason ? ` — ${si.deferred_reason}` : ''}`,
-                          })}
-                        >
-                          <Icon name="wrench" size={14} /> Send for Repair
-                        </button>
-                      )}
+                      <p style={{ margin: '4px 0 0', fontStyle: 'italic', opacity: 0.85 }}>
+                        A follow-up issue report{si.deferred_issue_report_id ? ` (Issue #${si.deferred_issue_report_id})` : ''} was opened so this defect isn't forgotten — the Custodian can propose a ticket from it.
+                      </p>
                     </div>
                   )}
 
@@ -13213,7 +13093,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
   );
 }
 
-function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDeleteTicket, onRequestConfirmation, onResolveDeferredIssue, ticketAction: sendTicketAction }) {
+function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDeleteTicket, onRequestConfirmation, ticketAction: sendTicketAction }) {
   const navigate = useNavigate();
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -13282,7 +13162,6 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
       onRejectCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reject-cannibalization`, payload, 'Cannibalized repair rejected.').then(afterAction)}
       onAddSubIssue={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues`, payload, 'Sub-issue added.', 'post').then(afterAction)}
       onDeferSubIssue={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/defer`, payload, 'Sub-issue deferred — a follow-up issue report was opened.').then(afterAction)}
-      onResolveDeferredIssue={onResolveDeferredIssue}
       onLogRepairs={(t, si) => navigate(`${roleRoutes[user.role]}/work-orders/${t.ticket_id}/${si.sub_issue_id}/log-repairs`)}
       onCloseTicket={(t, payload = {}) => sendTicketAction(`/tickets/${t.ticket_id}/close`, payload, payload.deferral_reason ? 'Ticket closed as a decision.' : 'Ticket closed.').then(afterAction)}
       onCancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/cancel`, {}, 'Ticket cancelled.').then(afterAction)}
@@ -13339,17 +13218,11 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
   // inspection form: "pre-diagnosed" means the Admin already knows what
   // kind of repair this is, so asking again when a mechanic gets assigned
   // later would just be re-asking something already known.
-  // Starts from whatever Fault Category is already known (e.g. carried over
-  // from an Issue Report or Condition Check) instead of blank — Admin
-  // already told the system what's wrong one field up; re-picking the same
-  // thing again here from a parallel list would just be redundant. Still
-  // fully editable — the real repair category can differ from what was
-  // originally reported.
-  const [subIssueCategory, setSubIssueCategory] = useDraftState(`${draftKeyBase}:fault-category`, () => prefilledTicketData?.fault_category ?? '');
+  const [subIssueCategory, setSubIssueCategory] = useDraftState(`${draftKeyBase}:maintenance-type`, () => '');
   const clearNewTicketDraft = () => {
     clearDraftState(`${draftKeyBase}:values`);
     clearDraftState(`${draftKeyBase}:sub-issues`);
-    clearDraftState(`${draftKeyBase}:fault-category`);
+    clearDraftState(`${draftKeyBase}:maintenance-type`);
   };
   const [submitting, setSubmitting] = useState(false);
   const [validationLines, setValidationLines] = useState(null);
@@ -13378,11 +13251,11 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
     const title = (liveValues.ticket_title ?? '').trim();
     if (!selectedVehicleId || !title) { setRecurrence(null); return; }
     let cancelled = false;
-    api.get(`/vehicles/${selectedVehicleId}/recurrence`, { params: { fault_category: liveValues.fault_category || undefined, title } })
+    api.get(`/vehicles/${selectedVehicleId}/recurrence`, { params: { maintenance_types: subIssueCategory ? [subIssueCategory] : undefined, title } })
       .then((r) => { if (!cancelled) setRecurrence(r.data); })
       .catch(() => { if (!cancelled) setRecurrence(null); });
     return () => { cancelled = true; };
-  }, [selectedVehicleId, liveValues.fault_category, liveValues.ticket_title]);
+  }, [selectedVehicleId, subIssueCategory, liveValues.ticket_title]);
 
   const setField = (name, value) => { setLiveValues((v) => ({ ...v, [name]: value })); onDirty?.(); };
   // Any repair-type-specific entry mode means the issue (and how it'll be
@@ -13447,7 +13320,6 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
         vehicle_id: liveValues.vehicle_id,
         assigned_custodian_id: liveValues.assigned_custodian_id,
         ticket_title: liveValues.ticket_title,
-        fault_category: liveValues.fault_category || undefined,
         ticket_description: liveValues.ticket_description,
         priority: liveValues.priority,
         entry_mode: liveValues.entry_mode,
@@ -13471,7 +13343,6 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
 
   const vehicleOptions = (ticketLookups.vehicles ?? []).filter((v) => v.status !== 'Inactive' && v.status !== 'Decommissioned');
   const custodianOptions = ticketLookups.custodians ?? [];
-  const faultCategoryOptions = ticketLookups.fault_categories ?? [];
   const priorityOptions = ticketLookups.priorities ?? [];
   const selectedVehicle = vehicleOptions.find((v) => String(v.vehicle_id) === String(liveValues.vehicle_id)) ?? null;
   const selectedCustodian = custodianOptions.find((c) => String(c.id) === String(liveValues.assigned_custodian_id)) ?? null;
@@ -13682,26 +13553,10 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
           <div className="veh-card-head"><Icon name="alert" size={16} /><h4>Issue Details</h4></div>
           <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="ticket-form-grid-2" style={{ padding: 0 }}>
-              <label style={!preDiagnosed ? { gridColumn: '1 / -1' } : undefined}>
+              <label style={{ gridColumn: '1 / -1' }}>
                 <span>Ticket Title <span className="required-asterisk">*</span></span>
                 <input required type="text" value={liveValues.ticket_title ?? ''} onChange={(e) => setField('ticket_title', e.target.value)} />
               </label>
-              {/* Fault Category classifies the confirmed symptom — asking for
-                  it in Needs Inspection mode would mean guessing at a
-                  diagnosis nobody has made yet. Only Pre-Diagnosed tickets
-                  already know what's wrong, so this only makes sense there. */}
-              {preDiagnosed && (
-                <label>
-                  <span>Fault Category</span>
-                  <CreatableSelect
-                    value={liveValues.fault_category ?? ''}
-                    onChange={(v) => setField('fault_category', v)}
-                    options={faultCategoryOptions}
-                    newItemLabel="fault category"
-                    catalogEndpoint="/fault-categories"
-                  />
-                </label>
-              )}
             </div>
             <label>
               <span>Description / Details <span className="required-asterisk">*</span></span>
@@ -13811,7 +13666,6 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
     vehicle_id: prefilledTicketData.vehicle_id ?? '',
     ticket_title: prefilledTicketData.ticket_title ?? '',
     ticket_description: prefilledTicketData.ticket_description ?? '',
-    fault_category: prefilledTicketData.fault_category ?? '',
     priority: prefilledTicketData.priority ?? '',
     entry_mode: prefilledTicketData.entry_mode ?? null,
   } : {}));
@@ -13821,7 +13675,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
       ? seeded.map((title) => ({ title, maintenance_type: '', suggested_mechanic_id: '' }))
       : [{ title: '', maintenance_type: '', suggested_mechanic_id: '' }];
   });
-  const emptyPartRow = { part_missing: '', part_needed: '', suggested_mechanic_id: '' };
+  const emptyPartRow = { part_missing: '', part_needed: '', maintenance_type: '', suggested_mechanic_id: '' };
   const [partRows, setPartRows] = useDraftState(draftKeyBase + ':part-rows', () => [emptyPartRow]);
   const [submitting, setSubmitting] = useState(false);
   const [validationLines, setValidationLines] = useState(null);
@@ -13865,7 +13719,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
       entry_mode: value,
       source_vehicle_id: '',
       external_vendor: '', external_reason: '', external_work_scope: '', external_shop_contact: '',
-      external_sent_by: '', external_contact_person: '', external_estimated_cost: '',
+      external_sent_by: '', external_contact_person: '', external_estimated_cost: '', external_maintenance_type: '',
     }));
     setPartRows([emptyPartRow]);
     onDirty?.();
@@ -13907,7 +13761,6 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
         ticket_title: liveValues.ticket_title,
         ticket_description: liveValues.ticket_description,
         priority: liveValues.priority,
-        fault_category: liveValues.fault_category || undefined,
         entry_mode: entryMode,
         issue_report_id: linkedIssueId || undefined,
         condition_check_id: linkedConditionId || undefined,
@@ -13927,7 +13780,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
         out.source_vehicle_id = liveValues.source_vehicle_id;
         out.sub_issues = filledPartRows.map((r) => ({
           title: `Replace ${r.part_missing.trim()} using ${r.part_needed.trim()} from ${donor?.vehicle_name ?? 'donor vehicle'}`.slice(0, 255),
-          maintenance_type: null,
+          maintenance_type: r.maintenance_type || null,
           part_missing: r.part_missing.trim(),
           part_needed: r.part_needed.trim(),
           suggested_mechanic_id: r.suggested_mechanic_id || null,
@@ -13945,7 +13798,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
         });
         out.sub_issues = [{
           title: `External shop: ${liveValues.external_work_scope.trim().split('\n')[0]}`.slice(0, 255),
-          maintenance_type: null,
+          maintenance_type: liveValues.external_maintenance_type || null,
           suggested_mechanic_id: null,
         }];
       }
@@ -13957,7 +13810,6 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
   };
 
   const vehicleOptions = (ticketLookups.vehicles ?? []).filter((v) => v.status !== 'Inactive' && v.status !== 'Decommissioned');
-  const faultCategoryOptions = ticketLookups.fault_categories ?? [];
   const priorityOptions = ticketLookups.priorities ?? [];
   const mechanicOptions = ticketLookups.maintenance_personnel ?? [];
   const selectedVehicle = vehicleOptions.find((v) => String(v.vehicle_id) === String(liveValues.vehicle_id)) ?? null;
@@ -13979,11 +13831,12 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
   const titleHint = isInHouse
     ? (subIssueRows[0]?.maintenance_type || '')
     : isCannibalized
-      ? ((partRows[0]?.part_missing ?? '').trim()
-        ? `${partRows[0].part_missing.trim()}${partRows.length > 1 ? ` + ${partRows.length - 1} more` : ''} Replacement`
-        : '')
+      ? (partRows[0]?.maintenance_type
+        || ((partRows[0]?.part_missing ?? '').trim()
+          ? `${partRows[0].part_missing.trim()}${partRows.length > 1 ? ` + ${partRows.length - 1} more` : ''} Replacement`
+          : ''))
       : isExternal
-        ? 'External Shop Repair'
+        ? (liveValues.external_maintenance_type || 'External Shop Repair')
         : '';
   useEffect(() => {
     if (!selectedVehicle || !titleHint) return;
@@ -14083,19 +13936,9 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
           <div className="veh-card-head"><Icon name="alert" size={16} /><h4>Issue Details</h4></div>
           <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="ticket-form-grid-2" style={{ padding: 0 }}>
-              <label>
+              <label style={{ gridColumn: '1 / -1' }}>
                 <span>Ticket Title <span className="required-asterisk">*</span></span>
                 <input required type="text" value={liveValues.ticket_title ?? ''} onChange={(e) => setField('ticket_title', e.target.value)} />
-              </label>
-              <label>
-                <span>Fault Category</span>
-                <CreatableSelect
-                  value={liveValues.fault_category ?? ''}
-                  onChange={(v) => setField('fault_category', v)}
-                  options={faultCategoryOptions}
-                  newItemLabel="fault category"
-                  catalogEndpoint="/fault-categories"
-                />
               </label>
             </div>
             <label>
@@ -14140,6 +13983,17 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
                       <input type="text" placeholder="e.g. Alternator (12V, 90A)" value={row.part_needed} onChange={(e) => updatePartRow(index, { part_needed: e.target.value })} />
                     </label>
                     <label>
+                      <span>Maintenance Type</span>
+                      <CreatableSelect
+                        value={row.maintenance_type ?? ''}
+                        onChange={(v) => updatePartRow(index, { maintenance_type: v })}
+                        options={ticketLookups?.maintenance_types ?? []}
+                        placeholder="Select a category or type to add new"
+                        newItemLabel="maintenance type"
+                        catalogEndpoint="/maintenance-types"
+                      />
+                    </label>
+                    <label>
                       <span>Suggested Mechanic (does the swap)</span>
                       <select value={row.suggested_mechanic_id ?? ''} onChange={(e) => updatePartRow(index, { suggested_mechanic_id: e.target.value })}>
                         <option value="">Unassigned — Admin will decide</option>
@@ -14180,6 +14034,17 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
                   <option value="">{' '}</option>
                   {(ticketLookups.external_reasons ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
+              </label>
+              <label>
+                <span>Maintenance Type</span>
+                <CreatableSelect
+                  value={liveValues.external_maintenance_type ?? ''}
+                  onChange={(v) => setField('external_maintenance_type', v)}
+                  options={ticketLookups?.maintenance_types ?? []}
+                  placeholder="Select a category or type to add new"
+                  newItemLabel="maintenance type"
+                  catalogEndpoint="/maintenance-types"
+                />
               </label>
               <label>
                 <span>External Shop Name</span>
@@ -14588,6 +14453,68 @@ function ReadinessCheckForm({ vehicle, onCancel, onSubmit }) {
 // list is only ever what someone explicitly uploaded here: receipts,
 // registration papers, insurance, etc. Fetches its own data so the parent
 // profile page doesn't need to know about documents at all.
+// Read-only "filing cabinet" for an issue report's files: photos as a
+// thumbnail grid, everything else as typed rows. A legacy single photo_url
+// (reports from before multi-file) is folded in as the first photo.
+function IssueFilesCard({ issue }) {
+  const files = [
+    ...(issue.photo_url ? [{ key: 'legacy', url: resolvePhotoUrl(issue.photo_url), name: 'Photo', isImage: true, at: issue.created_at, by: issue.reported_by?.name }] : []),
+    ...(issue.attachments ?? []).map((att) => {
+      const name = att.original_name ?? att.file_url?.split('/').pop() ?? 'Attachment';
+      return {
+        key: att.attachment_id,
+        url: resolvePhotoUrl(att.file_url),
+        name,
+        ext: (name.match(/\.([a-z0-9]+)$/i)?.[1] ?? 'file').toUpperCase(),
+        isImage: /\.(png|jpe?g|gif|webp)$/i.test(name),
+        at: att.created_at,
+        by: att.uploaded_by?.name,
+      };
+    }),
+  ];
+  const photos = files.filter((f) => f.isImage);
+  const docs = files.filter((f) => !f.isImage);
+
+  return (
+    <section className="veh-card veh-files issue-files">
+      <div className="veh-card-head veh-files-head">
+        <div className="veh-files-head-title"><Icon name="clipboard" size={16} /><h4>Files</h4></div>
+        {files.length > 0 && <span className="count-badge">{files.length}</span>}
+      </div>
+      <div className="veh-files-body">
+        {files.length === 0 ? (
+          <div className="file-card-empty">No files attached</div>
+        ) : (
+          <>
+            {photos.length > 0 && (
+              <div className="issue-files-grid">
+                {photos.map((f) => (
+                  <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className="issue-files-thumb" title={f.name}>
+                    <img src={f.url} alt={f.name} />
+                  </a>
+                ))}
+              </div>
+            )}
+            {docs.length > 0 && (
+              <div className="issue-files-list">
+                {docs.map((f) => (
+                  <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className="issue-files-row">
+                    <span className={`issue-files-ext is-${f.ext.toLowerCase()}`}>{f.ext}</span>
+                    <span className="issue-files-meta">
+                      <strong>{f.name}</strong>
+                      <span>{[f.by, f.at && formatDate(f.at)].filter(Boolean).join(' · ')}</span>
+                    </span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
   // canManage (Admin + Custodian, from VehicleProfilePage's
   // canManageDocuments) governs upload only here — VehicleFilesModal reads

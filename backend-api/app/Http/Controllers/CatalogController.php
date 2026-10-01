@@ -169,7 +169,7 @@ class CatalogController extends Controller
 
         DB::transaction(function () use ($reportedPerson, $newName, $oldName) {
             $reportedPerson->update(['name' => $newName]);
-            VehicleIssueReport::withoutGlobalScopes()->where('reported_on_behalf_of', $oldName)->update(['reported_on_behalf_of' => $newName]);
+            TicketSubIssue::where('external_sent_by', $oldName)->update(['external_sent_by' => $newName]);
         });
 
         return $reportedPerson->fresh();
@@ -180,7 +180,7 @@ class CatalogController extends Controller
         $this->requireAbility($request, 'catalog.delete');
 
         $this->abortIfInUse($reportedPerson->name, [
-            'issue report' => VehicleIssueReport::withoutGlobalScopes()->where('reported_on_behalf_of', $reportedPerson->name)->count(),
+            'ticket' => TicketSubIssue::where('external_sent_by', $reportedPerson->name)->count(),
         ]);
 
         $reportedPerson->delete();

@@ -1318,12 +1318,14 @@ class FleetController extends Controller
         $this->requireAbility($request, 'ticket.check_recurrence');
 
         $data = $request->validate([
-            'fault_category' => ['nullable', 'string'],
-            'title'          => ['required', 'string'],
+            'maintenance_types'   => ['nullable', 'array'],
+            'maintenance_types.*' => ['string'],
+            'issue_type'          => ['nullable', 'string'],
+            'title'               => ['required', 'string'],
         ]);
 
         return response()->json(
-            $this->checkRecurrence($vehicle->vehicle_id, $data['fault_category'] ?? null, $data['title'])
+            $this->checkRecurrence($vehicle->vehicle_id, $data['maintenance_types'] ?? [], $data['issue_type'] ?? null, $data['title'])
         );
     }
 
@@ -1380,7 +1382,6 @@ class FleetController extends Controller
             'issue_type' => ['required', 'string', 'max:150'],
             'issue_description' => ['required', 'string'],
             'severity_level' => ['required', Rule::in(['Low', 'Medium', 'High'])],
-            'reported_on_behalf_of' => ['nullable', 'string', 'max:255'],
             // Was a single 'photo' (image only) — now any number of files of
             // any common type, matching VehicleDocument's "file cabinet".
             'attachments' => ['nullable', 'array'],
@@ -1389,9 +1390,6 @@ class FleetController extends Controller
         ]);
 
         $data['issue_type'] = FaultCategory::resolve($data['issue_type']);
-        if (!empty($data['reported_on_behalf_of'])) {
-            $data['reported_on_behalf_of'] = ReportedPerson::resolve($data['reported_on_behalf_of']);
-        }
 
         // A retired/archived vehicle is out of the fleet — no new reports on it.
         $reportedVehicle = Vehicle::findOrFail($data['vehicle_id']);
@@ -1445,7 +1443,6 @@ class FleetController extends Controller
                 'issue_type' => ['sometimes', 'string', 'max:150'],
                 'issue_description' => ['sometimes', 'string'],
                 'severity_level' => ['sometimes', Rule::in(['Low', 'Medium', 'High'])],
-                'reported_on_behalf_of' => ['nullable', 'string', 'max:255'],
                 'attachments' => ['nullable', 'array'],
                 'attachments.*' => ['file', 'mimes:jpg,jpeg,png,pdf,doc,docx', 'max:10240'],
                 'remarks' => ['nullable', 'string'],
@@ -1453,9 +1450,6 @@ class FleetController extends Controller
 
             if (isset($data['issue_type'])) {
                 $data['issue_type'] = FaultCategory::resolve($data['issue_type']);
-            }
-            if (!empty($data['reported_on_behalf_of'])) {
-                $data['reported_on_behalf_of'] = ReportedPerson::resolve($data['reported_on_behalf_of']);
             }
 
             $uploadedFiles = $request->file('attachments', []);
@@ -1711,13 +1705,7 @@ class FleetController extends Controller
 
     public function storeMaintenanceRecord(Request $request)
     {
-        // A Custodian may only reach this via the "resolve my deferred issue"
-        // bridge (issue_report_id set) — anything else still needs the full
-        // Admin-only record.create ability.
-        $resolvingOwnIssue = $request->filled('issue_report_id') && $request->user()->canDo('record.create_from_issue');
-        if (!$resolvingOwnIssue) {
-            $this->requireAbility($request, 'record.create');
-        }
+        $this->requireAbility($request, 'record.create');
 
         $data = $request->validate([
             'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],

@@ -143,7 +143,6 @@ class TicketController extends Controller
             'custodians'            => User::where('barangay_id', $request->user()->barangay_id)->havingRole('Custodian')->orderBy('name')->get(['id', 'name', 'email', 'photo_url']),
             'maintenance_personnel' => User::where('barangay_id', $request->user()->barangay_id)->havingRole('Maintenance Personnel')->orderBy('name')->get(['id', 'name', 'email']),
             'priorities'            => $this->priorities,
-            'fault_categories'      => FaultCategory::orderBy('name')->pluck('name'),
             'maintenance_types'     => MaintenanceType::orderBy('name')->pluck('name'),
             // 'Pending Approval' included so a Custodian's proposal has a
             // checkbox of its own in the ticket list's status filter — it
@@ -213,7 +212,6 @@ class TicketController extends Controller
             'issue_report_id'       => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
             'condition_check_id'    => ['nullable', 'exists:vehicle_condition_checks,condition_check_id'],
             'ticket_title'          => ['required', 'string', 'max:255'],
-            'fault_category'        => ['nullable', 'string', 'max:150'],
             'ticket_description'    => ['required', 'string'],
             'priority'              => ['required', Rule::in($this->priorities)],
             'assigned_custodian_id' => ['required', 'exists:users,id'],
@@ -238,12 +236,9 @@ class TicketController extends Controller
             'warranty_until'        => ['nullable', 'date'],
         ]);
 
-        // Fault category / maintenance type are a growing catalog, not a
-        // fixed enum — a value that doesn't exist yet is persisted here so
-        // it's offered as a real option everywhere else next time.
-        if (!empty($data['fault_category'])) {
-            $data['fault_category'] = FaultCategory::resolve($data['fault_category']);
-        }
+        // Maintenance type is a growing catalog, not a fixed enum — a value
+        // that doesn't exist yet is persisted here so it's offered as a real
+        // option everywhere else next time.
         if (!empty($data['sub_issues'])) {
             foreach ($data['sub_issues'] as &$subIssueInput) {
                 if (!empty($subIssueInput['maintenance_type'])) {
@@ -288,23 +283,17 @@ class TicketController extends Controller
         abort_unless($custodian->hasRole('Custodian'), 422, 'The selected user is not a Custodian.');
         abort_unless($custodian->barangay_id === $vehicle->barangay_id, 422, 'The selected Custodian does not belong to this barangay.');
 
-        // #8 — a ticket's fault category defaults to the linked issue report's
-        // standardized issue type when the Admin didn't pick one, so recurrence
-        // and cost grouping have a reliable category to key on.
-        $faultCategory = $data['fault_category'] ?? null;
-        if (!$faultCategory && !empty($data['issue_report_id'])) {
-            $faultCategory = optional(VehicleIssueReport::find($data['issue_report_id']))->issue_type;
-        }
-
         // #9 — recurrence: how many times this same fault was already
         // fixed on this vehicle in the last 90 days — via a Closed ticket OR
         // a Completed Maintenance Record (a roadside/external-shop fix would
-        // otherwise be invisible here). Keyed on fault_category when
-        // available, else normalized title (best-effort).
-        $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $faultCategory, $data['ticket_title']);
+        // otherwise be invisible here). See ChecksRecurrence for matching.
+        $maintenanceTypes = array_column($data['sub_issues'] ?? [], 'maintenance_type');
+        $issueType = !empty($data['issue_report_id']) ? optional(VehicleIssueReport::find($data['issue_report_id']))->issue_type : null;
+        $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $maintenanceTypes, $issueType, $data['ticket_title']);
         $recurrence = $recurrenceInfo['count'];
+        $recurrenceLabel = implode(' / ', array_filter(array_unique($maintenanceTypes))) ?: ($issueType ?? $data['ticket_title']);
 
-        $ticket = DB::transaction(function () use ($data, $request, $recurrence, $recurrenceInfo, $preDiagnosed, $repairType, $faultCategory, $normalizedIncomingTitle) {
+        $ticket = DB::transaction(function () use ($data, $request, $recurrence, $recurrenceInfo, $preDiagnosed, $repairType, $normalizedIncomingTitle, $recurrenceLabel) {
             // Lock the vehicle row first — serializes concurrent createTicket
             // calls for the SAME vehicle so two requests can't both pass the
             // "no duplicate Main Issue" check before either has inserted.
@@ -329,7 +318,6 @@ class TicketController extends Controller
                 'issue_report_id'       => $data['issue_report_id'] ?? null,
                 'created_by'            => $request->user()->id,
                 'ticket_title'          => $data['ticket_title'],
-                'fault_category'        => $faultCategory,
                 'ticket_description'    => $data['ticket_description'],
                 'priority'              => $data['priority'],
                 // #1 — pre-diagnosed tickets are born Active (inspection skipped);
@@ -427,7 +415,7 @@ class TicketController extends Controller
                 $ordinal = ['st', 'nd', 'rd'][$recurrence] ?? 'th';
                 $this->notifyAdmins(
                     'Recurring Fault Detected',
-                    "This is the " . ($recurrence + 1) . "{$ordinal} time \"" . ($faultCategory ?? $data['ticket_title']) . "\" has been logged on {$vehicle->vehicle_name} in 90 days — last fixed via {$lastFixSource} (Ticket #{$ticket->ticket_id}). Consider a deeper fix or decommission review.",
+                    "This is the " . ($recurrence + 1) . "{$ordinal} time \"" . $recurrenceLabel . "\" has been logged on {$vehicle->vehicle_name} in 90 days — last fixed via {$lastFixSource} (Ticket #{$ticket->ticket_id}). Consider a deeper fix or decommission review.",
                     'recurring_fault',
                     $ticket->ticket_id,
                     $vehicle->barangay_id
@@ -462,7 +450,6 @@ class TicketController extends Controller
             'issue_report_id'     => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
             'condition_check_id'  => ['nullable', 'exists:vehicle_condition_checks,condition_check_id'],
             'ticket_title'        => ['required', 'string', 'max:255'],
-            'fault_category'      => ['nullable', 'string', 'max:150'],
             'ticket_description'  => ['required', 'string'],
             'priority'            => ['required', Rule::in($this->priorities)],
             // How the Custodian is reporting it. 'inspection' = the problem
@@ -495,9 +482,6 @@ class TicketController extends Controller
             'sub_issues.*.suggested_mechanic_id'   => ['nullable', 'exists:users,id'],
         ]);
 
-        if (!empty($data['fault_category'])) {
-            $data['fault_category'] = FaultCategory::resolve($data['fault_category']);
-        }
         if (!empty($data['external_sent_by'])) {
             $data['external_sent_by'] = ReportedPerson::resolve($data['external_sent_by']);
         }
@@ -568,10 +552,13 @@ class TicketController extends Controller
             ], 422);
         }
 
-        $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $data['fault_category'] ?? null, $data['ticket_title']);
+        $maintenanceTypes = array_column($data['sub_issues'], 'maintenance_type');
+        $issueType = !empty($data['issue_report_id']) ? optional(VehicleIssueReport::find($data['issue_report_id']))->issue_type : null;
+        $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $maintenanceTypes, $issueType, $data['ticket_title']);
         $recurrence = $recurrenceInfo['count'];
+        $recurrenceLabel = implode(' / ', array_filter(array_unique($maintenanceTypes))) ?: ($issueType ?? $data['ticket_title']);
 
-        $ticket = DB::transaction(function () use ($data, $request, $vehicle, $recurrence, $recurrenceInfo, $normalizedIncomingTitle, $repairType) {
+        $ticket = DB::transaction(function () use ($data, $request, $vehicle, $recurrence, $recurrenceInfo, $normalizedIncomingTitle, $repairType, $recurrenceLabel) {
             // Lock the vehicle row first — same TOCTOU fix as createTicket(),
             // serializing concurrent proposals for the SAME vehicle so two
             // requests can't both pass the duplicate check before either has
@@ -594,7 +581,6 @@ class TicketController extends Controller
                 'issue_report_id'         => $data['issue_report_id'] ?? null,
                 'created_by'              => $request->user()->id,
                 'ticket_title'            => $data['ticket_title'],
-                'fault_category'          => $data['fault_category'] ?? null,
                 'ticket_description'      => $data['ticket_description'],
                 'priority'                => $data['priority'],
                 'status'                  => 'Pending Approval',
@@ -658,7 +644,7 @@ class TicketController extends Controller
                 $ordinal = ['st', 'nd', 'rd'][$recurrence] ?? 'th';
                 $this->notifyAdmins(
                     'Recurring Fault Detected',
-                    "This is the " . ($recurrence + 1) . "{$ordinal} time \"" . ($data['fault_category'] ?? $data['ticket_title']) . "\" has been logged on {$vehicle->vehicle_name} in 90 days — last fixed via {$lastFixSource} (Ticket #{$ticket->ticket_id}). Consider a deeper fix or decommission review.",
+                    "This is the " . ($recurrence + 1) . "{$ordinal} time \"" . $recurrenceLabel . "\" has been logged on {$vehicle->vehicle_name} in 90 days — last fixed via {$lastFixSource} (Ticket #{$ticket->ticket_id}). Consider a deeper fix or decommission review.",
                     'recurring_fault',
                     $ticket->ticket_id,
                     $vehicle->barangay_id
@@ -687,7 +673,6 @@ class TicketController extends Controller
 
         $data = $request->validate([
             'ticket_title'          => ['sometimes', 'string', 'max:255'],
-            'fault_category'        => ['nullable', 'string', 'max:150'],
             'ticket_description'    => ['sometimes', 'string'],
             'priority'              => ['sometimes', Rule::in($this->priorities)],
             'assigned_custodian_id' => ['sometimes', 'exists:users,id'],
@@ -697,10 +682,6 @@ class TicketController extends Controller
             'sub_issues.*.maintenance_type'      => ['nullable', 'string', 'max:150'],
             'sub_issues.*.suggested_mechanic_id' => ['nullable', 'exists:users,id'],
         ]);
-
-        if (isset($data['fault_category'])) {
-            $data['fault_category'] = FaultCategory::resolve($data['fault_category']);
-        }
 
         if (isset($data['assigned_custodian_id'])) {
             $newCustodian = User::findOrFail($data['assigned_custodian_id']);
@@ -720,7 +701,7 @@ class TicketController extends Controller
             abort_unless($locked && $locked->status === 'Pending Approval', 422, 'This proposal was already approved or declined.');
 
             $ticket->update(array_intersect_key($data, array_flip([
-                'ticket_title', 'fault_category', 'ticket_description', 'priority', 'assigned_custodian_id',
+                'ticket_title', 'ticket_description', 'priority', 'assigned_custodian_id',
             ])));
 
             foreach ($data['sub_issues'] ?? [] as $subData) {
