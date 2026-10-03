@@ -17,8 +17,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Admin's "what now?" on an open issue report: ask the Custodians to propose a
- * ticket (Admin can't start one), or dismiss it with a reason.
+ * Admin's next step on an open issue report that needs no ticket: dismiss it
+ * with a reason.
  */
 class IssueNextStepTest extends TestCase
 {
@@ -64,39 +64,23 @@ class IssueNextStepTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_ask_the_custodians_to_propose_a_ticket(): void
-    {
-        $issue = $this->issue();
-
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->postJson("/api/issues/{$issue->issue_report_id}/request-ticket")->assertOk();
-
-        $this->assertSame('Under Review', $issue->fresh()->status);
-        foreach ([$this->custodian, $this->otherCustodian] as $c) {
-            $this->assertDatabaseHas('notifications', ['user_id' => $c->id, 'type' => 'ticket_requested']);
-        }
-        $this->assertDatabaseMissing('notifications', ['user_id' => $this->mechanic->id, 'type' => 'ticket_requested']);
-    }
-
-    #[Test]
-    public function only_admin_can_ask_for_a_ticket_or_dismiss(): void
+    public function only_admin_can_dismiss(): void
     {
         $issue = $this->issue();
 
         foreach ([$this->custodian, $this->mechanic] as $who) {
             Sanctum::actingAs($who, ['*']);
-            $this->postJson("/api/issues/{$issue->issue_report_id}/request-ticket")->assertForbidden();
             $this->putJson("/api/issues/{$issue->issue_report_id}/dismiss", ['dismiss_reason' => 'x'])->assertForbidden();
         }
     }
 
     #[Test]
-    public function a_ticket_cannot_be_requested_for_a_resolved_issue_or_one_that_already_has_a_ticket(): void
+    public function a_resolved_issue_or_one_that_already_has_a_ticket_cannot_be_dismissed(): void
     {
         Sanctum::actingAs($this->admin, ['*']);
 
         $resolved = $this->issue('Resolved');
-        $this->postJson("/api/issues/{$resolved->issue_report_id}/request-ticket")->assertStatus(422);
+        $this->putJson("/api/issues/{$resolved->issue_report_id}/dismiss", ['dismiss_reason' => 'x'])->assertStatus(422);
 
         $withTicket = $this->issue('In Maintenance');
         MaintenanceTicket::create([
@@ -104,7 +88,6 @@ class IssueNextStepTest extends TestCase
             'created_by' => $this->custodian->id, 'ticket_title' => 'T', 'ticket_description' => 'x', 'priority' => 'High',
             'status' => 'Active', 'assigned_custodian_id' => $this->custodian->id, 'assigned_at' => now(),
         ]);
-        $this->postJson("/api/issues/{$withTicket->issue_report_id}/request-ticket")->assertStatus(422);
         $this->putJson("/api/issues/{$withTicket->issue_report_id}/dismiss", ['dismiss_reason' => 'x'])->assertStatus(422);
     }
 

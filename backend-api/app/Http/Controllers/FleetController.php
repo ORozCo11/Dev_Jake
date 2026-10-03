@@ -1520,38 +1520,6 @@ class FleetController extends Controller
     }
 
     /**
-     * Admin's "what now?" on an open issue report. Admin never starts a
-     * ticket themselves (every ticket begins as a Custodian's proposal), so
-     * this asks the barangay's Custodians to do it — they get a notification
-     * and the report shows their Propose Ticket action. The report moves to
-     * Under Review so it's clear someone has been asked.
-     */
-    public function requestTicketForIssue(Request $request, VehicleIssueReport $issue)
-    {
-        $this->requireAbility($request, 'issue.request_ticket');
-
-        abort_unless(in_array($issue->status, ['Pending', 'Under Review'], true), 422, "This issue is already {$issue->status} — a ticket can't be requested for it.");
-        abort_if($issue->maintenanceTicket()->exists(), 422, 'A ticket already exists for this issue.');
-
-        $vehicle = $issue->vehicle;
-
-        DB::transaction(function () use ($issue, $vehicle, $request) {
-            $issue->update(['status' => 'Under Review']);
-
-            $this->notifyCustodians(
-                'Ticket Requested',
-                "{$request->user()->name} asked for a ticket to be proposed for {$vehicle->vehicle_name}: {$issue->issue_type}. Open Report / Propose and use Propose Ticket on issue #{$issue->issue_report_id}.",
-                'ticket_requested',
-                $vehicle->barangay_id
-            );
-
-            $this->log($request, 'Edit', 'Vehicle Issue Reports', $issue->issue_report_id, "Asked Custodians to propose a ticket for issue report #{$issue->issue_report_id}");
-        });
-
-        return $issue->fresh(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments']);
-    }
-
-    /**
      * Admin closes an open issue report that doesn't need a ticket — not a
      * real problem, or already handled. A reason is required and goes to the
      * reporter. Deliberately does NOT touch the vehicle's status (unlike the

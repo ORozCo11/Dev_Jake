@@ -731,6 +731,14 @@ class TicketController extends Controller
             ]);
             $vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
 
+            // The Custodian's title has no ticket number yet (a proposal is
+            // created before its own ID is known) — fold it in now, so every
+            // approved ticket reads "#<id> - <vehicle> - <issue>".
+            $idPrefix = "#{$ticket->ticket_id} - ";
+            if (!str_starts_with($ticket->ticket_title, $idPrefix)) {
+                $ticket->update(['ticket_title' => $idPrefix . $ticket->ticket_title]);
+            }
+
             $dispatchedMechanics = [];
             foreach ($ticket->subIssues()->get() as $subIssue) {
                 if (!$subIssue->suggested_mechanic_id) {

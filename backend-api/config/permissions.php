@@ -53,9 +53,9 @@ return [
     // existing own-report-while-Pending narrowing is unaffected.
     'issue.edit' => ['Admin', 'Custodian'],
     'issue.delete' => ['Admin'],
-    // Admin's next steps on an open report: nudge the Custodians to propose a
-    // ticket for it (Admin can't start a ticket themselves), or dismiss it.
-    'issue.request_ticket' => ['Admin'],
+    // Admin's one next step on an open report that doesn't need a ticket.
+    // (Turning a report into a ticket is a Custodian's proposal; Admin asking a
+    // Custodian to propose would just be Admin asking themselves — circular.)
     'issue.dismiss' => ['Admin'],
 
     // Vehicle documents — Phase B4: Maintenance Personnel is view-only

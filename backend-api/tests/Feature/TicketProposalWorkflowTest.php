@@ -225,9 +225,24 @@ class TicketProposalWorkflowTest extends TestCase
         ])->assertOk();
 
         $ticket->refresh();
-        $this->assertSame('Overheating — confirmed radiator leak', $ticket->ticket_title);
+        // The ticket's own # is folded in on approval — a proposal is created
+        // before its ID is known, so the Custodian's title never has it.
+        $this->assertSame("#{$ticket->ticket_id} - Overheating — confirmed radiator leak", $ticket->ticket_title);
         $this->assertSame('Medium', $ticket->priority);
         $this->assertSame($otherMechanic->id, $ticket->subIssues->first()->assigned_mechanic_id);
+    }
+
+
+    #[Test]
+    public function approving_folds_the_tickets_own_number_into_its_title(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->propose($vehicle, ['ticket_title' => 'Overheating']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+
+        $this->assertSame("#{$ticket->ticket_id} - Overheating", $ticket->fresh()->ticket_title);
     }
 
     #[Test]

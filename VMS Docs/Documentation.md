@@ -40,9 +40,14 @@ Admin, Custodian, and Maintenance Personnel are strictly scoped to the one Baran
 
 ## 5. Core workflow: the maintenance ticket lifecycle
 
-This is the heart of the system. A ticket moves through 3 top-level statuses, with real work happening per **sub-issue** underneath it:
+This is the heart of the system. A ticket can start one of two ways:
 
-1. **Open** — Admin has created the ticket (either from a reported Issue, a Condition Monitoring check, or from scratch) and assigned a Custodian to inspect the vehicle in person.
+- **Admin-created** — the Admin opens a ticket directly (from a reported Issue, a Condition Monitoring check, or from scratch) and assigns a Custodian to inspect the vehicle in person; sub-issues are filled in once that inspection happens.
+- **Custodian-proposed** — a Custodian who already knows what's wrong submits a full proposal for the Admin to approve or decline, picking one repair path: **in-house** (repaired by the barangay's own mechanics; can optionally be flagged as **cannibalized**, swapping in a part taken from a donor vehicle instead of a new one), or **external** (sent to an outside shop). Each sub-issue in the proposal carries its own Maintenance Type and Suggested Mechanic — a single ticket can mix different kinds of repair (e.g. a brake job and an electrical fix) without forcing one category on every sub-issue. The ticket's title is generated automatically from the vehicle and repair type (the Custodian never types one); on approval, the ticket's own number is folded into it, e.g. `#42 - Ambulance 1 - Brake Repair`. A proposal can optionally link to an existing open Issue Report on that vehicle instead of creating an untracked duplicate.
+
+A Custodian-proposed ticket sits in **Pending Approval** until the Admin approves it (it becomes Active, sub-issues and all, since the Custodian already supplied them) or declines it (it's removed). An Admin-created ticket instead moves through 3 top-level statuses, with real work happening per **sub-issue** underneath it:
+
+1. **Open** — Admin has created the ticket and assigned a Custodian to inspect the vehicle in person.
 2. **Active** — the Custodian's inspection produced one or more sub-issues (root causes). Each sub-issue is independently:
    - assigned to a mechanic (Under Repair),
    - logged with repair notes/parts once done (For Inspection),
@@ -55,6 +60,7 @@ Extra signals layered on top: **recurrence detection** (the same fault reported 
 
 ## 6. Other modules
 
+- **Issue Reports** — a running to-do list of known, not-yet-repaired vehicle defects: deferred sub-issues, leftover notes from a cannibalized-repair donor vehicle, and other flagged concerns. It's not an action queue — the only thing an Admin does with one directly is **Dismiss** it (with a required reason) once it's no longer relevant. If a Custodian has already proposed a ticket for it, the report's View action opens that ticket directly instead of the report itself.
 - **Vehicle Management / Vehicle Types** — the vehicle catalog. Vehicle Types carry a Domain (Land/Water) that changes which fields a vehicle of that type asks for (Hull Material/Engine Type for Water vehicles).
 - **Vehicle Location** — a map of hubs (named parking/stationing points) with vehicles grouped under them; hubs can't be deleted while a vehicle is still assigned to them.
 - **Vehicle History** — an automatic timeline of every location/issue/condition/maintenance event per vehicle.

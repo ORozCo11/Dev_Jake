@@ -174,7 +174,6 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/issues', [FleetController::class, 'storeIssue']);
     Route::put('/issues/{issue}', [FleetController::class, 'updateIssue']);
     Route::delete('/issues/{issue}', [FleetController::class, 'destroyIssue']);
-    Route::post('/issues/{issue}/request-ticket', [FleetController::class, 'requestTicketForIssue']);
     Route::put('/issues/{issue}/dismiss', [FleetController::class, 'dismissIssue']);
     Route::delete('/issue-attachments/{attachment}', [FleetController::class, 'destroyIssueAttachment']);
 
