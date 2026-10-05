@@ -131,6 +131,30 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
     }
 
     #[Test]
+    public function the_auto_proposed_ticket_reads_as_planned_work_not_a_diagnosed_defect(): void
+    {
+        // Final senior system review (2026-10-05, §3) — preventive
+        // maintenance isn't a reported fault; the ticket and sub-issue
+        // titles should say so instead of just repeating the maintenance
+        // type the way a diagnosed-defect proposal's sub-issue title would.
+        $vehicle = $this->vehicle();
+        $schedule = VehicleMaintenanceSchedule::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+            'scheduled_date' => now()->toDateString(),
+            'created_by' => $this->custodian->id,
+            'status' => 'Scheduled',
+        ]);
+
+        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
+
+        $ticket = MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id);
+        $this->assertSame('Preventive Maintenance - Oil Change', $ticket->ticket_title);
+        $this->assertSame('Scheduled Maintenance', $ticket->subIssues->first()->title);
+        $this->assertSame('Oil Change', $ticket->subIssues->first()->maintenance_type);
+    }
+
+    #[Test]
     public function a_future_schedule_is_not_converted(): void
     {
         $vehicle = $this->vehicle();
@@ -193,12 +217,16 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
             'maintenance_type' => 'Oil Change',
             'scheduled_date' => now()->toDateString(),
             'created_by' => $this->custodian->id,
+            'assigned_to' => $this->mechanic->id,
             'status' => 'Scheduled',
         ]);
         $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
 
-        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
-        Sanctum::actingAs($admin, ['*']);
+        // Final senior system review (2026-10-05, §2) — only the assigned
+        // Maintenance Personnel can even reach completeSchedule() now, so
+        // this specifically tests THAT guard (resulting_ticket_id), not the
+        // role check a non-mechanic would trip first.
+        Sanctum::actingAs($this->mechanic, ['*']);
         $response = $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [])
             ->assertStatus(422);
 

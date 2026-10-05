@@ -101,8 +101,12 @@ class ConvertDueSchedulesToTickets extends Command
         // a schedule must never silently spawn a second Main Issue when one
         // already covers the same maintenance type on this vehicle. Left
         // 'Scheduled' (not converted) so a human can sort out the conflict;
-        // this command will simply try again on the next run.
-        $normalizedTitle = $this->normalizeTicketTitle($schedule->maintenance_type);
+        // this command will simply try again on the next run. Normalized
+        // against the same "Preventive Maintenance - {type}" format the
+        // ticket below is actually titled with, so this stays self-consistent
+        // across runs instead of comparing against a title nothing uses.
+        $ticketTitle = "Preventive Maintenance - {$schedule->maintenance_type}";
+        $normalizedTitle = $this->normalizeTicketTitle($ticketTitle);
         $duplicate = MaintenanceTicket::where('vehicle_id', $vehicle->vehicle_id)
             ->whereNotIn('status', ['Closed', 'Cancelled'])
             ->get(['ticket_id', 'ticket_title'])
@@ -113,11 +117,11 @@ class ConvertDueSchedulesToTickets extends Command
             return false;
         }
 
-        DB::transaction(function () use ($schedule, $vehicle, $custodian) {
+        DB::transaction(function () use ($schedule, $vehicle, $custodian, $ticketTitle) {
             $ticket = MaintenanceTicket::create([
                 'vehicle_id' => $vehicle->vehicle_id,
                 'created_by' => $custodian->id,
-                'ticket_title' => $schedule->maintenance_type,
+                'ticket_title' => $ticketTitle,
                 'ticket_description' => "Auto-proposed from Maintenance Schedule #{$schedule->schedule_id}, due {$schedule->scheduled_date}."
                     . ($schedule->notes ? " Notes: {$schedule->notes}" : ''),
                 'priority' => 'Medium',
@@ -133,10 +137,15 @@ class ConvertDueSchedulesToTickets extends Command
                 ? User::find($schedule->assigned_to)
                 : null;
 
+            // Final senior system review (2026-10-05, §3) — a preventive
+            // schedule isn't a diagnosed defect, so its sub-issue shouldn't
+            // be titled as though it is. "Scheduled Maintenance" names what
+            // kind of work this is; maintenance_type still carries the real
+            // type for every downstream list/filter/report that reads it.
             TicketSubIssue::create([
                 'ticket_id' => $ticket->ticket_id,
                 'created_by' => $custodian->id,
-                'title' => $schedule->maintenance_type,
+                'title' => 'Scheduled Maintenance',
                 'maintenance_type' => $schedule->maintenance_type,
                 'suggested_mechanic_id' => $suggestedMechanic?->id,
                 'status' => 'Open',

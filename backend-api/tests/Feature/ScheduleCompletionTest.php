@@ -57,11 +57,10 @@ class ScheduleCompletionTest extends TestCase
     public function completing_a_schedule_marks_it_done_and_creates_a_linked_record(): void
     {
         $vehicle = $this->vehicle();
-        $schedule = $this->schedule($vehicle); // one-off (no recurrence)
+        $schedule = $this->schedule($vehicle, ['assigned_to' => $this->mechanic->id]); // one-off (no recurrence)
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->mechanic, ['*']);
         $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [
-            'maintenance_personnel_id' => $this->mechanic->id,
             'maintenance_cost' => 800,
         ])->assertOk();
 
@@ -87,14 +86,13 @@ class ScheduleCompletionTest extends TestCase
         // Production-readiness final stabilization pass (2026-10-05, P0) —
         // a receipt/photo is supporting evidence only; it must never
         // silently finalize a schedule without an independent Custodian
-        // check, even when Admin is the one completing it.
+        // check, even with proof attached.
         \Illuminate\Support\Facades\Storage::fake('supabase');
         $vehicle = $this->vehicle();
-        $schedule = $this->schedule($vehicle);
+        $schedule = $this->schedule($vehicle, ['assigned_to' => $this->mechanic->id]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->mechanic, ['*']);
         $this->put("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [
-            'maintenance_personnel_id' => $this->mechanic->id,
             'maintenance_cost' => 800,
             'receipt' => \Illuminate\Http\UploadedFile::fake()->create('receipt.pdf', 50, 'application/pdf'),
         ])->assertOk();
@@ -114,12 +112,12 @@ class ScheduleCompletionTest extends TestCase
         $schedule = $this->schedule($vehicle, [
             'scheduled_date' => '2026-07-20',
             'recurrence_months' => 3,
+            'assigned_to' => $this->mechanic->id,
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->mechanic, ['*']);
         $response = $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [
             'date_completed' => '2026-07-20',
-            'maintenance_personnel_id' => $this->mechanic->id,
         ])->assertOk();
 
         // The next occurrence is seeded 3 months out, still recurring.
@@ -145,12 +143,12 @@ class ScheduleCompletionTest extends TestCase
         $schedule = $this->schedule($vehicle, [
             'scheduled_date' => '2026-01-31',
             'recurrence_months' => 1,
+            'assigned_to' => $this->mechanic->id,
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->mechanic, ['*']);
         $response = $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [
             'date_completed' => '2026-01-31',
-            'maintenance_personnel_id' => $this->mechanic->id,
         ])->assertOk();
 
         $next = $response->json('next');
@@ -168,12 +166,12 @@ class ScheduleCompletionTest extends TestCase
         $schedule = $this->schedule($vehicle, [
             'scheduled_date' => '2028-01-31',
             'recurrence_months' => 1,
+            'assigned_to' => $this->mechanic->id,
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->mechanic, ['*']);
         $response = $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [
             'date_completed' => '2028-01-31',
-            'maintenance_personnel_id' => $this->mechanic->id,
         ])->assertOk();
 
         $next = $response->json('next');
@@ -185,9 +183,9 @@ class ScheduleCompletionTest extends TestCase
     public function an_already_completed_schedule_cannot_be_completed_again(): void
     {
         $vehicle = $this->vehicle();
-        $schedule = $this->schedule($vehicle, ['status' => 'Completed']);
+        $schedule = $this->schedule($vehicle, ['status' => 'Completed', 'assigned_to' => $this->mechanic->id]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->mechanic, ['*']);
         $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [])
             ->assertUnprocessable();
     }
@@ -202,6 +200,32 @@ class ScheduleCompletionTest extends TestCase
         Sanctum::actingAs($custodian, ['*']);
         $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [])
             ->assertForbidden();
+    }
+
+    #[Test]
+    public function an_admin_cannot_complete_a_schedule_directly_and_must_reassign_it_instead(): void
+    {
+        // Final senior system review (2026-10-05, §2/§12) — "complete" means
+        // physically performed the maintenance, and Admin never performs
+        // repair work in this system. Previously Admin could complete ANY
+        // schedule (even unassigned, silently recording themselves as the
+        // performer); now only the assigned Maintenance Personnel can, and
+        // Admin's recourse for a stuck/unassigned schedule is reassigning it.
+        $vehicle = $this->vehicle();
+        $schedule = $this->schedule($vehicle, ['assigned_to' => $this->mechanic->id]);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [])
+            ->assertForbidden();
+
+        $another = User::factory()->create(['role' => 'Maintenance Personnel', 'roles' => ['Maintenance Personnel']]);
+        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/reassign", [
+            'assigned_to' => $another->id,
+        ])->assertOk();
+
+        Sanctum::actingAs($another, ['*']);
+        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [])
+            ->assertOk();
     }
 
     #[Test]

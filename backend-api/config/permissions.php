@@ -105,7 +105,18 @@ return [
     // Admin edits any.
     'schedule.edit' => ['Admin', 'Custodian'],
     'schedule.reassign' => ['Admin'],
-    'schedule.complete' => ['Admin', 'Maintenance Personnel'],
+    // Final senior system review (2026-10-05, §2/§12) — Admin no longer
+    // completes a schedule directly. "Complete" means physically performed
+    // the maintenance, and Admin never performs repair work in this system
+    // (same rule as ticket sub-issues). Previously Admin could complete ANY
+    // schedule, including an unassigned one with nobody specified as the
+    // performer, which silently recorded ADMIN as the repair performer —
+    // inconsistent with storeMaintenanceRecord()'s own stricter requirement
+    // that a performer always be named explicitly. An Admin who needs to
+    // hand off a stuck/unassigned schedule now reassigns it
+    // (schedule.reassign) to the Maintenance Personnel who'll actually do
+    // the work, exactly like reassigning a ticket's mechanic.
+    'schedule.complete' => ['Maintenance Personnel'],
     'schedule.delete' => ['Admin'],
     'schedule.restore' => ['Admin'],
 

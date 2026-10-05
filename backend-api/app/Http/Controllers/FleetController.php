@@ -2495,23 +2495,23 @@ class FleetController extends Controller
 
         // A schedule is visible to every mechanic (it's a shared calendar), but
         // only ONE of them should ever be able to act on it — otherwise two
-        // people can show up for the same job. Admin can always override;
-        // a Maintenance Personnel account can only complete a schedule that is
-        // assigned to THEM specifically. Reassigning (updateSchedule) changes
-        // who this check allows immediately, since it reads assigned_to live.
-        if (!$request->user()->hasRole('Admin')) {
-            abort_unless(
-                $schedule->assigned_to && (int) $schedule->assigned_to === (int) $request->user()->id,
-                403,
-                $schedule->assigned_to
-                    ? 'This schedule is assigned to another mechanic.'
-                    : 'This schedule has no assigned mechanic yet — ask an Admin to assign it before marking it done.'
-            );
-        }
+        // people can show up for the same job. Final senior system review
+        // (2026-10-05, §2) — Admin no longer gets a blanket override here;
+        // only the Maintenance Personnel this schedule is actually assigned
+        // to can complete it. Reassigning (schedule.reassign, Admin-only)
+        // changes who this check allows immediately, since it reads
+        // assigned_to live — that's how Admin hands off a stuck schedule now,
+        // instead of completing it themselves.
+        abort_unless(
+            $schedule->assigned_to && (int) $schedule->assigned_to === (int) $request->user()->id,
+            403,
+            $schedule->assigned_to
+                ? 'This schedule is assigned to another mechanic.'
+                : 'This schedule has no assigned mechanic yet — ask an Admin to assign it before marking it done.'
+        );
 
         $data = $request->validate([
             'date_completed'           => ['nullable', 'date'],
-            'maintenance_personnel_id' => ['nullable', 'exists:users,id'],
             'maintenance_cost'         => ['nullable', 'numeric', 'min:0'],
             'is_external'              => ['nullable', 'boolean'],
             'external_vendor'          => ['nullable', 'string', 'max:255'],
@@ -2526,20 +2526,17 @@ class FleetController extends Controller
         unset($data['receipt']);
 
         $completedDate = $data['date_completed'] ?? now()->toDateString();
-        $personnelId   = $data['maintenance_personnel_id'] ?? $schedule->assigned_to ?? $request->user()->id;
+        // Only the assigned Maintenance Personnel can reach this point now
+        // (see the abort_unless above) — they're always the performer, never
+        // a stand-in named by someone else.
+        $personnelId   = $request->user()->id;
 
-        // Proof-of-completion fast close — same rule as a standalone
-        // Maintenance Record: a receipt (external shop) or a photo of the
-        // finished work (in-house) is real proof a Custodian re-check
-        // doesn't add anything to; a typed note is not. Admin-only, same as
-        // the record path, so a mechanic can't certify their own repair as
-        // done — they can still attach proof, it just still goes to
-        // Custodian verification with that as supporting evidence.
-        // Production-readiness audit (2026-10-05, P0) — removed the
-        // "Admin + receipt attached = instantly Completed, no Custodian
-        // check" shortcut. A receipt/photo can still be attached as
-        // evidence; it never substitutes for the independent Custodian
-        // verification every other maintenance path already requires.
+        // A receipt (external shop) or a photo of the finished work
+        // (in-house) can still be attached as evidence — it just never
+        // substitutes for the independent Custodian verification every
+        // maintenance path in this system requires (production-readiness
+        // audit, 2026-10-05, P0 — the old "receipt attached = instantly
+        // Completed" shortcut was removed here).
         $result = DB::transaction(function () use ($schedule, $data, $request, $completedDate, $personnelId) {
             $vehicle = $schedule->vehicle;
 

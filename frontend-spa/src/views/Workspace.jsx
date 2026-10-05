@@ -3263,14 +3263,6 @@ function Workspace() {
             <SmartForm
               fields={[
                 { label: 'Date Completed', name: 'date_completed', type: 'date' },
-                // Only an assigned mechanic (or Admin) can even open this
-                // modal now — for a mechanic completing their own job,
-                // "who performed it" is already answered by "you".
-                // Admin keeps the picker since they can complete an
-                // unassigned schedule on someone's behalf.
-                ...(hasRole(user, 'Admin')
-                  ? [{ label: 'Performed By', name: 'maintenance_personnel_id', options: options(lookups.maintenance_performers, 'id', 'name'), type: 'select' }]
-                  : []),
                 { label: 'Cost (optional)', name: 'maintenance_cost', type: 'number' },
                 // Sometimes a scheduled job turns out to need a
                 // third-party shop instead of in-house work.
@@ -3278,13 +3270,7 @@ function Workspace() {
                   { value: 0, label: 'No — done in-house' },
                   { value: 1, label: 'Yes — external shop repair' },
                 ] },
-                // Vendor/warranty only matter when it went external, so
-                // those two stay conditional. Proof of completion below
-                // does NOT — a receipt (external) or a photo of the
-                // finished work (in-house) are equally valid proof, and
-                // either is what actually lets Admin close this
-                // immediately instead of waiting on Custodian
-                // verification. A typed note alone is never enough.
+                // Vendor/warranty only matter when it went external.
                 ...(completeScheduleExternal ? [
                   { label: 'External Shop', name: 'external_vendor', type: 'text', placeholder: 'e.g. Bautista Auto Shop' },
                   { label: 'Warranty Until', name: 'warranty_until', type: 'date' },
@@ -3294,14 +3280,16 @@ function Workspace() {
                   name: 'receipt',
                   type: 'file',
                   accept: 'image/*,.pdf',
-                  hint: hasRole(user, 'Admin')
-                    ? 'Attach a receipt (external shop) or a photo of the completed repair (in-house) to close this immediately — no separate Custodian verification needed.'
-                    : 'Attach a receipt or a photo of the completed repair so the Custodian verifying this has proof.',
+                  // Final senior system review (2026-10-05, §2) — only the
+                  // assigned Maintenance Personnel can even open this modal
+                  // now, and a receipt/photo is evidence only; it never skips
+                  // the Custodian check, for anyone.
+                  hint: 'Attach a receipt or a photo of the completed repair so the Custodian verifying this has proof.',
                 },
                 { label: 'Notes (what was done)', name: 'notes', type: 'textarea', rows: 2 },
               ]}
               key={`complete-${completeScheduleTarget.schedule_id}`}
-              initialValues={{ date_completed: new Date().toISOString().slice(0, 10), maintenance_personnel_id: completeScheduleTarget.assigned_to ?? '' }}
+              initialValues={{ date_completed: new Date().toISOString().slice(0, 10) }}
               onValuesChange={(vals) => setCompleteScheduleExternal(vals.is_external === 1 || vals.is_external === '1' || vals.is_external === true)}
               onCancel={() => setCompleteScheduleTarget(null)}
               onSubmit={(payload) => completeSchedule(completeScheduleTarget, payload)}
@@ -10536,7 +10524,7 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
           {row.status === 'Scheduled' && row.resulting_ticket_id && onViewTicket && (
             <button className="btn-view-action icon-btn" onClick={() => onViewTicket({ ticket_id: row.resulting_ticket_id })} type="button" title={`This schedule became Ticket #${row.resulting_ticket_id} — open it`} aria-label={`Open Ticket #${row.resulting_ticket_id}`}><Icon name="ticket" size={14} /></button>
           )}
-          {row.status === 'Scheduled' && !row.resulting_ticket_id && onComplete && (isAdmin || (currentUserId != null && String(row.assigned_to) === String(currentUserId))) && (
+          {row.status === 'Scheduled' && !row.resulting_ticket_id && onComplete && (currentUserId != null && String(row.assigned_to) === String(currentUserId)) && (
             <button className="btn-confirm-action icon-btn" onClick={() => onComplete(row)} type="button" title="Mark as Done" aria-label="Mark as Done"><Icon name="checkCircle" size={14} /></button>
           )}
           {row.status === 'Completed' && row.resulting_maintenance_id && onViewRecord && (
@@ -10614,8 +10602,11 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
   const overdue = isScheduleOverdue(row);
   const resulting = row.resulting_maintenance;
   // Once a due schedule has become a ticket, the ticket is where the work is
-  // done — completing the schedule directly would be refused.
-  const canComplete = row.status === 'Scheduled' && !row.resulting_ticket_id && onComplete && (isAdmin || isMine);
+  // done — completing the schedule directly would be refused. Final senior
+  // system review (2026-10-05, §2) — Admin no longer completes a schedule
+  // directly (that's physically performing the work); only the assigned
+  // Maintenance Personnel can.
+  const canComplete = row.status === 'Scheduled' && !row.resulting_ticket_id && onComplete && isMine;
   const becameTicket = row.status === 'Scheduled' && row.resulting_ticket_id && onViewTicket;
 
   return (
