@@ -1337,11 +1337,17 @@ class FleetController extends Controller
     {
         $user = $request->user();
 
-        // Maintenance Personnel report a fault they find through a sub-issue
-        // on their own assigned ticket instead — they have no reason to
-        // browse anyone else's filed reports (VMS-IMPROVEMENT-PLAN.md Phase B3).
+        // Maintenance Personnel can file a technical issue report (see
+        // storeIssue()) and track it from their own "Vehicle Issues" sidebar
+        // entry, but still have no reason to browse the whole barangay's
+        // queue of everyone else's reports — that stays a Custodian/Admin
+        // concern, so this scopes to reports THEY filed.
         if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
-            return collect();
+            return VehicleIssueReport::with(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments'])
+                ->where('reported_by', $user->id)
+                ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
+                ->latest('issue_report_id')
+                ->get();
         }
 
         // Issues on retired (Inactive/Decommissioned) vehicles are excluded —
@@ -1428,6 +1434,25 @@ class FleetController extends Controller
 
             $this->history($vehicle, 'Issue Reported', "{$data['issue_type']} was reported for {$vehicle->vehicle_name}.", 'vehicle_issue_reports', $issue->issue_report_id, $request);
             $this->log($request, 'Add', 'Vehicle Issue Reports', $issue->issue_report_id, "Reported {$data['issue_type']} for {$vehicle->vehicle_name}");
+
+            $this->notifyAdmins(
+                'New Vehicle Issue Reported',
+                "{$request->user()->name} reported {$data['issue_type']} for {$vehicle->vehicle_name}.",
+                'issue_reported',
+                $vehicle->barangay_id
+            );
+
+            // A mechanic's technical finding isn't a ticket by itself — it
+            // has to go through a Custodian's propose-ticket workflow, so the
+            // Custodian needs to actually hear about it to act on it.
+            if ($request->user()->hasRole('Maintenance Personnel') && !$request->user()->hasAnyRole(['Admin', 'Custodian'])) {
+                $this->notifyCustodians(
+                    'Technical Issue Reported by Maintenance',
+                    "{$request->user()->name} reported {$data['issue_type']} for {$vehicle->vehicle_name} — review it and propose a ticket if it needs one.",
+                    'issue_reported',
+                    $vehicle->barangay_id
+                );
+            }
 
             return $issue;
         });
@@ -2931,7 +2956,10 @@ class FleetController extends Controller
     {
         ActivityLog::create([
             'user_id' => $request->user()?->id,
-            'role' => $request->user()?->role,
+            // The role this action was actually authorized under, when a
+            // requireAbility() call ran earlier in this request — falls back
+            // to the primary role for endpoints with no ability gate.
+            'role' => $request->attributes->get('vms_acted_as_role') ?? $request->user()?->role,
             'action' => $action,
             'module' => $module,
             'affected_record_id' => $affectedRecordId ? (string) $affectedRecordId : null,

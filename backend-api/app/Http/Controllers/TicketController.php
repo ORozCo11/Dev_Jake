@@ -2293,7 +2293,10 @@ class TicketController extends Controller
     {
         ActivityLog::create([
             'user_id' => $request->user()?->id,
-            'role'    => $request->user()?->role,
+            // The role this action was actually authorized under, when a
+            // requireAbility() call ran earlier in this request — falls back
+            // to the primary role for endpoints with no ability gate.
+            'role'    => $request->attributes->get('vms_acted_as_role') ?? $request->user()?->role,
             'action'  => $action,
             'module'  => 'Maintenance Tickets',
             'affected_record_id' => $affectedRecordId,

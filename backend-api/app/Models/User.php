@@ -152,4 +152,34 @@ class User extends Authenticatable
 
         return $this->hasAnyRole($allowedRoles);
     }
+
+    /**
+     * Which of this account's roles actually granted the given ability — the
+     * "function used" for an audit-log entry, as opposed to the primary
+     * `role` (which only reflects routing/dashboard layout). A dual-role
+     * account (e.g. Custodian + Maintenance Personnel) performing a
+     * Maintenance-only action should have THAT role recorded, even when
+     * their primary role is Custodian. Falls back to the primary role when
+     * the ability is unknown or the account doesn't actually hold it (the
+     * caller should already have gated on canDo() before reaching here).
+     */
+    public function effectiveRoleFor(string $ability): ?string
+    {
+        $allowedRoles = config('permissions')[$ability] ?? [];
+
+        // Primary role first (allRoles() doesn't guarantee that ordering on
+        // its own), so a role held both primarily and in the secondary
+        // `roles` list is reported the same way canDo() already treats it —
+        // a tie goes to the role that drives this account's dashboard/routing.
+        if ($this->role && in_array($this->role, $allowedRoles, true)) {
+            return $this->role;
+        }
+        foreach ($this->allRoles() as $candidate) {
+            if (in_array($candidate, $allowedRoles, true)) {
+                return $candidate;
+            }
+        }
+
+        return $this->role;
+    }
 }

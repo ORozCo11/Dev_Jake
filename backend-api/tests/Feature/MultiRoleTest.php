@@ -157,4 +157,51 @@ class MultiRoleTest extends TestCase
         $this->assertSame('Closed', MaintenanceTicket::find($ticketId)->status);
         $this->assertSame('Available', $vehicle->fresh()->status);
     }
+
+    #[Test]
+    public function the_activity_log_records_which_hat_a_dual_role_user_acted_under(): void
+    {
+        // Juan's PRIMARY role is Custodian, but he also holds Maintenance
+        // Personnel. Logging a repair is a Maintenance-only action — the
+        // audit trail should say so, not just repeat his primary role.
+        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        $juan = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian', 'Maintenance Personnel']]);
+        $vehicle = $this->vehicle();
+
+        $ticketId = MaintenanceTicket::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'created_by' => $admin->id,
+            'ticket_title' => 'Overheating',
+            'ticket_description' => 'Runs hot.',
+            'priority' => 'High',
+            'status' => 'Open',
+            'assigned_custodian_id' => $juan->id,
+            'assigned_at' => now(),
+        ])->ticket_id;
+
+        Sanctum::actingAs($juan, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/inspect", [
+            'inspection_result' => 'Needs Maintenance',
+            'inspection_notes' => 'Confirmed.',
+            'sub_issues' => [['title' => 'Low coolant level']],
+        ])->assertOk();
+        $subIssue = MaintenanceTicket::find($ticketId)->subIssues->first();
+
+        Sanctum::actingAs($admin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+            'assigned_mechanic_id' => $juan->id,
+            'maintenance_type' => 'Engine Repair',
+        ])->assertOk();
+
+        Sanctum::actingAs($juan, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/log-repairs", [
+            'repair_logs' => 'Refilled coolant, tested.',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $juan->id,
+            'role' => 'Maintenance Personnel',
+            'action' => 'Repairs Logged',
+        ]);
+    }
 }

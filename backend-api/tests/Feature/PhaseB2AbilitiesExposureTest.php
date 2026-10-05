@@ -46,6 +46,9 @@ class PhaseB2AbilitiesExposureTest extends TestCase
         $abilities = $response->json('abilities');
         $this->assertIsArray($abilities);
         $this->assertContains('ticket.inspect', $abilities);
-        $this->assertNotContains('vehicle.create', $abilities);
+        // A Custodian may register a vehicle when delegated to (role
+        // realignment decision 6), but still can't edit one afterward.
+        $this->assertContains('vehicle.create', $abilities);
+        $this->assertNotContains('vehicle.edit', $abilities);
     }
 }

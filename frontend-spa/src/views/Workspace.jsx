@@ -105,17 +105,16 @@ const modulesByRole = {
   ],
   Custodian: [
     { section: null, items: [['dashboard', 'Dashboard']] },
-    // VMS Improvement Plan — sidebar consolidation: what used to be 5
-    // separate rows (Report Vehicle Issue, Propose Ticket, Assigned
-    // Inspections, Repair Verifications, Work Tracker) are now 2 — a
-    // chooser entry point (see 'reportOrPropose' handling in renderModule)
-    // and a tabbed container (see 'myTasks' handling below and its tab bar
-    // in renderModule). Neither key has its own moduleEndpoints entry —
-    // both are pure navigation/presentation wrappers around the same
-    // components and data flows the old 5 rows used unchanged.
+    // 'reportOrPropose' ('issues' module under the hood) is the Issue
+    // Reports list, with a "Report Vehicle Issue" action and a "Propose
+    // Ticket" action both inline in its header — not a separate chooser
+    // screen. 'myTasks' stays a tabbed container (Assigned Inspections /
+    // Repair Verification / Work Tracker — see renderModule's tab bar).
+    // Neither key has its own moduleEndpoints entry — both are pure
+    // navigation/presentation wrappers around shared components/data.
     { section: 'Daily Tasks', icon: 'checkCircle', items: [
       ['vehicles', 'View Vehicles'],
-      ['reportOrPropose', 'Report / Propose'],
+      ['reportOrPropose', 'Report Vehicle Issue'],
       ['myTasks', 'My Tasks'],
     ] },
     { section: 'Monitoring & Schedules', icon: 'calendar', items: [
@@ -133,6 +132,10 @@ const modulesByRole = {
       ['dashboard', 'Dashboard'],
       ['ticketWorkOrders', 'My Work Orders'],
       ['workTracker', 'Work Tracker'],
+      // Same Issue Reports list Admin/Custodian use — the "Report
+      // Technical Issue" action lives inline in its header (issue.create),
+      // gated the same way for every role that holds it.
+      ['issues', 'Vehicle Issues'],
     ] },
   ],
 };
@@ -307,9 +310,8 @@ const moduleIcons = {
       <line x1="10" y1="12" x2="14" y2="12" />
     </svg>
   ),
-  // Merged Custodian entry point (Task 2 of the sidebar consolidation) —
-  // reuses the `issues` warning-triangle glyph since the chooser it opens
-  // still leads with "flag a concern" as the first, most common option.
+  // Custodian's Issue Reports entry point — reuses the `issues`
+  // warning-triangle glyph since it's the same list/module.
   reportOrPropose: (
     <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
@@ -1525,7 +1527,18 @@ function Workspace() {
       }
 
       request = moduleRequest(moduleKey, existing, finalPayload);
-      await sendPayload(request.method, request.path, finalPayload);
+      const response = await sendPayload(request.method, request.path, finalPayload);
+
+      // Land on the report just filed — with its own [Create Maintenance
+      // Ticket] action right there — instead of back on the list, which
+      // would make the reporter search for what they just submitted.
+      if (moduleKey === 'issues' && !existing && response?.data?.issue_report_id) {
+        await refreshCurrent();
+        setNotice({ type: 'success', text: request.success });
+        navigate(`${roleRoutes[user.role]}/issues/${response.data.issue_report_id}`);
+        return true;
+      }
+
       await finishFormPageSuccess(moduleKey, existing, request.success);
       return true;
     } catch (error) {
@@ -3040,7 +3053,7 @@ function Workspace() {
             <FormPage
               description={issueDescription(user.role)}
               onBack={() => returnToModule('issues')}
-              fields={issueFields(lookups, editIssueId ? { issue_report_id: editIssueId } : null, user.role, (!editIssueId && hasRole(user, 'Admin')) ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`, { state: { returnTo: location.pathname } }) : undefined)}
+              fields={issueFields(lookups, editIssueId ? { issue_report_id: editIssueId } : null, user.role, (!editIssueId && canDo(user, 'vehicle.create')) ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`, { state: { returnTo: location.pathname } }) : undefined)}
               initialValues={editIssueId
                 ? (records.issues ?? []).find((i) => String(i.issue_report_id) === String(editIssueId))
                 : (location.state?.prefillVehicleId ? { vehicle_id: location.state.prefillVehicleId } : EMPTY_OBJ)}
@@ -3407,7 +3420,7 @@ function Workspace() {
               onChange={setSearchQuery}
               placeholder="Search vehicles..."
               columnChooser={vehicleColumnChooser}
-              onAdd={hasRole(user, 'Admin') ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`) : undefined}
+              onAdd={canDo(user, 'vehicle.create') ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`) : undefined}
               addLabel="Add Vehicle"
               onExport={() => exportRowsToCsv('vehicles.csv', VEHICLE_EXPORT_COLUMNS, visibleRows)}
             />
@@ -3810,12 +3823,10 @@ function Workspace() {
       );
     }
 
-    // Task 2 of the sidebar consolidation — Custodian's merged "Report /
-    // Propose" entry point. This is only ever a chooser screen: each option
-    // just triggers the exact same navigation the old separate 'issues' and
-    // 'ticketPropose' sidebar rows used to (switch to the unchanged 'issues'
-    // module below, or navigate straight to /tickets/new — same as the old
-    // direct link), so neither underlying flow needed any changes at all.
+    // Issue Reports list — Admin, Custodian ('reportOrPropose' in their
+    // sidebar), and Maintenance Personnel ('issues') all land here. Its
+    // header carries a "Report Vehicle/Technical Issue" action (issue.create)
+    // and, for whoever holds ticket.propose, a "Propose Ticket" action.
     if (activeModule === 'issues') {
       if (hasRole(user, 'Custodian') && !hasVehicles) {
         return (
@@ -3891,6 +3902,15 @@ function Workspace() {
                 <input type="checkbox" checked={filterNoTicket} onChange={(e) => setFilterNoTicket(e.target.checked)} />
                 Needs a ticket ({(records.issues ?? []).filter(issueNeedsTicket).length})
               </label>
+            )}
+            {canDo(user, 'issue.create') && (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => navigate(`${roleRoutes[user.role]}/issues/new`)}
+              >
+                <Icon name="alert" size={14} /> Report {hasRole(user, 'Maintenance Personnel') && !hasRole(user, 'Custodian') ? 'Technical Issue' : 'Vehicle Issue'}
+              </button>
             )}
             <LocalSearchInput
               value={searchQuery}
@@ -8452,9 +8472,8 @@ function issueFields(lookups, editTarget, role, onAddVehicle) {
   return [
     {
       label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select',
-      // Admin-only — only Admin can actually create a vehicle
-      // (FleetController::storeVehicle), so this shortcut isn't offered to
-      // Custodian/Maintenance Personnel, who'd just hit a permissions wall.
+      // Only offered to whoever actually holds vehicle.create (Admin, and a
+      // delegated Custodian) — anyone else would just hit a permissions wall.
       action: onAddVehicle ? { label: '+ Add Vehicle', onClick: onAddVehicle } : undefined,
     },
     // Phase B4 — Admin keeps the original "+ Add New" catalog affordance;

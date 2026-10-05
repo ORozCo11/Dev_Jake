@@ -152,7 +152,10 @@ class PhaseB3DataScopingTest extends TestCase
     }
 
     // =======================================================================
-    // GET /issues — Custodian now sees ALL (not just own); Maintenance sees NONE
+    // GET /issues — Custodian sees ALL (not just own); Maintenance Personnel
+    // sees only the technical issues THEY filed (their "Vehicle Issues"
+    // sidebar entry tracks their own reports, not the whole barangay's queue
+    // — that stays a Custodian/Admin concern).
     // =======================================================================
 
     #[Test]
@@ -172,7 +175,7 @@ class PhaseB3DataScopingTest extends TestCase
     }
 
     #[Test]
-    public function maintenance_personnel_sees_no_issue_reports(): void
+    public function maintenance_personnel_sees_only_their_own_issue_reports(): void
     {
         $vehicle = $this->vehicle();
         VehicleIssueReport::create([
@@ -181,10 +184,17 @@ class PhaseB3DataScopingTest extends TestCase
             'issue_description' => 'Front-left tire flat.',
             'reported_by' => $this->mechanic->id,
         ]);
+        VehicleIssueReport::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'issue_type' => 'Overheating',
+            'issue_description' => 'Reported by someone else entirely.',
+            'reported_by' => $this->custodian->id,
+        ]);
 
         Sanctum::actingAs($this->mechanic, ['*']);
         $response = $this->getJson('/api/issues')->assertOk();
-        $this->assertCount(0, $response->json());
+        $this->assertCount(1, $response->json());
+        $this->assertSame('Flat tire', $response->json()[0]['issue_type']);
     }
 
     // =======================================================================

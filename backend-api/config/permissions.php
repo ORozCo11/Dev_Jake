@@ -20,7 +20,11 @@ return [
     'vehicle_type.delete' => ['Admin'],
 
     // Vehicles
-    'vehicle.create' => ['Admin'],
+    // Registration is data entry, not a transfer of accountability — a
+    // Custodian may register a vehicle when the barangay delegates that to
+    // them, but vehicle.edit stays Admin-only below, so the protected
+    // master record can't be freely changed afterward by whoever typed it in.
+    'vehicle.create' => ['Admin', 'Custodian'],
     'vehicle.edit' => ['Admin'],
     'vehicle.archive' => ['Admin'],
     'vehicle.restore' => ['Admin'],
