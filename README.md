@@ -137,7 +137,7 @@ Permission checks use role membership (not just the primary role), so multi-role
 - Dashboard
 - Maintenance: My Work Orders · Work Tracker · Maintenance Records · Maintenance Schedule
 - Issues: Vehicle Issues (their own reports, with a Report Technical Issue action inline)
-- Vehicles: View Vehicles · Vehicle Documents
+- Vehicles: View Vehicles (no Vehicle Documents access — repair evidence lives on the work order itself)
 
 ---
 

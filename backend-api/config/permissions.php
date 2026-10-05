@@ -66,10 +66,17 @@ return [
     // Custodian to propose would just be Admin asking themselves — circular.)
     'issue.dismiss' => ['Admin'],
 
-    // Vehicle documents — Phase B4: Maintenance Personnel is view-only
-    // (dropped from all three); Custodian may upload and edit their OWN
-    // upload (FleetController enforces the ownership half via added_by),
-    // but delete is Admin-only.
+    // Vehicle documents — production-readiness final stabilization pass
+    // (2026-10-05, P0): Maintenance Personnel has NO Vehicle Documents
+    // access at all now, not even view-only — they still see repair
+    // evidence/photos through the ticket/work-order record itself, which is
+    // a separate thing from this module. Custodian may upload and edit
+    // their OWN upload (FleetController enforces the ownership half via
+    // added_by), but delete is Admin-only. `document.view` didn't exist
+    // before — the list endpoint had no ability check at all, reachable by
+    // anyone authenticated; this makes the Maintenance Personnel exclusion
+    // an explicit grant instead of an accident of what wasn't gated.
+    'document.view' => ['Admin', 'Custodian'],
     'document.create' => ['Admin', 'Custodian'],
     'document.edit' => ['Admin', 'Custodian'],
     'document.delete' => ['Admin'],
@@ -89,11 +96,10 @@ return [
     // vehicle's condition; booking a date isn't a cost/risk decision the
     // way completing it is) turned out to be right. Custodian owns
     // creation; Admin keeps oversight (edit/cancel/reassign any of them,
-    // not just their own) without originating new ones. `schedule.suggest`
-    // is now redundant — Custodian can just create directly — kept only
-    // because SOMETHING still calls it; safe to retire once nothing does.
+    // not just their own) without originating new ones.
+    // `schedule.suggest`/suggestSchedule() retired in the final
+    // stabilization pass (2026-10-05, P1) — confirmed zero callers.
     'schedule.create' => ['Custodian'],
-    'schedule.suggest' => ['Admin', 'Custodian'],
     // Custodian may edit their OWN created entry (ownership enforced in
     // FleetController::updateSchedule, same pattern as condition.edit);
     // Admin edits any.

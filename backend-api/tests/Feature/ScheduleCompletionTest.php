@@ -67,10 +67,9 @@ class ScheduleCompletionTest extends TestCase
 
         // Schedule closed...
         $this->assertSame('Completed', $schedule->fresh()->status);
-        // ...and a matching maintenance record now exists (proof of work) —
-        // 'For Verification' since no receipt/photo was attached (fast-close
-        // requires one), pending the same Custodian check every other
-        // maintenance path requires.
+        // ...and a matching maintenance record now exists (proof of work),
+        // always 'For Verification' — pending the same independent
+        // Custodian check every other maintenance path requires.
         $this->assertDatabaseHas('vehicle_maintenance_records', [
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
@@ -80,6 +79,32 @@ class ScheduleCompletionTest extends TestCase
         $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
         // A one-off schedule does NOT spawn a follow-up.
         $this->assertSame(1, VehicleMaintenanceSchedule::where('vehicle_id', $vehicle->vehicle_id)->count());
+    }
+
+    #[Test]
+    public function attaching_a_receipt_does_not_bypass_custodian_verification(): void
+    {
+        // Production-readiness final stabilization pass (2026-10-05, P0) —
+        // a receipt/photo is supporting evidence only; it must never
+        // silently finalize a schedule without an independent Custodian
+        // check, even when Admin is the one completing it.
+        \Illuminate\Support\Facades\Storage::fake('supabase');
+        $vehicle = $this->vehicle();
+        $schedule = $this->schedule($vehicle);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->put("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [
+            'maintenance_personnel_id' => $this->mechanic->id,
+            'maintenance_cost' => 800,
+            'receipt' => \Illuminate\Http\UploadedFile::fake()->create('receipt.pdf', 50, 'application/pdf'),
+        ])->assertOk();
+
+        $record = VehicleMaintenanceRecord::where('vehicle_id', $vehicle->vehicle_id)->firstOrFail();
+        $this->assertNotNull($record->receipt_url, 'The receipt should still be attached as evidence.');
+        $this->assertSame('For Verification', $record->progress_status);
+        $this->assertNull($record->verification_result);
+        $this->assertNull($record->confirmed_by);
+        $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
     }
 
     #[Test]

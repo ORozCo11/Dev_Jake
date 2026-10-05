@@ -1653,6 +1653,8 @@ class FleetController extends Controller
     // registration papers, insurance, etc.
     public function vehicleDocuments(Request $request, Vehicle $vehicle)
     {
+        $this->requireAbility($request, 'document.view');
+
         return VehicleDocument::where('vehicle_id', $vehicle->vehicle_id)
             ->with('addedBy:id,name')
             ->orderByDesc('document_id')
@@ -1834,68 +1836,40 @@ class FleetController extends Controller
             'Please select who performed the repair.'
         );
 
-        // Proof-of-completion fast close: what actually justifies skipping
-        // Custodian verification is that something REAL is attached — a
-        // receipt for an external shop repair, or a photo of the finished
-        // work for an in-house fix (e.g. a roadside repair the mechanic did
-        // themselves). Either counts equally; a typed note does not, since
-        // it proves nothing a Custodian couldn't just as easily fabricate.
-        // This is the ONLY way to create a record already Completed —
-        // anything without proof still runs the normal Assigned -> ... ->
-        // Verify -> Confirm chain.
-        $fastClose = ($data['progress_status'] ?? null) === 'Completed';
-        if ($fastClose) {
-            abort_unless($request->user()->hasRole('Admin'), 403, 'Only an Admin can log a repair as already Completed.');
-            abort_unless(
-                !empty($data['receipt_url']),
-                422,
-                'A repair can only be logged as already Completed with proof attached — a receipt (external shop) or a photo of the completed repair (in-house). Otherwise, log it as Assigned/Under Repair and run it through the normal verify/confirm steps.'
-            );
+        // Production-readiness audit (2026-10-05, P0) — a receipt or photo is
+        // supporting evidence, never a substitute for independent Custodian
+        // verification. Removed the old "Admin + proof attached = instantly
+        // Completed, self-certified" shortcut; a record claimed as already
+        // done now always lands at For Verification for a Custodian to
+        // actually check, exactly like every other maintenance path. The
+        // receipt/photo itself can still be attached — it just doesn't skip
+        // the check anymore.
+        if (($data['progress_status'] ?? null) === 'Completed') {
+            $data['progress_status'] = 'For Verification';
         }
 
-        $record = DB::transaction(function () use ($data, $request, $fastClose) {
+        $record = DB::transaction(function () use ($data, $request) {
             $vehicle = Vehicle::findOrFail($data['vehicle_id']);
 
             $createPayload = $data;
-            $createPayload['progress_status'] = $fastClose ? 'Completed' : ($data['progress_status'] ?? 'Assigned');
-            if ($fastClose) {
-                $createPayload['date_completed'] = $data['date_completed'] ?? now()->toDateString();
-                $createPayload['verification_result'] = 'Passed';
-                $createPayload['verification_notes'] = 'Verified via attached proof of completion (receipt or photo) — no separate Custodian check performed.';
-                $createPayload['verified_by'] = $request->user()->id;
-                $createPayload['verified_at'] = now();
-                $createPayload['confirmed_by'] = $request->user()->id;
-                $createPayload['confirmed_at'] = now();
-            }
+            $createPayload['progress_status'] = $data['progress_status'] ?? 'Assigned';
 
             $record = VehicleMaintenanceRecord::create($createPayload);
 
-            if ($fastClose) {
-                // Already fixed and paid for — goes straight back into
-                // service, the same end-state confirmMaintenance() reaches.
-                $vehicle->update([
-                    'status' => 'Available',
-                    'condition' => 'Good',
-                    'estimated_return_date' => null,
-                ]);
-            } else {
-                $vehicle->update([
-                    'status' => 'Under Maintenance',
-                    'condition' => 'Needs Repair',
-                ]);
-            }
+            $vehicle->update([
+                'status' => 'Under Maintenance',
+                'condition' => 'Needs Repair',
+            ]);
 
             if (! empty($data['issue_report_id'])) {
                 VehicleIssueReport::where('issue_report_id', $data['issue_report_id'])->update([
-                    'status' => $fastClose ? 'Resolved' : 'In Maintenance',
+                    'status' => 'In Maintenance',
                 ]);
             }
 
-            $recordedNote = $fastClose
-                ? "{$data['maintenance_type']} was recorded for {$vehicle->vehicle_name} (closed immediately — proof of completion attached)."
-                : "{$data['maintenance_type']} was recorded for {$vehicle->vehicle_name}.";
+            $recordedNote = "{$data['maintenance_type']} was recorded for {$vehicle->vehicle_name}.";
             $this->history($vehicle, 'Maintenance Recorded', $recordedNote, 'vehicle_maintenance_records', $record->maintenance_id, $request);
-            $this->log($request, 'Add', 'Vehicle Maintenance Records', $record->maintenance_id, "Added maintenance record for {$vehicle->vehicle_name}" . ($fastClose ? ' (closed on proof of completion)' : ''));
+            $this->log($request, 'Add', 'Vehicle Maintenance Records', $record->maintenance_id, "Added maintenance record for {$vehicle->vehicle_name}");
 
             // Cannibalization: log the loss on the DONOR vehicle's own
             // history so it's visible from that vehicle's side too, instead
@@ -1988,32 +1962,17 @@ class FleetController extends Controller
             $data['verified_at'] = null;
         }
 
-        // Proof-of-completion fast close applies here too — a record logged
-        // Assigned/Under Repair first, where the proof only arrives later,
-        // can still skip straight to Completed once a receipt OR a photo of
-        // the finished work is attached, instead of requiring a Custodian
-        // test. Whether it's external is no longer part of the condition —
-        // what matters is that real proof exists, not where the work happened.
-        $hasReceipt = !empty($data['receipt_url']) || !empty($record->receipt_url);
-        $receiptFastClose = ($data['progress_status'] ?? null) === 'Completed' && $hasReceipt;
-
+        // Production-readiness audit (2026-10-05, P0) — removed the
+        // "receipt/photo attached = instantly Completed, no Custodian check"
+        // shortcut entirely. Completing a record is confirmMaintenance()'s
+        // job (record.confirm), which already correctly requires a passed
+        // Custodian verification and stamps confirmed_by/confirmed_at/vehicle
+        // status — this generic edit endpoint no longer sets 'Completed'
+        // directly, so it can't produce a "Completed" record with none of
+        // that bookkeeping. A receipt/photo can still be attached here as
+        // evidence; it just doesn't finalize anything by itself anymore.
         if (($data['progress_status'] ?? null) === 'Completed') {
-            abort_unless($request->user()->hasRole('Admin'), 403, 'A maintenance record can only be completed by an Admin.');
-            abort_unless(
-                $receiptFastClose || $record->verification_result === 'Passed',
-                422,
-                'A maintenance record can only be completed after Custodian verification has passed — or once proof of completion (a receipt or a photo) is attached. Otherwise use the normal verify/confirm workflow.'
-            );
-
-            if ($receiptFastClose && $record->verification_result !== 'Passed') {
-                $data['verification_result'] = 'Passed';
-                $data['verification_notes'] = $data['verification_notes'] ?? 'Verified via attached proof of completion (receipt or photo) — no separate Custodian check performed.';
-                $data['verified_by'] = $request->user()->id;
-                $data['verified_at'] = now();
-                $data['confirmed_by'] = $request->user()->id;
-                $data['confirmed_at'] = now();
-                $data['date_completed'] = $data['date_completed'] ?? $record->date_completed ?? now()->toDateString();
-            }
+            abort(422, 'Use the Confirm action to complete a maintenance record, not a direct edit — it needs to have passed Custodian verification first.');
         }
 
         // #13 — edit-trail: capture a field-level before/after diff on the
@@ -2033,17 +1992,6 @@ class FleetController extends Controller
         }
 
         $record->update($data);
-
-        if ($receiptFastClose) {
-            // Reached Completed here via the receipt fast-close rather than
-            // through confirmMaintenance() — that endpoint is what normally
-            // returns the vehicle to service, so this path must do the same.
-            $record->vehicle->update([
-                'status' => 'Available',
-                'condition' => 'Good',
-                'estimated_return_date' => null,
-            ]);
-        }
 
         if ($record->issue_report_id) {
             $record->issueReport()->update([
@@ -2451,32 +2399,10 @@ class FleetController extends Controller
         ];
     }
 
-    // Phase B4 — replaces a Custodian's old ability to book a schedule
-    // directly. This creates NO row at all, only a notification: the Admin
-    // still makes the actual scheduling decision.
-    public function suggestSchedule(Request $request)
-    {
-        $this->requireAbility($request, 'schedule.suggest');
-
-        $data = $request->validate([
-            'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
-            'maintenance_type' => ['required', 'string', 'max:150'],
-            'notes' => ['nullable', 'string'],
-        ]);
-
-        $vehicle = Vehicle::findOrFail($data['vehicle_id']);
-        $note = $data['notes'] ?? null;
-
-        $this->notifyAdmins(
-            'Maintenance Suggested',
-            "{$request->user()->name} suggests scheduling {$data['maintenance_type']} for {$vehicle->vehicle_name}."
-                . ($note ? " Note: {$note}" : ''),
-            'schedule_suggested',
-            $request->user()->barangay_id
-        );
-
-        return response()->json(['message' => 'Suggestion sent to your barangay\'s Admin(s).'], 201);
-    }
+    // suggestSchedule() / schedule.suggest removed in the final stabilization
+    // pass (2026-10-05, P1) — confirmed zero frontend callers. Condition
+    // Monitoring's "Suggest Schedule from Condition" action uses the normal
+    // create-schedule endpoint below (pre-filled), not this one.
 
     public function updateSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
     {
@@ -2609,20 +2535,19 @@ class FleetController extends Controller
         // the record path, so a mechanic can't certify their own repair as
         // done — they can still attach proof, it just still goes to
         // Custodian verification with that as supporting evidence.
-        $fastClose = $request->user()->hasRole('Admin') && !empty($data['receipt_url']);
-
-        $result = DB::transaction(function () use ($schedule, $data, $request, $completedDate, $personnelId, $fastClose) {
+        // Production-readiness audit (2026-10-05, P0) — removed the
+        // "Admin + receipt attached = instantly Completed, no Custodian
+        // check" shortcut. A receipt/photo can still be attached as
+        // evidence; it never substitutes for the independent Custodian
+        // verification every other maintenance path already requires.
+        $result = DB::transaction(function () use ($schedule, $data, $request, $completedDate, $personnelId) {
             $vehicle = $schedule->vehicle;
 
             // 1) The record — proof of the work, in the unified ledger.
-            // Goes to "For Verification", not straight to "Completed": every
-            // other maintenance path in this system requires an independent
-            // Custodian check (or, for external repairs, a receipt) before
-            // something counts as done — scheduled PM was the one path that
-            // let whoever performed the work certify it themselves. Routine
-            // in-house work like this is exactly the case Custodian
-            // verification is easy for (the vehicle is right there), unlike
-            // the field/external cases that justify skipping it.
+            // Always goes to "For Verification", never straight to
+            // "Completed" — every maintenance path in this system requires
+            // an independent Custodian check before something counts as
+            // done, regardless of what evidence is attached.
             $record = VehicleMaintenanceRecord::create([
                 'vehicle_id'               => $schedule->vehicle_id,
                 'maintenance_type'         => $schedule->maintenance_type,
@@ -2634,7 +2559,7 @@ class FleetController extends Controller
                 // names the type when the schedule itself had no notes.
                 'problem_reason'           => $schedule->notes ?: "Routine {$schedule->maintenance_type} per maintenance schedule #{$schedule->schedule_id}.",
                 'date_started'             => $completedDate,
-                'date_completed'           => $fastClose ? $completedDate : null,
+                'date_completed'           => null,
                 'maintenance_personnel_id' => $personnelId,
                 'is_external'              => !empty($data['is_external']),
                 'external_vendor'          => $data['external_vendor'] ?? null,
@@ -2644,31 +2569,16 @@ class FleetController extends Controller
                 // problem_reason above, so it's not duplicated in both columns.
                 'action_taken'             => $data['notes'] ?? 'Preventive maintenance performed.',
                 'maintenance_cost'         => $data['maintenance_cost'] ?? null,
-                'progress_status'          => $fastClose ? 'Completed' : 'For Verification',
-                'remarks'                  => $fastClose
-                    ? "Completed from schedule #{$schedule->schedule_id} — closed immediately, proof of completion attached."
-                    : "Completed from schedule #{$schedule->schedule_id} — awaiting Custodian verification.",
-                ...($fastClose ? [
-                    'verification_result' => 'Passed',
-                    'verification_notes'  => 'Verified via attached proof of completion (receipt or photo) — no separate Custodian check performed.',
-                    'verified_by'          => $request->user()->id,
-                    'verified_at'          => now(),
-                    'confirmed_by'         => $request->user()->id,
-                    'confirmed_at'         => now(),
-                ] : []),
+                'progress_status'          => 'For Verification',
+                'remarks'                  => "Completed from schedule #{$schedule->schedule_id} — awaiting Custodian verification.",
             ]);
 
-            // Keep the vehicle's status/condition in lockstep with the record,
-            // same as every other maintenance path (storeMaintenanceRecord,
-            // verifyMaintenance, confirmMaintenance) — this was the one path
-            // that created a record without ever touching the vehicle, so a
-            // fast-closed schedule left a vehicle stuck showing "Needs Repair"
-            // forever, and a normal (pending-verification) one left the
-            // vehicle looking untouched even though a record is now sitting
-            // in Custodian's queue for it.
-            $vehicle->update($fastClose
-                ? ['status' => 'Available', 'condition' => 'Good', 'estimated_return_date' => null]
-                : ['status' => 'Under Maintenance', 'condition' => 'Needs Repair']);
+            // Keep the vehicle's status/condition in lockstep with the
+            // record, same as every other maintenance path
+            // (storeMaintenanceRecord, verifyMaintenance, confirmMaintenance)
+            // — a vehicle with a repair sitting in the Custodian's
+            // verification queue should visibly show that, not look untouched.
+            $vehicle->update(['status' => 'Under Maintenance', 'condition' => 'Needs Repair']);
 
             // 2) Close the schedule — the CALENDAR task is done regardless of
             // how long the paperwork verification takes; recurrence below
@@ -2678,14 +2588,12 @@ class FleetController extends Controller
             // ever showing the original scheduled_date.
             $schedule->update(['status' => 'Completed', 'resulting_maintenance_id' => $record->maintenance_id]);
 
-            if (!$fastClose) {
-                $this->notifyCustodians(
-                    'Verification Required: Scheduled Maintenance',
-                    "{$schedule->maintenance_type} for {$vehicle->vehicle_name} was logged as done — please verify.",
-                    'maintenance_verification_needed',
-                    $vehicle->barangay_id
-                );
-            }
+            $this->notifyCustodians(
+                'Verification Required: Scheduled Maintenance',
+                "{$schedule->maintenance_type} for {$vehicle->vehicle_name} was logged as done — please verify.",
+                'maintenance_verification_needed',
+                $vehicle->barangay_id
+            );
 
             // 3) If recurring, seed the next one at completed date + interval.
             $next = $schedule->seedNextRecurrence($completedDate, $request->user()->id);

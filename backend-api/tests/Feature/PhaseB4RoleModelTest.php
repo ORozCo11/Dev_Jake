@@ -153,8 +153,9 @@ class PhaseB4RoleModelTest extends TestCase
     }
 
     // =======================================================================
-    // Vehicle documents — Maintenance Personnel is now view-only; Custodian
-    // may edit only their own upload; delete is Admin-only
+    // Vehicle documents — final stabilization pass (2026-10-05, P0):
+    // Maintenance Personnel has NO access at all now, not even view;
+    // Custodian may edit only their own upload; delete is Admin-only.
     // =======================================================================
 
     #[Test]
@@ -169,6 +170,27 @@ class PhaseB4RoleModelTest extends TestCase
             'title' => 'Registration',
             'file' => $file,
         ])->assertForbidden();
+    }
+
+    #[Test]
+    public function maintenance_personnel_cannot_even_view_vehicle_documents(): void
+    {
+        $vehicle = $this->vehicle();
+
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->getJson("/api/vehicles/{$vehicle->vehicle_id}/documents")->assertForbidden();
+    }
+
+    #[Test]
+    public function admin_and_custodian_can_view_vehicle_documents(): void
+    {
+        $vehicle = $this->vehicle();
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->getJson("/api/vehicles/{$vehicle->vehicle_id}/documents")->assertOk();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->getJson("/api/vehicles/{$vehicle->vehicle_id}/documents")->assertOk();
     }
 
     #[Test]
@@ -395,42 +417,12 @@ class PhaseB4RoleModelTest extends TestCase
         ])->assertForbidden();
     }
 
-    #[Test]
-    public function a_custodian_can_suggest_a_schedule_which_only_notifies_admins_and_books_nothing(): void
-    {
-        $province = Province::create(['code' => 'TST', 'name' => 'Test Province']);
-        $city = City::create(['province_id' => $province->id, 'code' => 'TSTC', 'name' => 'Test City']);
-        $barangayId = Barangay::create(['name' => 'Test Barangay', 'city_id' => $city->id])->id;
-        $this->admin->update(['barangay_id' => $barangayId]);
-        $this->custodian->update(['barangay_id' => $barangayId]);
-        $vehicle = $this->vehicle();
-        $vehicle->update(['barangay_id' => $barangayId]);
-
-        Sanctum::actingAs($this->custodian, ['*']);
-        $this->postJson('/api/maintenance-schedules/suggest', [
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'notes' => 'Due for its regular service.',
-        ])->assertCreated();
-
-        $this->assertDatabaseHas('notifications', [
-            'user_id' => $this->admin->id,
-            'type' => 'schedule_suggested',
-        ]);
-        $this->assertDatabaseCount('vehicle_maintenance_schedules', 0);
-    }
-
-    #[Test]
-    public function maintenance_personnel_cannot_suggest_a_schedule(): void
-    {
-        $vehicle = $this->vehicle();
-
-        Sanctum::actingAs($this->mechanic, ['*']);
-        $this->postJson('/api/maintenance-schedules/suggest', [
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-        ])->assertForbidden();
-    }
+    // schedule.suggest / suggestSchedule() removed in the final stabilization
+    // pass (2026-10-05, P1) — confirmed zero frontend callers (the
+    // Condition Monitoring "Suggest Schedule from Condition" action uses the
+    // normal POST /maintenance-schedules create endpoint, pre-filled, not
+    // this one), matching the dead-code note that used to sit on the ability
+    // in config/permissions.php.
 
     // =======================================================================
     // Issue reports — Maintenance Personnel loses edit entirely; Custodian's

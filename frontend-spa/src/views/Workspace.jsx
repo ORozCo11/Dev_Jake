@@ -152,9 +152,12 @@ const modulesByRole = {
     { section: 'Issues', icon: 'issues', items: [
       ['issues', 'Vehicle Issues'],
     ] },
+    // Final stabilization pass (2026-10-05, P0) — Vehicle Documents removed
+    // entirely for this role (was view-only before); they still see vehicle
+    // info via View Vehicles, and repair evidence through their own work
+    // orders, which covers everything actually needed for assigned work.
     { section: 'Vehicles', icon: 'vehicle', items: [
       ['vehicles', 'View Vehicles'],
-      ['vehicleDocuments', 'Vehicle Documents'],
     ] },
   ],
 };
@@ -3047,6 +3050,11 @@ function Workspace() {
               // edit-own (VehicleFiles/VehicleFilesModal enforce the
               // ownership half via added_by), Admin unrestricted.
               canManageDocuments={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
+              // Final stabilization pass (2026-10-05, P0) — Maintenance
+              // Personnel has NO Vehicle Documents access at all now, not
+              // even read-only; they see repair evidence through the
+              // ticket/work-order record itself instead.
+              canViewDocuments={canDo(user, 'document.view')}
               canCheckReadiness={canDo(user, 'vehicle.readiness_check')}
               // Production-readiness audit finding #8 — the reliability
               // endpoint was fully built with no UI anywhere; surfaced here
@@ -3754,6 +3762,19 @@ function Workspace() {
     }
 
     if (activeModule === 'vehicleDocuments') {
+      // Final stabilization pass (2026-10-05, P0) — enforced here too, not
+      // just by leaving it out of Maintenance Personnel's sidebar, in case
+      // this module is ever reached another way.
+      if (!canDo(user, 'document.view')) {
+        return (
+          <ModulePanel description="Vehicle Documents">
+            <div className="empty-prereq">
+              <h3>Not available for your role</h3>
+              <p>Vehicle Documents isn't part of Maintenance Personnel's access.</p>
+            </div>
+          </ModulePanel>
+        );
+      }
       return (
         <VehicleDocumentsPage
           vehicles={lookups.vehicles ?? []}
@@ -15212,7 +15233,7 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
   );
 }
 
-function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canCheckReadiness = false, canViewReliability = false, setNotice, onSaved, onRequestConfirmation }) {
+function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canViewReliability = false, setNotice, onSaved, onRequestConfirmation }) {
   const location = useLocation();
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('tab') === 'edit');
   const [decommissioning, setDecommissioning] = useState(false);
@@ -15488,7 +15509,7 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                 </div>
               </section>
 
-              <VehicleFiles vehicleId={vehicle.vehicle_id} canManage={canManageDocuments} onRequestConfirmation={onRequestConfirmation} />
+              {canViewDocuments && <VehicleFiles vehicleId={vehicle.vehicle_id} canManage={canManageDocuments} onRequestConfirmation={onRequestConfirmation} />}
 
               {canViewReliability && <VehicleReliabilityCard vehicleId={vehicle.vehicle_id} />}
             </div>
