@@ -133,7 +133,11 @@ return [
     'subissue.assign_mechanic' => ['Admin'],
     'subissue.reassign_mechanic' => ['Admin'],
     'subissue.log_repair' => ['Maintenance Personnel'],
-    'subissue.verify' => ['Custodian', 'Admin'],
+    // Production-readiness audit finding #2 — Admin was a general Tier-1
+    // verification fallback; removed. Verification is a Custodian-only
+    // action now. An unavailable Custodian is handled by reassigning the
+    // ticket (ticket.reassign_custodian), not by Admin standing in.
+    'subissue.verify' => ['Custodian'],
     'subissue.confirm' => ['Admin'],
     'subissue.reopen_confirmed' => ['Admin'],
     'subissue.defer' => ['Admin'],

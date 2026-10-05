@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\Concerns\ChecksRecurrence;
 use App\Models\ActivityLog;
 use App\Models\MaintenanceTicket;
 use App\Models\Notification;
@@ -13,14 +14,24 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Runs daily (see routes/console.php). A Scheduled maintenance entry whose
- * date has arrived becomes a real ticket automatically, instead of relying
- * on someone noticing and converting it by hand — the auto-created ticket
- * is a normal pre-diagnosed (Active) ticket with one sub-issue, so it flows
- * through the exact same assign/repair/verify/confirm cycle as any other.
+ * date has arrived becomes a ticket PROPOSAL automatically, instead of
+ * relying on someone noticing and converting it by hand.
  *
- * `resulting_ticket_id` is stamped once conversion happens, which is also
+ * Production-readiness audit finding #1 — this used to create the ticket
+ * directly as Active, with its sub-issue pre-assigned to a mechanic,
+ * completely bypassing Admin review, the human proposeTicket() path's
+ * duplicate-title guard, and the subissue.assign_mechanic ability. That's
+ * fixed here: a due schedule now produces a 'Pending Approval' proposal —
+ * identical in every respect to a Custodian manually proposing one — that
+ * still has to go through the normal approveTicket()/declineTicket() review.
+ * Any schedule's suggested mechanic rides along as `suggested_mechanic_id`
+ * (a suggestion only, same as a human proposal) rather than being dispatched
+ * directly; approveTicket() is what actually assigns them, exactly as it
+ * already does for a Custodian's own proposals.
+ *
+ * `resulting_ticket_id` is stamped once a proposal is created, which is also
  * what stops this command from converting the same schedule twice on
- * consecutive days if it's ever left un-completed past its date.
+ * consecutive days if it's ever left un-reviewed past its date.
  *
  * Deliberately does NOT touch completeSchedule()'s existing standalone
  * behavior — a schedule with a resulting_ticket_id set is expected to be
@@ -30,9 +41,11 @@ use Illuminate\Support\Facades\DB;
  */
 class ConvertDueSchedulesToTickets extends Command
 {
+    use ChecksRecurrence;
+
     protected $signature = 'schedules:convert-due-to-tickets';
 
-    protected $description = 'Auto-create a ticket for every Scheduled maintenance entry whose date has arrived';
+    protected $description = 'Auto-propose a ticket for every Scheduled maintenance entry whose date has arrived';
 
     public function handle(): int
     {
@@ -53,7 +66,7 @@ class ConvertDueSchedulesToTickets extends Command
             }
         }
 
-        $this->info("Converted {$converted} due schedule(s) to ticket(s); skipped {$skipped}.");
+        $this->info("Proposed {$converted} due schedule(s) as ticket(s); skipped {$skipped}.");
 
         return self::SUCCESS;
     }
@@ -84,25 +97,39 @@ class ConvertDueSchedulesToTickets extends Command
             return false;
         }
 
+        // Same guard proposeTicket() runs before creating a human proposal —
+        // a schedule must never silently spawn a second Main Issue when one
+        // already covers the same maintenance type on this vehicle. Left
+        // 'Scheduled' (not converted) so a human can sort out the conflict;
+        // this command will simply try again on the next run.
+        $normalizedTitle = $this->normalizeTicketTitle($schedule->maintenance_type);
+        $duplicate = MaintenanceTicket::where('vehicle_id', $vehicle->vehicle_id)
+            ->whereNotIn('status', ['Closed', 'Cancelled'])
+            ->get(['ticket_id', 'ticket_title'])
+            ->first(fn ($t) => $this->normalizeTicketTitle($t->ticket_title) === $normalizedTitle);
+
+        if ($duplicate) {
+            $this->warn("Schedule #{$schedule->schedule_id}: vehicle already has an open ticket (#{$duplicate->ticket_id}) for \"{$schedule->maintenance_type}\", skipped.");
+            return false;
+        }
+
         DB::transaction(function () use ($schedule, $vehicle, $custodian) {
             $ticket = MaintenanceTicket::create([
                 'vehicle_id' => $vehicle->vehicle_id,
                 'created_by' => $custodian->id,
                 'ticket_title' => $schedule->maintenance_type,
-                'ticket_description' => "Auto-created from Maintenance Schedule #{$schedule->schedule_id}, due {$schedule->scheduled_date}."
+                'ticket_description' => "Auto-proposed from Maintenance Schedule #{$schedule->schedule_id}, due {$schedule->scheduled_date}."
                     . ($schedule->notes ? " Notes: {$schedule->notes}" : ''),
                 'priority' => 'Medium',
-                'status' => 'Active',
-                'down_since' => now(),
+                'status' => 'Pending Approval',
                 'assigned_custodian_id' => $custodian->id,
                 'assigned_at' => now(),
-                'inspection_result' => 'Needs Maintenance',
-                'inspection_notes' => 'Pre-diagnosed from a due Maintenance Schedule — inspection skipped.',
-                'inspected_by' => $custodian->id,
-                'inspected_at' => now(),
             ]);
 
-            $assignedMechanic = $schedule->assigned_to
+            // A rider for Admin to review, same as a human proposal's
+            // suggested_mechanic_id — not a real dispatch. approveTicket()
+            // is what actually assigns them, exactly like any other proposal.
+            $suggestedMechanic = $schedule->assigned_to
                 ? User::find($schedule->assigned_to)
                 : null;
 
@@ -111,13 +138,9 @@ class ConvertDueSchedulesToTickets extends Command
                 'created_by' => $custodian->id,
                 'title' => $schedule->maintenance_type,
                 'maintenance_type' => $schedule->maintenance_type,
-                'status' => $assignedMechanic ? 'Under Repair' : 'Open',
-                'assigned_mechanic_id' => $assignedMechanic?->id,
-                'mechanic_assigned_at' => $assignedMechanic ? now() : null,
-                'mechanic_assigned_by' => $assignedMechanic ? $custodian->id : null,
+                'suggested_mechanic_id' => $suggestedMechanic?->id,
+                'status' => 'Open',
             ]);
-
-            $vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
 
             $schedule->update(['resulting_ticket_id' => $ticket->ticket_id]);
 
@@ -128,27 +151,27 @@ class ConvertDueSchedulesToTickets extends Command
             ActivityLog::create([
                 'user_id' => $custodian->id,
                 'role' => $custodian->role,
-                'action' => 'Add',
+                'action' => 'Auto-Propose Ticket',
                 'module' => 'Maintenance Tickets',
                 'affected_record_id' => (string) $ticket->ticket_id,
-                'details' => "Ticket #{$ticket->ticket_id} auto-created from due Maintenance Schedule #{$schedule->schedule_id} ({$vehicle->vehicle_name}).",
+                'details' => "Ticket #{$ticket->ticket_id} auto-proposed (Pending Approval) from due Maintenance Schedule #{$schedule->schedule_id} ({$vehicle->vehicle_name}) — awaiting Admin review.",
                 'barangay_id' => $vehicle->barangay_id,
             ]);
 
             Notification::create([
                 'user_id' => $custodian->id,
-                'title' => 'Scheduled Maintenance Due',
-                'message' => "Your scheduled {$schedule->maintenance_type} for {$vehicle->vehicle_name} is due today — Ticket #{$ticket->ticket_id} was created for it.",
+                'title' => 'Scheduled Maintenance Proposed as a Ticket',
+                'message' => "Your scheduled {$schedule->maintenance_type} for {$vehicle->vehicle_name} was due, so Ticket #{$ticket->ticket_id} was proposed for it and is awaiting Admin review.",
                 'type' => 'schedule_due_ticket_created',
                 'ticket_id' => $ticket->ticket_id,
             ]);
 
-            if ($assignedMechanic) {
+            foreach (User::where('barangay_id', $vehicle->barangay_id)->havingRole('Admin')->where('is_active', true)->get() as $admin) {
                 Notification::create([
-                    'user_id' => $assignedMechanic->id,
-                    'title' => 'New Work Order Assigned',
-                    'message' => "You've been assigned \"{$schedule->maintenance_type}\" on Ticket #{$ticket->ticket_id} ({$vehicle->vehicle_name}), from your scheduled maintenance.",
-                    'type' => 'work_order_assigned',
+                    'user_id' => $admin->id,
+                    'title' => 'New Ticket Proposal Awaiting Review',
+                    'message' => "A due Maintenance Schedule auto-proposed Ticket #{$ticket->ticket_id} — \"{$schedule->maintenance_type}\" for {$vehicle->vehicle_name}. Review, edit if needed, then approve or decline.",
+                    'type' => 'ticket_proposed',
                     'ticket_id' => $ticket->ticket_id,
                 ]);
             }

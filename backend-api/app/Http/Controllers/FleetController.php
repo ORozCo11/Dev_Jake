@@ -833,6 +833,11 @@ class FleetController extends Controller
     public function storeVehicle(Request $request)
     {
         $this->requireAbility($request, 'vehicle.create');
+        // Production-readiness audit finding #6 — the ability above only
+        // says Admin/Custodian are the eligible roles; this is the real
+        // per-account delegation check (Admin always; Custodian only if
+        // granted) an Admin sets per Custodian from the Edit User form.
+        abort_unless($request->user()->canRegisterVehicles(), 403, 'Vehicle registration has not been delegated to your account. Ask your Admin to enable it.');
 
         $data = $this->validateVehicle($request);
 
@@ -1439,7 +1444,8 @@ class FleetController extends Controller
                 'New Vehicle Issue Reported',
                 "{$request->user()->name} reported {$data['issue_type']} for {$vehicle->vehicle_name}.",
                 'issue_reported',
-                $vehicle->barangay_id
+                $vehicle->barangay_id,
+                ['issue_report_id' => $issue->issue_report_id]
             );
 
             // A mechanic's technical finding isn't a ticket by itself — it
@@ -1450,7 +1456,8 @@ class FleetController extends Controller
                     'Technical Issue Reported by Maintenance',
                     "{$request->user()->name} reported {$data['issue_type']} for {$vehicle->vehicle_name} — review it and propose a ticket if it needs one.",
                     'issue_reported',
-                    $vehicle->barangay_id
+                    $vehicle->barangay_id,
+                    ['issue_report_id' => $issue->issue_report_id]
                 );
             }
 
@@ -1572,7 +1579,8 @@ class FleetController extends Controller
                     $issue->reported_by,
                     'Issue Report Dismissed',
                     "Your report \"{$issue->issue_type}\" on {$issue->vehicle->vehicle_name} was dismissed. Reason: {$data['dismiss_reason']}",
-                    'issue_dismissed'
+                    'issue_dismissed',
+                    ['issue_report_id' => $issue->issue_report_id]
                 );
             }
 
@@ -2386,7 +2394,8 @@ class FleetController extends Controller
                     (int) $data['assigned_to'],
                     'Maintenance Assigned to You',
                     "You've been assigned {$data['maintenance_type']} for {$vehicle->vehicle_name}, scheduled {$data['scheduled_date']}.",
-                    'schedule_assigned'
+                    'schedule_assigned',
+                    ['schedule_id' => $schedule->schedule_id]
                 );
             }
 
@@ -2526,7 +2535,8 @@ class FleetController extends Controller
                 (int) $data['assigned_to'],
                 'Maintenance Assigned to You',
                 "You've been assigned {$schedule->maintenance_type} for {$schedule->vehicle->vehicle_name}, scheduled {$schedule->scheduled_date}.",
-                'schedule_assigned'
+                'schedule_assigned',
+                ['schedule_id' => $schedule->schedule_id]
             );
         }
 
@@ -2727,7 +2737,8 @@ class FleetController extends Controller
                 $newAssignee->id,
                 'Maintenance Assigned to You',
                 "You've been assigned {$schedule->maintenance_type} for {$vehicleName}, scheduled {$schedule->scheduled_date}.",
-                'schedule_assigned'
+                'schedule_assigned',
+                ['schedule_id' => $schedule->schedule_id]
             );
 
             if ($previousAssigneeId) {
@@ -2735,7 +2746,8 @@ class FleetController extends Controller
                     $previousAssigneeId,
                     'Maintenance Reassigned',
                     "{$schedule->maintenance_type} for {$vehicleName} has been reassigned to someone else.",
-                    'schedule_reassigned'
+                    'schedule_reassigned',
+                    ['schedule_id' => $schedule->schedule_id]
                 );
             }
         });
@@ -2795,7 +2807,8 @@ class FleetController extends Controller
                 (int) $schedule->assigned_to,
                 'Maintenance Schedule Restored',
                 "A cancelled {$schedule->maintenance_type} for {$schedule->vehicle->vehicle_name} ({$schedule->scheduled_date}) was restored and is assigned to you.",
-                'schedule_restored'
+                'schedule_restored',
+                ['schedule_id' => $schedule->schedule_id]
             );
         }
 
@@ -2971,43 +2984,47 @@ class FleetController extends Controller
     // helper takes the relevant vehicle's barangay_id explicitly so it
     // never floods a different barangay's admins/custodians about
     // something that isn't theirs.
-    private function notifyAdmins(string $title, string $message, string $type, ?int $barangayId): void
+    // Production-readiness audit finding #10 — `$links` carries whichever of
+    // ticket_id/issue_report_id/schedule_id this notification is actually
+    // about, so clicking it can open that exact record instead of leaving
+    // the user wherever they already were.
+    private function notifyAdmins(string $title, string $message, string $type, ?int $barangayId, array $links = []): void
     {
         $admins = User::where('barangay_id', $barangayId)->havingRole('Admin')->get();
         foreach ($admins as $admin) {
-            \App\Models\Notification::create([
+            \App\Models\Notification::create(array_merge([
                 'user_id'   => $admin->id,
                 'title'     => $title,
                 'message'   => $message,
                 'type'      => $type,
                 'ticket_id' => null,
-            ]);
+            ], $links));
         }
     }
 
-    private function notifyCustodians(string $title, string $message, string $type, ?int $barangayId): void
+    private function notifyCustodians(string $title, string $message, string $type, ?int $barangayId, array $links = []): void
     {
         $custodians = User::where('barangay_id', $barangayId)->havingRole('Custodian')->get();
         foreach ($custodians as $custodian) {
-            \App\Models\Notification::create([
+            \App\Models\Notification::create(array_merge([
                 'user_id'   => $custodian->id,
                 'title'     => $title,
                 'message'   => $message,
                 'type'      => $type,
                 'ticket_id' => null,
-            ]);
+            ], $links));
         }
     }
 
-    private function notifyUser(int $userId, string $title, string $message, string $type): void
+    private function notifyUser(int $userId, string $title, string $message, string $type, array $links = []): void
     {
-        \App\Models\Notification::create([
+        \App\Models\Notification::create(array_merge([
             'user_id'   => $userId,
             'title'     => $title,
             'message'   => $message,
             'type'      => $type,
             'ticket_id' => null,
-        ]);
+        ], $links));
     }
 
     private function syncVehicleStatuses()

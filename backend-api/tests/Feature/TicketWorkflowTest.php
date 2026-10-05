@@ -1213,22 +1213,24 @@ class TicketWorkflowTest extends TestCase
             'test_attested'        => true,
             'functional_test'      => [['item' => 'Engine starts', 'passed' => true]],
         ])->assertForbidden()
-            ->assertJsonFragment(['message' => 'You performed this repair — an Admin needs to verify it.']);
+            ->assertJsonFragment(['message' => 'You performed this repair — it must be verified by a different Custodian. Reassign this ticket to another Custodian.']);
 
         $this->assertSame('For Inspection', $subIssue->fresh()->status);
     }
 
     #[Test]
-    public function an_admin_can_verify_a_repair_as_a_general_fallback_even_without_a_self_verification_conflict(): void
+    public function an_admin_cannot_verify_a_repair_even_as_a_fallback_and_must_reassign_the_custodian_instead(): void
     {
+        // Production-readiness audit finding #2 — Admin was previously a
+        // general Tier-1 verification fallback. That's removed: Tier-1
+        // verification is Custodian-only, full stop. An unavailable
+        // Custodian is handled by reassigning the ticket, not by Admin
+        // quietly standing in for the check.
         $vehicle = $this->vehicle();
         $ticket = $this->createTicket($vehicle);
         $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
         $subIssue = $ticket->subIssues->first();
 
-        // Ordinary case, no conflict: $this->mechanic did the repair,
-        // $this->custodian is the assigned verifier and never touched it.
-        // Admin can still step in and verify it directly.
         $this->driveSubIssueToInspection($ticket, $subIssue);
 
         Sanctum::actingAs($this->admin, ['*']);
@@ -1236,10 +1238,25 @@ class TicketWorkflowTest extends TestCase
             'verification_verdict' => 'Approved',
             'test_attested'        => true,
             'functional_test'      => [['item' => 'Engine starts', 'passed' => true]],
+        ])->assertForbidden();
+
+        // The actual, correct fix: reassign the ticket to a different
+        // Custodian, who can then verify it normally.
+        $standInCustodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian']]);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/reassign-custodian", [
+            'assigned_custodian_id' => $standInCustodian->id,
+            'reassign_reason' => 'Original custodian unavailable.',
+        ])->assertOk();
+
+        Sanctum::actingAs($standInCustodian, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/verify", [
+            'verification_verdict' => 'Approved',
+            'test_attested'        => true,
+            'functional_test'      => [['item' => 'Engine starts', 'passed' => true]],
         ])->assertOk();
 
         $this->assertSame('For Confirmation', $subIssue->fresh()->status);
-        $this->assertSame($this->admin->id, $subIssue->fresh()->verified_by);
+        $this->assertSame($standInCustodian->id, $subIssue->fresh()->verified_by);
     }
 
     #[Test]
@@ -1277,7 +1294,7 @@ class TicketWorkflowTest extends TestCase
 
         $response->assertJsonPath(
             'warning',
-            "{$this->custodian->name} is also this ticket's Custodian — they won't be able to verify their own repair. An Admin will need to verify it instead."
+            "{$this->custodian->name} is also this ticket's Custodian — they won't be able to verify their own repair. Reassign the ticket to a different Custodian before it reaches verification."
         );
         $this->assertSame('Under Repair', $subIssue->fresh()->status, 'The conflict is a warning, not a block.');
     }
@@ -1324,7 +1341,7 @@ class TicketWorkflowTest extends TestCase
 
         $response->assertJsonPath(
             'warning',
-            "{$this->mechanic->name} is also the assigned mechanic on: {$subIssue->title}. They won't be able to verify their own repair there — an Admin will need to verify it instead."
+            "{$this->mechanic->name} is also the assigned mechanic on: {$subIssue->title}. They won't be able to verify their own repair there — reassign those sub-issues to a different mechanic, or this ticket to a different Custodian."
         );
         $this->assertSame($this->mechanic->id, $ticket->fresh()->assigned_custodian_id, 'The conflict is a warning, not a block.');
     }

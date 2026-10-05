@@ -33,12 +33,12 @@ A user can hold more than one of the three barangay roles at once (a "dual-hat" 
 
 ### 3.1 Vehicle Management
 
-**Registration** (Admin direct; Custodian when the barangay delegates it to them) is a 3-step wizard:
+**Registration** (Admin always; a Custodian only if an Admin has specifically granted them "Vehicle Registration" on their account — a real per-account toggle on the Edit User form, not a blanket role grant) is a 3-step wizard:
 1. **Basic Information** — Land/Water domain (asked first, drives the rest of the form), Vehicle Name, Plate Number (labeled "Registration/Hull No." for Water), Vehicle Type (a creatable dropdown — a new type can be added inline without leaving the form).
-2. **Specs** — Brand, Model, Year, Capacity (with unit — kg/tons/L/pax for Land, L/gal/m³/pax for Water), Color, Fuel Type; Water vehicles additionally require Hull Material (Fiberglass/Aluminum/Steel/Wood/Rubber-Inflatable) and Engine Type.
-3. **Photo & Location** — an optional photo (≤4MB) and Current Location (tied into the hub system, with a live map preview as you pick/create a hub).
+2. **Specs** — Brand, Model, Year, Capacity (with unit — kg/tons/L/pax for Land, L/gal/m³/pax for Water), Acquisition Cost (optional — feeds the Reliability card's decommission signal, §9.7), Color, Fuel Type; Water vehicles additionally require Hull Material (Fiberglass/Aluminum/Steel/Wood/Rubber-Inflatable) and Engine Type.
+3. **Photo & Location** — an optional photo (≤4MB), Current Location (tied into the hub system, with a live map preview as you pick/create a hub), and optional Remarks.
 
-New vehicles start at status **Available**, condition **Good**. Two fields the backend accepts but no form currently exposes: **Acquisition Cost** and **Remarks** — Remarks is shown read-only on the profile, but neither can be set through any UI today, only by direct API/data means.
+New vehicles start at status **Available**, condition **Good**.
 
 **Editing** (Admin only) reuses the same field set. Changing Current Location through the edit form also writes a location-history record automatically, same as the dedicated "set location" flow.
 
@@ -99,7 +99,7 @@ After submitting, the system lands directly on that report's own detail page —
 
 ## 5. Maintenance Ticket Workflow
 
-This is the heart of the system. **The only way a ticket is ever created is a Custodian's proposal** — there is no reachable "Admin creates directly" path (the direct-create endpoint exists in code but is permanently unreachable by permission design, kept only as documentation of the shared business rules).
+This is the heart of the system. **Every ticket enters as a `Pending Approval` proposal that an Admin must review and approve before it's live** — there is no reachable "Admin creates directly" path (the direct-create endpoint exists in code but is permanently unreachable by permission design, kept only as documentation of the shared business rules). A proposal has exactly two sources: a **human** Custodian proposing one by hand, or the **system** auto-proposing one from a Maintenance Schedule whose date has arrived (§6) — either way, it's the same `Pending Approval` → Admin-reviews → `Active` pipeline, never a bypass.
 
 ### 5.1 Creating a proposal (Custodian only)
 
@@ -122,7 +122,7 @@ Can edit title, description, priority, assigned custodian, and per-sub-issue tit
 
 **On approve**: status becomes Active; the vehicle goes Needs Repair/Under Maintenance; the ticket's own ID is folded into its title (`#<id> - <original title>`); every sub-issue with a still-valid suggested mechanic is automatically dispatched (assigned, notified) — a stale suggestion (deactivated account, moved barangay) is left unassigned rather than force-dispatched; the proposing Custodian is notified. At least one sub-issue must exist, and the vehicle must not have gone Inactive/Decommissioned since the proposal was filed.
 
-**On decline**: requires a reason. The entire proposal — and its sub-issues — is **permanently deleted**, by design (no soft trace beyond the notification sent to the Custodian). Any linked Issue Report resets back to Pending.
+**On decline**: requires a reason. The entire proposal — and its sub-issues — is **permanently deleted**, by design — but the decline itself (ticket title, vehicle, original proposer, and reason) is captured as an Activity Log entry first, so the operational record disappearing doesn't erase the audit trail of why. Any linked Issue Report resets back to Pending.
 
 ### 5.3 Assignment & repair
 
@@ -132,9 +132,9 @@ The assigned mechanic logs repair notes (append-only, never overwritten), parts 
 
 ### 5.4 Verification & confirmation — the two-tier gate
 
-**Tier 1 — Verify (Custodian, with Admin as a general fallback)**: a real functional test, not a rubber stamp. The checklist is vehicle-type-specific (a base set plus extra items for land vehicles, fire units, and water vehicles), custom items can be added, and approving **requires an explicit attestation** that the vehicle was actually operated/tested — the server independently re-checks that nothing in the submitted checklist failed before it will accept an Approve. A failed test sends the sub-issue back to repair.
+**Tier 1 — Verify (Custodian only — Admin cannot verify, not even as a fallback)**: a real functional test, not a rubber stamp. The checklist is vehicle-type-specific (a base set plus extra items for land vehicles, fire units, and water vehicles), custom items can be added, and approving **requires an explicit attestation** that the vehicle was actually operated/tested — the server independently re-checks that nothing in the submitted checklist failed before it will accept an Approve. A failed test sends the sub-issue back to repair.
 
-**Self-verification is blocked unconditionally**: whoever performed the repair can never verify it, even as Admin. A non-Admin verifier must also be exactly the person this sub-issue's verification was assigned to; Admin may stand in for any *other* unavailable Custodian as a general fallback.
+**Self-verification is blocked unconditionally**: whoever performed the repair can never verify it. The verifier must also be exactly the Custodian this sub-issue's verification was assigned to. If that Custodian is unavailable, the fix is reassigning the ticket to a different Custodian (which correctly carries the verification assignment along with it) — Admin is never a stand-in verifier for this step, by design.
 
 **Tier 2 — Confirm (Admin only)**: Confirmed finalizes the sub-issue (Done, a permanent maintenance-ledger entry is written, linked issue report resolved, and — if this was the ticket's last unfinished sub-issue — Admins are told the ticket is ready to close). Reopened sends it back to repair, clearing the verification verdict. **The same self-verification rule is independently re-checked here too** — specifically to catch a dual-role Admin + Maintenance Personnel account confirming their own work, since Tier 1 alone wouldn't stop an Admin.
 
@@ -162,7 +162,7 @@ Captures vehicle, maintenance type, scheduled date/time, service location, notes
 
 Completing a schedule creates a proof-of-work maintenance record. Normally that record needs an independent Custodian check even for routine preventive maintenance — but if a receipt or completed-work photo is attached at completion time, it can fast-close straight through, skipping that wait (a mechanic cannot trigger this shortcut alone; it requires the attached proof). A recurring schedule auto-creates its next occurrence at completion date + interval, correctly handling month-end edge cases (a Jan 31 monthly schedule lands on Feb 28, or Feb 29 in a leap year — not an overflow into March).
 
-A **daily background job** automatically converts any schedule whose date has arrived into a real, pre-diagnosed Active ticket, which then runs through the identical assign → repair → verify → confirm pipeline as any other ticket.
+A **daily background job** automatically turns any schedule whose date has arrived into a ticket **proposal** — `Pending Approval`, exactly like a human Custodian's, with its scheduled mechanic (if any) riding along as a suggestion only. It still has to pass through the same Admin review/approve step as every other proposal (and the same duplicate-ticket check) before it becomes a live, Active ticket running the normal assign → repair → verify → confirm pipeline. This was previously a direct bypass straight to an Active, pre-assigned ticket — fixed in the production-readiness audit (2026-10-05) specifically because it skipped Admin review, duplicate prevention, and the mechanic-assignment ability.
 
 ---
 
@@ -178,7 +178,7 @@ Has its own verify/confirm flow mirroring the ticket workflow (Custodian verifie
 
 ## 8. Notifications
 
-**The mechanism itself**: every user has an in-app notification list (latest 50), can mark one or all as read, and can delete one. Old notifications are pruned automatically by a **daily scheduled job** — a read notification is removed after 30 days, and anything (read or not) is removed after 90 days regardless.
+**The mechanism itself**: every user has an in-app notification list (latest 50), can mark one or all as read, and can delete one. Clicking a notification opens the exact ticket, issue report, or maintenance schedule it's about (not just a generic dashboard) whenever one is linked to it. Old notifications are pruned automatically by a **daily scheduled job** — a read notification is removed after 30 days, and anything (read or not) is removed after 90 days regardless.
 
 **What triggers one, and who gets it** — every distinct event found wired to a notification across the ticket/issue/schedule workflow:
 
@@ -217,7 +217,7 @@ All computed live on every dashboard load — there is no caching or scheduled p
 4. **Readiness watch** — vehicles that are "Available" on paper but not actually *verified* ready (stale, failed, or never-checked).
 5. **Single-point-of-failure detection** — any vehicle type down to one (or zero, flagged critical) ready unit.
 6. **Fleet-wide failure-pattern detection** — the last 12 months of maintenance grouped by type, surfacing a systemic recurring cause rather than isolated incidents.
-7. **Per-vehicle reliability lens** — failure counts, average days out of service, lifetime repair spend, a "chronic" flag, and a decommission signal when lifetime repair spend nears acquisition cost. **This is fully built on the backend but has no UI entry point today — nothing in the frontend calls it.** Flagged here as an unused, ready-to-wire capability, not a working feature.
+7. **Per-vehicle reliability lens** — failure counts, average days out of service, lifetime repair spend, a "chronic" flag, and a decommission signal when lifetime repair spend nears acquisition cost. Shown as a "Reliability" card on the Vehicle Profile page, visible to Admin.
 8. **Action Queue** (Admin) — one ranked worklist combining pending issue reports, sub-issues needing attention, tickets ready to close, readiness-check gaps, overdue schedules, and recurring-fault reviews.
 9. **My Scheduled Work** (Maintenance Personnel) — that mechanic's own upcoming assigned schedules.
 10. **Sole-active-Admin warning** — proactively flags an Admin if they're the only one left for their barangay, before anyone tries to deactivate/demote them (the guard itself is described in §11.2).
@@ -235,7 +235,7 @@ Seven report types, Admin-only: Vehicle Inventory, Vehicle Type, Vehicle Locatio
 
 ### 11.1 User management (barangay-scoped, by that barangay's Admin)
 
-List/search/filter users, create a user (barangay is forced server-side to the Admin's own — can't be spoofed), edit, activate (can also confirm/override the requested role on first approval), and deactivate (which immediately revokes every one of that user's active login tokens, not just a flag flip). View or regenerate the barangay's registration code.
+List/search/filter users, create a user (barangay is forced server-side to the Admin's own — can't be spoofed), edit, activate (can also confirm/override the requested role on first approval), and deactivate (which immediately revokes every one of that user's active login tokens, not just a flag flip). View or regenerate the barangay's registration code. For a Custodian specifically, the Edit User form also has a "Vehicle Registration" toggle — grants or revokes that one account's ability to register a vehicle (§3.1), independent of the Custodian role itself. Every one of these actions — create, edit (including role changes and password resets, without ever logging the password itself), activate, deactivate, and the registration-delegation toggle — writes an Activity Log entry.
 
 **Last-Admin protection**: blocks deactivating, or removing the Admin role from, a barangay's only active Admin — with a clear explanation of why, naming the account and asking that someone else be promoted first. This does **not** prevent a sole Admin from simply walking away with no successor promoted; that specific recovery case is what the Super Admin's platform-level role-change tool exists for.
 
@@ -281,10 +281,9 @@ Capabilities: list every barangay (with staff counts, whether it has an active A
 
 Stated plainly, as found in the code — not implied to be bugs, just not (yet) user-facing or fully wired:
 
-- **Per-vehicle reliability analytics** (§9.7) is fully implemented on the backend, with tests, but has no UI entry point — nobody can actually see it today.
-- **No self-service password reset.** Entirely by Admin edit.
-- **Acquisition Cost and Remarks** are accepted by the vehicle API but not exposed in the registration or edit forms.
+- **No self-service password reset.** Entirely by Admin edit; the reset action is logged, but nothing forces the user to change it on next login — a deliberate scope decision for now, not an oversight.
 - **"In Use" vehicle status** exists in the database but is never set by any code path — dispatch state isn't tracked, only availability.
+- **File storage is bucket-public by design** — vehicle documents, issue attachments, and repair photos are reachable by anyone holding the exact (non-sequential, not browsable) generated URL, with no per-request authentication. A documented, deliberate trade-off, not an oversight — see the code comment on `config/filesystems.php`'s `'public'` visibility setting.
 - **`schedule.suggest`** is explicitly marked in the codebase as now largely redundant (Custodian can just create a schedule directly) — kept only because something still calls it.
 - The **last-Admin protection** stops specific actions (deactivate, remove Admin role, platform role change) but doesn't prevent every conceivable way a barangay could end up without an active Admin — the Super Admin recovery tool exists specifically to fix that case after the fact, not to make it impossible in advance.
 - **Barangay boundary lookup** depends on a public third-party geocoder with no guaranteed coverage — a legitimate "no boundary found" result is expected for some barangays, not a bug.

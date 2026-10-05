@@ -804,6 +804,8 @@ class TicketController extends Controller
         ]);
 
         $custodianId = $ticket->assigned_custodian_id;
+        $custodianName = $ticket->assignedCustodian?->name ?? "user #{$custodianId}";
+        $ticketId = $ticket->ticket_id;
         $ticketTitle = $ticket->ticket_title;
         $vehicleName = $ticket->vehicle->vehicle_name;
 
@@ -813,6 +815,16 @@ class TicketController extends Controller
             $this->resetLinkedIssueReports($ticket, 'Pending');
             $ticket->delete();
         });
+
+        // The ticket row itself is gone after this — this is the only
+        // place its decline is ever recorded, so it has to carry everything
+        // a reader would otherwise have looked up on the ticket itself.
+        $this->log(
+            $request,
+            'Decline Ticket',
+            "Ticket #{$ticketId} (\"{$ticketTitle}\" for {$vehicleName}, proposed by {$custodianName}) declined. Reason: {$data['decline_reason']}",
+            $ticketId
+        );
 
         $this->notifyUser(
             $custodianId,
@@ -944,7 +956,7 @@ class TicketController extends Controller
         // this just tells the Admin up front instead of them discovering it
         // when the sub-issue gets stuck at For Inspection.
         $selfVerificationWarning = $mechanic->id === $ticket->assigned_custodian_id
-            ? "{$mechanic->name} is also this ticket's Custodian — they won't be able to verify their own repair. An Admin will need to verify it instead."
+            ? "{$mechanic->name} is also this ticket's Custodian — they won't be able to verify their own repair. Reassign the ticket to a different Custodian before it reaches verification."
             : null;
 
         DB::transaction(function () use ($ticket, $subIssue, $data, $request, $selfVerificationWarning) {
@@ -1105,7 +1117,7 @@ class TicketController extends Controller
             ->where('status', '!=', 'Done')
             ->pluck('title');
         $selfVerificationWarning = $conflictingSubIssueTitles->isNotEmpty()
-            ? "{$newCustodian->name} is also the assigned mechanic on: {$conflictingSubIssueTitles->implode(', ')}. They won't be able to verify their own repair there — an Admin will need to verify it instead."
+            ? "{$newCustodian->name} is also the assigned mechanic on: {$conflictingSubIssueTitles->implode(', ')}. They won't be able to verify their own repair there — reassign those sub-issues to a different mechanic, or this ticket to a different Custodian."
             : null;
 
         DB::transaction(function () use ($ticket, $data, $request, $newCustodian, $previousCustodianId, $selfVerificationWarning) {
@@ -1440,29 +1452,26 @@ class TicketController extends Controller
         $this->requireAbility($request, 'subissue.verify');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
-        $isAdmin = $request->user()->hasRole('Admin');
-
-        // Admin is a general fallback for this Custodian action (same as
-        // every other Custodian action Admin can stand in for) — not
-        // restricted to just the self-verification case below, so a
-        // Custodian being unavailable for any reason (leave, reassignment
-        // lag, etc.) never has to dead-end a ticket. A Custodian, unlike
-        // Admin, must be the specific verifier this sub-issue was assigned
-        // to.
-        if (!$isAdmin) {
-            abort_unless($subIssue->verification_assigned_to === $request->user()->id, 403, "This verification is assigned to {$subIssue->verificationAssignedTo?->name}.");
-        }
+        // Production-readiness audit finding #2 — Tier-1 verification is a
+        // Custodian-only action; Admin no longer holds subissue.verify at
+        // all (config/permissions.php), so this unconditionally requires
+        // being the SPECIFIC verifier this sub-issue was assigned to. If
+        // that Custodian is unavailable, the correct fix is reassigning the
+        // ticket to a different Custodian (reassignCustodian(), which
+        // already carries verification_assigned_to to the new one) — not an
+        // Admin quietly standing in for the Custodian's own check.
+        abort_unless($subIssue->verification_assigned_to === $request->user()->id, 403, "This verification is assigned to {$subIssue->verificationAssignedTo?->name}.");
 
         // Independent check is the entire point of this step — "don't grade
         // your own homework." A dual-role (Custodian + Maintenance
         // Personnel) account that logged this repair can never be the one
         // who signs off on it, even if they're also this sub-issue's
-        // assigned verifier; only Admin can step in for that case (the
-        // unconditional Admin path above already covers it).
+        // assigned verifier — the ticket's Custodian has to be reassigned to
+        // someone else entirely for it to proceed.
         abort_if(
             $subIssue->assigned_mechanic_id === $request->user()->id,
             403,
-            'You performed this repair — an Admin needs to verify it.'
+            'You performed this repair — it must be verified by a different Custodian. Reassign this ticket to another Custodian.'
         );
 
         abort_unless($ticket->status === 'Active', 422, "Verification can only be submitted while the ticket is Active. Current status: {$ticket->status}.");

@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\AuthorizesAbilities;
 use App\Http\Controllers\Concerns\GuardsLastAdmin;
 use App\Http\Controllers\Concerns\GuardsOpenWorkOnDeactivation;
 use App\Http\Controllers\Concerns\UploadsImages;
+use App\Models\ActivityLog;
 use App\Models\RegistrationSetting;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -31,6 +32,22 @@ class UserController extends Controller
     private function requireSameBarangay(Request $request, User $target): void
     {
         abort_if($target->barangay_id !== $request->user()->barangay_id, 404);
+    }
+
+    // Production-readiness audit finding #4 — account/role management had no
+    // audit trail at all. Mirrors FleetController/TicketController's own
+    // private log() helper (each controller keeps its own rather than a
+    // shared trait, per the existing pattern in this codebase).
+    private function log(Request $request, string $action, ?int $affectedUserId, string $details): void
+    {
+        ActivityLog::create([
+            'user_id' => $request->user()?->id,
+            'role'    => $request->attributes->get('vms_acted_as_role') ?? $request->user()?->role,
+            'action'  => $action,
+            'module'  => 'Users',
+            'affected_record_id' => $affectedUserId,
+            'details' => $details,
+        ]);
     }
 
     /**
@@ -89,6 +106,7 @@ class UserController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
             'photo' => ['nullable', 'image', 'max:4096'],
+            'can_register_vehicles' => ['sometimes', 'boolean'],
         ]);
 
         $data = $this->normalizeRoles($request, $data);
@@ -104,6 +122,8 @@ class UserController extends Controller
         unset($data['photo']);
 
         $user = User::create($data);
+
+        $this->log($request, 'Add', $user->id, "Created user \"{$user->name}\" ({$user->email}), role: " . implode('/', $user->roles ?? [$user->role]));
 
         return response()->json($user, 201);
     }
@@ -123,6 +143,7 @@ class UserController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
             'photo' => ['nullable', 'image', 'max:4096'],
+            'can_register_vehicles' => ['sometimes', 'boolean'],
         ]);
 
         $data = $this->normalizeRoles($request, $data);
@@ -154,7 +175,26 @@ class UserController extends Controller
         }
         unset($data['photo']);
 
+        // Built BEFORE update() so a role change is compared against what
+        // the account held a moment ago — and the password's own VALUE is
+        // never logged, only the fact that it changed.
+        $changeNotes = [];
+        if (array_key_exists('roles', $data) && $data['roles'] !== $user->roles) {
+            $changeNotes[] = 'roles ' . implode('/', $user->roles ?? [$user->role]) . ' -> ' . implode('/', $data['roles']);
+        }
+        if (array_key_exists('password', $data)) {
+            $changeNotes[] = 'password reset';
+        }
+        if (array_key_exists('email', $data) && $data['email'] !== $user->email) {
+            $changeNotes[] = "email {$user->email} -> {$data['email']}";
+        }
+        if (array_key_exists('can_register_vehicles', $data) && (bool) $data['can_register_vehicles'] !== (bool) $user->can_register_vehicles) {
+            $changeNotes[] = $data['can_register_vehicles'] ? 'granted vehicle registration' : 'revoked vehicle registration';
+        }
+
         $user->update($data);
+
+        $this->log($request, 'Edit', $user->id, "Updated user \"{$user->name}\"" . ($changeNotes ? ' (' . implode('; ', $changeNotes) . ')' : ''));
 
         return $user->fresh();
     }
@@ -171,6 +211,8 @@ class UserController extends Controller
         // Revoke every existing token immediately — otherwise a session
         // already in progress keeps working until it happens to expire.
         $user->tokens()->delete();
+
+        $this->log($request, 'Deactivate', $user->id, "Deactivated user \"{$user->name}\" ({$user->email}).");
 
         return response()->json(['message' => 'User deactivated.']);
     }
@@ -202,6 +244,8 @@ class UserController extends Controller
         }
 
         $user->update($update);
+
+        $this->log($request, 'Activate', $user->id, "Activated user \"{$user->name}\" ({$user->email})." . (!empty($data['role']) ? " Role confirmed/changed to {$data['role']}." : ''));
 
         return response()->json(['message' => 'User activated.']);
     }

@@ -122,7 +122,7 @@ class MultiRoleTest extends TestCase
             'assigned_mechanic_id' => $juan->id,
             'maintenance_type' => 'Engine Repair',
         ])->assertOk();
-        $assignResponse->assertJsonPath('warning', "{$juan->name} is also this ticket's Custodian — they won't be able to verify their own repair. An Admin will need to verify it instead.");
+        $assignResponse->assertJsonPath('warning', "{$juan->name} is also this ticket's Custodian — they won't be able to verify their own repair. Reassign the ticket to a different Custodian before it reaches verification.");
 
         // Juan (as Maintenance) logs the repair.
         Sanctum::actingAs($juan, ['*']);
@@ -138,10 +138,19 @@ class MultiRoleTest extends TestCase
             'test_attested' => true,
             'functional_test' => [['item' => 'Reported issue no longer occurs', 'passed' => true]],
         ])->assertForbidden()
-            ->assertJsonFragment(['message' => 'You performed this repair — an Admin needs to verify it.']);
+            ->assertJsonFragment(['message' => 'You performed this repair — it must be verified by a different Custodian. Reassign this ticket to another Custodian.']);
 
-        // Admin steps in as the fallback and verifies it instead.
+        // Admin is no longer a verification fallback (production-readiness
+        // audit finding #2) — the actual fix is reassigning the ticket to a
+        // different Custodian, who can then verify it normally.
+        $standInCustodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian']]);
         Sanctum::actingAs($admin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/reassign-custodian", [
+            'assigned_custodian_id' => $standInCustodian->id,
+            'reassign_reason' => 'Juan cannot verify his own repair.',
+        ])->assertOk();
+
+        Sanctum::actingAs($standInCustodian, ['*']);
         $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/verify", [
             'verification_verdict' => 'Approved',
             'test_attested' => true,
@@ -149,6 +158,7 @@ class MultiRoleTest extends TestCase
         ])->assertOk();
 
         // Admin gives the final verdict and closes.
+        Sanctum::actingAs($admin, ['*']);
         $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
             'confirmation_verdict' => 'Confirmed',
         ])->assertOk();

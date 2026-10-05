@@ -14,9 +14,11 @@ use Tests\TestCase;
 
 /**
  * App\Console\Commands\ConvertDueSchedulesToTickets — a Scheduled entry
- * whose date has arrived becomes a real, pre-diagnosed ticket automatically,
- * and completeSchedule() refuses to also complete the schedule directly
- * once that's happened (the ticket is the live process from then on).
+ * whose date has arrived becomes a ticket PROPOSAL automatically (Pending
+ * Approval, same as a human Custodian proposal — production-readiness audit
+ * finding #1), and completeSchedule() refuses to also complete the schedule
+ * directly once that's happened (the ticket is the live process from then
+ * on, once Admin approves it).
  */
 class ConvertDueSchedulesToTicketsTest extends TestCase
 {
@@ -46,9 +48,10 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
     }
 
     #[Test]
-    public function a_due_schedule_with_no_assignee_becomes_an_open_pre_diagnosed_ticket(): void
+    public function a_due_schedule_becomes_a_pending_approval_proposal_not_an_active_ticket(): void
     {
         $vehicle = $this->vehicle();
+        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin'], 'barangay_id' => $vehicle->barangay_id]);
         $schedule = VehicleMaintenanceSchedule::create([
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
@@ -63,16 +66,30 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
         $this->assertNotNull($schedule->resulting_ticket_id);
 
         $ticket = MaintenanceTicket::findOrFail($schedule->resulting_ticket_id);
-        $this->assertSame('Active', $ticket->status);
+        // Production-readiness audit finding #1 — this must be a proposal
+        // awaiting Admin review, exactly like a human Custodian's, not an
+        // Active ticket that skipped review entirely.
+        $this->assertSame('Pending Approval', $ticket->status);
         $this->assertSame($this->custodian->id, $ticket->assigned_custodian_id);
         $this->assertCount(1, $ticket->subIssues);
         $this->assertSame('Open', $ticket->subIssues->first()->status);
         $this->assertNull($ticket->subIssues->first()->assigned_mechanic_id);
-        $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
+        // Nothing about the vehicle changes until Admin actually approves —
+        // same as any other proposal.
+        $this->assertSame('Available', $vehicle->fresh()->status);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->custodian->id,
+            'type' => 'schedule_due_ticket_created',
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $admin->id,
+            'type' => 'ticket_proposed',
+        ]);
     }
 
     #[Test]
-    public function a_due_schedule_with_an_assignee_creates_a_sub_issue_already_under_repair(): void
+    public function a_due_schedules_assignee_rides_along_as_a_suggestion_not_a_direct_dispatch(): void
     {
         $vehicle = $this->vehicle();
         $schedule = VehicleMaintenanceSchedule::create([
@@ -88,9 +105,25 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
 
         $ticket = MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id);
         $subIssue = $ticket->subIssues->first();
+        // Not dispatched yet — a suggestion for Admin to review, same as a
+        // human proposal's suggested_mechanic_id. No direct work order.
+        $this->assertSame('Open', $subIssue->status);
+        $this->assertNull($subIssue->assigned_mechanic_id);
+        $this->assertSame($this->mechanic->id, $subIssue->suggested_mechanic_id);
+        $this->assertDatabaseMissing('notifications', [
+            'user_id' => $this->mechanic->id,
+            'type' => 'work_order_assigned',
+        ]);
+
+        // Admin approves — THIS is what actually dispatches the suggested
+        // mechanic, exactly like any other Custodian proposal.
+        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        Sanctum::actingAs($admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+
+        $subIssue->refresh();
         $this->assertSame('Under Repair', $subIssue->status);
         $this->assertSame($this->mechanic->id, $subIssue->assigned_mechanic_id);
-
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->mechanic->id,
             'type' => 'work_order_assigned',
@@ -187,7 +220,18 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
         ], $overrides));
         $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
 
-        return [$vehicle, $schedule->fresh(), MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id)];
+        $ticket = MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id);
+
+        // The auto-proposal still needs Admin approval before it's Active —
+        // same as any human Custodian proposal (production-readiness audit
+        // finding #1). The tests using this helper are about what happens
+        // once a ticket is live, not about the approval step itself (that's
+        // covered separately above), so approve it here to get there.
+        $approver = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        Sanctum::actingAs($approver, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+
+        return [$vehicle, $schedule->fresh(), $ticket->fresh()];
     }
 
     private function driveToClosed(MaintenanceTicket $ticket): void

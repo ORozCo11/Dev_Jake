@@ -40,6 +40,17 @@ class VehicleValidationTest extends TestCase
         return $custodian;
     }
 
+    // Production-readiness audit finding #6 — vehicle registration needs an
+    // explicit per-account delegation (can_register_vehicles), not just the
+    // Custodian role.
+    private function actingAsDelegatedCustodian(): User
+    {
+        $custodian = User::factory()->create(['role' => 'Custodian', 'can_register_vehicles' => true]);
+        Sanctum::actingAs($custodian, ['*']);
+
+        return $custodian;
+    }
+
     private function actingAsMechanic(): User
     {
         $mechanic = User::factory()->create(['role' => 'Maintenance Personnel']);
@@ -242,12 +253,23 @@ class VehicleValidationTest extends TestCase
     #[Test]
     public function a_custodian_can_register_a_vehicle_when_delegated(): void
     {
-        $this->actingAsCustodian();
+        $this->actingAsDelegatedCustodian();
 
         $response = $this->postJson('/api/vehicles', $this->validPayload());
 
         $response->assertCreated();
         $this->assertDatabaseHas('vehicles', ['plate_number' => 'ABC-1234']);
+    }
+
+    #[Test]
+    public function a_custodian_without_delegation_cannot_register_a_vehicle(): void
+    {
+        $this->actingAsCustodian();
+
+        $response = $this->postJson('/api/vehicles', $this->validPayload());
+
+        $response->assertForbidden();
+        $this->assertDatabaseCount('vehicles', 0);
     }
 
     #[Test]
@@ -264,7 +286,7 @@ class VehicleValidationTest extends TestCase
     #[Test]
     public function a_custodian_who_registered_a_vehicle_still_cannot_edit_its_master_data(): void
     {
-        $custodian = $this->actingAsCustodian();
+        $custodian = $this->actingAsDelegatedCustodian();
         $created = $this->postJson('/api/vehicles', $this->validPayload())->assertCreated()->json();
 
         Sanctum::actingAs($custodian, ['*']);
@@ -278,7 +300,7 @@ class VehicleValidationTest extends TestCase
     #[Test]
     public function registering_a_vehicle_logs_the_role_it_was_registered_under(): void
     {
-        $custodian = $this->actingAsCustodian();
+        $custodian = $this->actingAsDelegatedCustodian();
 
         $created = $this->postJson('/api/vehicles', $this->validPayload())->assertCreated()->json();
 

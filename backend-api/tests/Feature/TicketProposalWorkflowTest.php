@@ -297,6 +297,14 @@ class TicketProposalWorkflowTest extends TestCase
             ->where('type', 'ticket_declined')
             ->firstOrFail();
         $this->assertStringContainsString('Not urgent enough', $notification->message);
+
+        // The ticket row is gone — this is the only remaining durable trace
+        // of the decline, so it must carry the reason, the vehicle, and who
+        // proposed it even though those rows no longer exist to look up.
+        $log = \App\Models\ActivityLog::where('action', 'Decline Ticket')->firstOrFail();
+        $this->assertStringContainsString('Not urgent enough', $log->details);
+        $this->assertStringContainsString($this->custodian->name, $log->details);
+        $this->assertSame((string) $ticket->ticket_id, $log->affected_record_id);
     }
 
     #[Test]

@@ -178,6 +178,15 @@ function canDo(user, ability) {
   return Array.isArray(user.abilities) && user.abilities.includes(ability);
 }
 
+// Production-readiness audit finding #6 — mirrors User::canRegisterVehicles()
+// on the backend. canDo(user, 'vehicle.create') alone can't express this: the
+// ability only says Admin/Custodian are the eligible ROLES, not which
+// specific Custodian accounts an Admin has actually delegated it to.
+function canRegisterVehicles(user) {
+  if (hasRole(user, 'Admin')) return true;
+  return hasRole(user, 'Custodian') && !!user?.can_register_vehicles;
+}
+
 function userRoles(user) {
   if (!user) return [];
   const roles = (Array.isArray(user.roles) && user.roles.length) ? [...user.roles] : (user.role ? [user.role] : []);
@@ -508,7 +517,7 @@ function Workspace() {
   // bounce rather than inventing a second pattern.
   useEffect(() => {
     const deniedNewOrEdit = (
-      (isNewVehiclePage && !canDo(user, 'vehicle.create'))
+      (isNewVehiclePage && !canRegisterVehicles(user))
       || (isVehicleEditPage && !canDo(user, 'vehicle.edit'))
       || (isNewCategoryPage && !canDo(user, 'vehicle_type.create'))
       || (editCategoryId && !canDo(user, 'vehicle_type.edit'))
@@ -683,9 +692,13 @@ function Workspace() {
   // SmartForm keeps resetting the form back over whatever was just typed.
   const editUserInitialValues = useMemo(() => {
     if (!editUserId) return EMPTY_OBJ;
-    const u = (records.users ?? []).find((x) => String(x.id) === String(editUserId));
-    if (u && (!Array.isArray(u.roles) || !u.roles.length) && u.role) return { ...u, roles: [u.role] };
-    return u;
+    let u = (records.users ?? []).find((x) => String(x.id) === String(editUserId));
+    if (!u) return u;
+    if ((!Array.isArray(u.roles) || !u.roles.length) && u.role) u = { ...u, roles: [u.role] };
+    // The field renders as a single-item checkboxes group (see userFields());
+    // that type always stores/reads an array, converted back to a plain
+    // boolean on submit (see submitFormPage's 'users' branch).
+    return { ...u, can_register_vehicles: u.can_register_vehicles ? ['Allow vehicle registration'] : [] };
   }, [records.users, editUserId]);
   const [dashboard, setDashboard] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
@@ -1538,6 +1551,13 @@ function Workspace() {
       // "Add New Issue" popup — description reuses this same form's
       // Problem/Reason (already describing what's wrong), and severity
       // defaults to Medium since this form has no better signal for it.
+      // userFields() renders vehicle-registration delegation as a one-item
+      // checkboxes group (array in, array out) purely so it can reuse the
+      // generic field renderer — the API wants a plain boolean.
+      if (moduleKey === 'users' && Array.isArray(payload.can_register_vehicles)) {
+        finalPayload = { ...payload, can_register_vehicles: payload.can_register_vehicles.includes('Allow vehicle registration') };
+      }
+
       if (moduleKey === 'maintenance' && payload.issue_report_id === '__new_issue__') {
         const { data: newIssue } = await api.post('/issues', {
           vehicle_id: payload.vehicle_id,
@@ -2653,8 +2673,20 @@ function Workspace() {
                         className={`notification-item notification-${notificationType} ${!n.read_at ? 'unread' : ''}`}
                         onClick={async () => {
                           await markNotificationAsRead(n.notification_id);
+                          // Production-readiness audit finding #10 — open the
+                          // exact record this notification is about, not just
+                          // mark it read and leave the user where they were.
                           if (n.ticket_id) {
                             openTicketProfile({ ticket_id: n.ticket_id });
+                          } else if (n.issue_report_id) {
+                            navigate(`${roleRoutes[user.role]}/issues/${n.issue_report_id}`);
+                          } else if (n.schedule_id) {
+                            // Not every role that can receive this (e.g. a
+                            // Maintenance Personnel assignee) holds
+                            // schedule.edit — land on the shared list instead
+                            // of a specific /edit page that could redirect
+                            // them away.
+                            returnToModule('schedules');
                           }
                           setShowNotifications(false);
                         }}
@@ -3016,6 +3048,10 @@ function Workspace() {
               // ownership half via added_by), Admin unrestricted.
               canManageDocuments={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
               canCheckReadiness={canDo(user, 'vehicle.readiness_check')}
+              // Production-readiness audit finding #8 — the reliability
+              // endpoint was fully built with no UI anywhere; surfaced here
+              // (an existing Admin page) rather than a new sidebar module.
+              canViewReliability={hasRole(user, 'Admin')}
               setNotice={setNotice}
               onSaved={refreshCurrent}
               onRequestConfirmation={setConfirmDialog}
@@ -3080,7 +3116,7 @@ function Workspace() {
             <FormPage
               description={issueDescription(user.role)}
               onBack={() => returnToModule('issues')}
-              fields={issueFields(lookups, editIssueId ? { issue_report_id: editIssueId } : null, user.role, (!editIssueId && canDo(user, 'vehicle.create')) ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`, { state: { returnTo: location.pathname } }) : undefined)}
+              fields={issueFields(lookups, editIssueId ? { issue_report_id: editIssueId } : null, user.role, (!editIssueId && canRegisterVehicles(user)) ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`, { state: { returnTo: location.pathname } }) : undefined)}
               initialValues={editIssueId
                 ? (records.issues ?? []).find((i) => String(i.issue_report_id) === String(editIssueId))
                 : (location.state?.prefillVehicleId ? { vehicle_id: location.state.prefillVehicleId } : EMPTY_OBJ)}
@@ -3447,7 +3483,7 @@ function Workspace() {
               onChange={setSearchQuery}
               placeholder="Search vehicles..."
               columnChooser={vehicleColumnChooser}
-              onAdd={canDo(user, 'vehicle.create') ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`) : undefined}
+              onAdd={canRegisterVehicles(user) ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`) : undefined}
               addLabel="Add Vehicle"
               onExport={() => exportRowsToCsv('vehicles.csv', VEHICLE_EXPORT_COLUMNS, visibleRows)}
             />
@@ -7911,6 +7947,18 @@ function userFields(isEditing, liveValues = EMPTY_OBJ) {
     // fills left-then-right with no gaps for later fields to jump into
     // (which is what previously stranded Confirm Password alone).
     { label: 'Roles (a person can hold more than one — the first is their primary)', name: 'roles', options: ['Admin', 'Custodian', 'Maintenance Personnel'], required: true, type: 'checkboxes' },
+    // Production-readiness audit finding #6 — vehicle registration is a
+    // per-account delegation an Admin grants a specific Custodian, not a
+    // blanket role grant. Only shown once Custodian is actually selected
+    // above; Admin already always registers regardless of this flag.
+    ...(Array.isArray(liveValues.roles) && liveValues.roles.includes('Custodian')
+      ? [{
+          label: 'Vehicle Registration',
+          name: 'can_register_vehicles',
+          options: ['Allow vehicle registration'],
+          type: 'checkboxes',
+        }]
+      : []),
     { label: 'Profile Photo', name: 'photo', accept: 'image/*', type: 'file' },
     {
       label: isEditing ? 'New Password (leave blank to keep current)' : 'Password',
@@ -8037,6 +8085,12 @@ function NewVehiclePage({ onBack, lookups, allHubs, onSubmit, onDirty }) {
       { label: 'Model', name: 'model', required: true, type: 'text' },
       { label: 'Year Model', name: 'year_model', required: true, type: 'number' },
       { label: 'Capacity', name: 'capacity', required: true, type: 'quantity', units: capacityUnits(domain) },
+      // Optional — without it, the per-vehicle reliability lens' lifetime-
+      // cost-vs-value (decommission signal) has nothing to compare against
+      // and is just skipped for this vehicle (production-readiness audit
+      // finding #7 — same field already existed on the Edit Vehicle form,
+      // just never on registration itself).
+      { label: 'Acquisition Cost (optional)', name: 'acquisition_cost', type: 'number', placeholder: 'e.g. 850000' },
       { label: 'Vehicle Color', name: 'vehicle_color', required: true, type: 'text' },
       ...vehicleDomainFields(domain),
     ],
@@ -8067,6 +8121,7 @@ function NewVehiclePage({ onBack, lookups, allHubs, onSubmit, onDirty }) {
           ) : null;
         },
       },
+      { label: 'Remarks (optional)', name: 'remarks', type: 'textarea' },
     ],
   };
 
@@ -8472,6 +8527,9 @@ function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPhotoUrl 
         ) : null;
       },
     },
+    // Production-readiness audit finding #7 — was accepted by the API and
+    // shown read-only on the profile, but had no way to actually be edited.
+    { label: 'Remarks (optional)', name: 'remarks', type: 'textarea', group: 'Location & service availability' },
   ];
 }
 
@@ -13006,16 +13064,18 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                     )
                   )}
 
-                  {/* Admin fallback verify (Phase A2) — the Custodian's own
-                      verify action lives in CustodianVerificationModule and
-                      isn't duplicated here; this exists specifically for
-                      when the assigned Custodian can't do it themself, most
-                      notably a dual-role account that also logged this
-                      repair (verifyRepair() blocks that on the backend).
-                      Not restricted to just that case — a general fallback,
-                      same as every other Custodian action Admin can stand
-                      in for. */}
-                  {ticket.status === 'Active' && canDo(user, 'subissue.verify') && (isAdminUser || idOf(si.verification_assigned_to) === userId) && String(si.assigned_mechanic_id) !== String(userId) && onVerify && si.status === 'For Inspection' && (
+                  {/* Verification from within the ticket's own detail page —
+                      the Custodian's own verify action also lives in
+                      CustodianVerificationModule, this is just a second
+                      entry point to the same action. Production-readiness
+                      audit finding #2 removed the old "Admin fallback" bypass
+                      here (and on the backend) — this is now a plain
+                      ownership check, same rule everywhere: you must be the
+                      SPECIFIC Custodian this sub-issue's verification is
+                      assigned to, and you can never be the one who performed
+                      the repair. An unavailable Custodian is handled by
+                      reassigning the ticket, not by Admin standing in. */}
+                  {ticket.status === 'Active' && canDo(user, 'subissue.verify') && idOf(si.verification_assigned_to) === userId && String(si.assigned_mechanic_id) !== String(userId) && onVerify && si.status === 'For Inspection' && (
                     verifyingId === si.sub_issue_id ? (
                       <div className="ticket-inline-form" style={{ marginTop: 8, padding: '10px 12px' }}>
                         <VerificationForm
@@ -13026,7 +13086,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                       </div>
                     ) : (
                       <button className="primary-button" style={{ marginTop: 10 }} type="button" onClick={() => setVerifyingId(si.sub_issue_id)}>
-                        <Icon name="checkCircle" size={14} /> Verify Repair (Admin)
+                        <Icon name="checkCircle" size={14} /> Verify Repair
                       </button>
                     )
                   )}
@@ -14767,6 +14827,61 @@ function VehicleDocumentsPage({ vehicles, canManage, onRequestConfirmation }) {
   );
 }
 
+// Production-readiness audit finding #8 — FleetController::vehicleReliability()
+// was fully built (failure counts, days out of service, lifetime spend, a
+// chronic flag, a decommission signal) but had no caller anywhere in the
+// frontend. Surfaced here, on the existing Vehicle Profile page, rather than
+// a new sidebar module for one metric set.
+function VehicleReliabilityCard({ vehicleId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api.get(`/vehicles/${vehicleId}/reliability`)
+      .then((r) => { if (!cancelled) setData(r.data); })
+      .catch(() => { if (!cancelled) setData(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [vehicleId]);
+
+  const peso = (n) => `₱${Number(n ?? 0).toLocaleString()}`;
+
+  return (
+    <section className="veh-card">
+      <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Reliability</h4></div>
+      {loading ? (
+        <p className="muted" style={{ padding: '10px 14px' }}>Loading…</p>
+      ) : !data ? (
+        <p className="muted" style={{ padding: '10px 14px' }}>Reliability data is unavailable right now.</p>
+      ) : (
+        <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(data.chronic || data.decommission_signal) && (
+            <div className="ticket-alert-banner formaint" style={{ marginBottom: 2 }}>
+              <Icon name="alert" size={14} />
+              {data.chronic && data.decommission_signal
+                ? 'Chronic repeat failures, and lifetime repair spend is a large share of this vehicle’s value.'
+                : data.chronic
+                  ? 'Chronic repeat failures on this vehicle — consider a deeper fix.'
+                  : 'Lifetime repair spend is a large share of this vehicle’s value — a decommission review may be worth it.'}
+            </div>
+          )}
+          <dl className="veh-kv" style={{ margin: 0 }}>
+            <div><dt>Failures (6 mo)</dt><dd>{data.failures_6mo}</dd></div>
+            <div><dt>Failures (12 mo)</dt><dd>{data.failures_12mo}</dd></div>
+            <div><dt>Avg. Days Out of Service</dt><dd>{data.avg_days_out ?? '-'}</dd></div>
+            <div><dt>Lifetime Repair Spend</dt><dd>{peso(data.total_spend)}</dd></div>
+            {data.acquisition_cost != null && (
+              <div><dt>Spend vs. Acquisition Cost</dt><dd>{data.cost_ratio != null ? `${Math.round(data.cost_ratio * 100)}%` : '-'}</dd></div>
+            )}
+          </dl>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
   // canManage (Admin + Custodian, from VehicleProfilePage's
   // canManageDocuments) governs upload only here — VehicleFilesModal reads
@@ -15097,7 +15212,7 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
   );
 }
 
-function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canCheckReadiness = false, setNotice, onSaved, onRequestConfirmation }) {
+function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canCheckReadiness = false, canViewReliability = false, setNotice, onSaved, onRequestConfirmation }) {
   const location = useLocation();
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('tab') === 'edit');
   const [decommissioning, setDecommissioning] = useState(false);
@@ -15374,6 +15489,8 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
               </section>
 
               <VehicleFiles vehicleId={vehicle.vehicle_id} canManage={canManageDocuments} onRequestConfirmation={onRequestConfirmation} />
+
+              {canViewReliability && <VehicleReliabilityCard vehicleId={vehicle.vehicle_id} />}
             </div>
           </div>
 
@@ -15978,12 +16095,13 @@ function CustodianVerificationModule({
           // (Custodian + Maintenance Personnel) account assigned to verify
           // their own repair can't "grade their own homework" here even
           // though they're the assigned verifier. The button is hidden
-          // proactively; the backend is what actually enforces it. Only an
-          // Admin can step in for this one (from Ticket Detail).
+          // proactively; the backend is what actually enforces it. Fixed by
+          // reassigning the ticket to a different Custodian (audit finding
+          // #2 removed the old "an Admin can step in" bypass).
           const isOwnRepair = r.assigned_mechanic_id != null
             && (r.assigned_mechanic_id === user.id || String(r.assigned_mechanic_id) === String(user.id));
           if (isAssignedToUser && isOwnRepair) {
-            return <span className="muted" title="You performed this repair — an Admin needs to verify it.">Needs Admin (you did this repair)</span>;
+            return <span className="muted" title="You performed this repair — reassign this ticket to a different Custodian to verify it.">Needs reassignment (you did this repair)</span>;
           }
           if (isAssignedToUser) {
             return <button className="btn-edit-action icon-btn" type="button" onClick={() => setEditTarget(r)} title="Verify Repair" aria-label="Verify Repair"><Icon name="checkCircle" size={14} /></button>;
