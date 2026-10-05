@@ -159,6 +159,25 @@ class PhaseB3DataScopingTest extends TestCase
     // =======================================================================
 
     #[Test]
+    public function custodian_and_maintenance_personnel_can_both_file_an_issue_report(): void
+    {
+        $vehicle = $this->vehicle();
+
+        foreach ([$this->custodian, $this->mechanic] as $reporter) {
+            Sanctum::actingAs($reporter, ['*']);
+            $this->postJson('/api/issues', [
+                'vehicle_id' => $vehicle->vehicle_id,
+                'issue_type' => 'Flat tire',
+                'issue_description' => 'Reported via final-validation regression check.',
+                'severity_level' => 'Low',
+            ])->assertCreated();
+        }
+
+        $this->assertDatabaseHas('vehicle_issue_reports', ['reported_by' => $this->custodian->id]);
+        $this->assertDatabaseHas('vehicle_issue_reports', ['reported_by' => $this->mechanic->id]);
+    }
+
+    #[Test]
     public function custodian_sees_every_issue_report_in_the_barangay_not_just_their_own(): void
     {
         $vehicle = $this->vehicle();
