@@ -33,8 +33,24 @@ trait ChecksRecurrence
     private function normalizeTicketTitle(string $title): string
     {
         $stripped = preg_replace('/^\[Issue #\d+\]\s*/i', '', trim($title));
+        // Server titles are "MT-0010 — Vehicle — Issue" (older ones "#42 - …"):
+        // the number is identity, not content, so it must not defeat the
+        // duplicate-Main-Issue match. Dash style is unified for the same reason.
+        $stripped = preg_replace('/^(MT-\d+\s*—\s*|#\d+\s*-\s*)/u', '', $stripped);
+        $stripped = str_replace(' — ', ' - ', $stripped);
 
         return mb_strtolower(trim($stripped));
+    }
+
+    // The issue-summary part of a ticket title, vehicle name and MT-#### number
+    // stripped — what "is this the same Main Issue?" actually compares, since
+    // the vehicle is already fixed by the query's own vehicle_id.
+    private function normalizeSummaryForVehicle(string $title, string $vehicleName): string
+    {
+        $n = $this->normalizeTicketTitle($title);
+        $prefix = $this->normalizeTicketTitle($vehicleName) . ' - ';
+
+        return str_starts_with($n, $prefix) ? substr($n, strlen($prefix)) : $n;
     }
 
     private function checkRecurrence(int $vehicleId, array $maintenanceTypes, ?string $issueType, string $title, int $days = 90): array
@@ -57,7 +73,9 @@ trait ChecksRecurrence
             $priorTicketsQuery->whereHas('issueReport', fn ($iq) => $iq->where('issue_type', $issueType));
             $priorRecordsQuery->whereHas('issueReport', fn ($iq) => $iq->where('issue_type', $issueType));
         } else {
-            $priorTicketsQuery->whereRaw('LOWER(TRIM(ticket_title)) = ?', [$normalizedTitle]);
+            // $title is the issue summary; stored titles are either that alone
+            // (older tickets) or "MT-0010 — Vehicle — summary".
+            $priorTicketsQuery->whereRaw('(LOWER(TRIM(ticket_title)) = ? OR LOWER(ticket_title) LIKE ?)', [$normalizedTitle, '% — ' . $normalizedTitle]);
             $priorRecordsQuery->whereRaw('LOWER(TRIM(problem_reason)) = ?', [$normalizedTitle]);
         }
 

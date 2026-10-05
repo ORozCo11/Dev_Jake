@@ -105,19 +105,23 @@ class ConvertDueSchedulesToTickets extends Command
         // against the same "Preventive Maintenance - {type}" format the
         // ticket below is actually titled with, so this stays self-consistent
         // across runs instead of comparing against a title nothing uses.
-        $ticketTitle = "Preventive Maintenance - {$schedule->maintenance_type}";
-        $normalizedTitle = $this->normalizeTicketTitle($ticketTitle);
+        $issueSummary = "Preventive Maintenance - {$schedule->maintenance_type}";
+        // Provisional, number-less form — same shape as a human proposal's, so
+        // the duplicate guard compares like with like. The MT-#### prefix is
+        // added below once the row has an id.
+        $ticketTitle = "{$vehicle->vehicle_name} — {$issueSummary}";
+        $normalizedTitle = $this->normalizeTicketTitle($issueSummary);
         $duplicate = MaintenanceTicket::where('vehicle_id', $vehicle->vehicle_id)
             ->whereNotIn('status', ['Closed', 'Cancelled'])
             ->get(['ticket_id', 'ticket_title'])
-            ->first(fn ($t) => $this->normalizeTicketTitle($t->ticket_title) === $normalizedTitle);
+            ->first(fn ($t) => $this->normalizeSummaryForVehicle($t->ticket_title, $vehicle->vehicle_name) === $normalizedTitle);
 
         if ($duplicate) {
             $this->warn("Schedule #{$schedule->schedule_id}: vehicle already has an open ticket (#{$duplicate->ticket_id}) for \"{$schedule->maintenance_type}\", skipped.");
             return false;
         }
 
-        DB::transaction(function () use ($schedule, $vehicle, $custodian, $ticketTitle) {
+        DB::transaction(function () use ($schedule, $vehicle, $custodian, $ticketTitle, $issueSummary) {
             $ticket = MaintenanceTicket::create([
                 'vehicle_id' => $vehicle->vehicle_id,
                 'created_by' => $custodian->id,
@@ -129,6 +133,7 @@ class ConvertDueSchedulesToTickets extends Command
                 'assigned_custodian_id' => $custodian->id,
                 'assigned_at' => now(),
             ]);
+            $ticket->update(['ticket_title' => MaintenanceTicket::composeTitle($ticket->ticket_id, $vehicle->vehicle_name, $issueSummary)]);
 
             // A rider for Admin to review, same as a human proposal's
             // suggested_mechanic_id — not a real dispatch. approveTicket()

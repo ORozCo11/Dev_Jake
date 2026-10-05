@@ -100,7 +100,6 @@ const modulesByRole = {
       ['vehicles', 'Vehicle Management'],
       ['categories', 'Vehicle Types'],
       ['locations', 'Vehicle Location'],
-      ['vehicleDocuments', 'Vehicle Documents'],
     ] },
     { section: 'Administration', icon: 'key', items: [
       ['users', 'Users'],
@@ -115,7 +114,6 @@ const modulesByRole = {
     // no separate "Register Vehicle" row for the same page.
     { section: 'Vehicles', icon: 'vehicle', items: [
       ['vehicles', 'View Vehicles'],
-      ['vehicleDocuments', 'Vehicle Documents'],
       ['histories', 'Vehicle History'],
     ] },
     // 'reportOrPropose' ('issues' module under the hood) is the Issue
@@ -524,7 +522,7 @@ function Workspace() {
       || (isVehicleEditPage && !canDo(user, 'vehicle.edit'))
       || (isNewCategoryPage && !canDo(user, 'vehicle_type.create'))
       || (editCategoryId && !canDo(user, 'vehicle_type.edit'))
-      || (isNewSchedulePage && !canDo(user, 'schedule.create'))
+      || (isNewSchedulePage && !canDo(user, 'schedule.create') && !canDo(user, 'schedule.suggest'))
       || (editScheduleId && !canDo(user, 'schedule.edit'))
       || (isNewIssuePage && !canDo(user, 'issue.create'))
       || (editIssueId && !canDo(user, 'issue.edit'))
@@ -1273,6 +1271,18 @@ function Workspace() {
     navigate(`${roleRoutes[user.role]}/schedules/new`);
   };
 
+  // Maintenance Personnel can't open a ticket — this points the Custodians at
+  // the exact issue so they can propose one with everything already filled in.
+  const recommendTicketForIssue = async (issue) => {
+    setNotice(null);
+    try {
+      await api.post(`/issues/${issue.issue_report_id}/recommend-ticket`);
+      setNotice({ type: 'success', text: 'Custodians notified — they can open the ticket from this issue.' });
+    } catch (error) {
+      showError(error, setNotice);
+    }
+  };
+
   const deleteTicket = async (ticket) => {
     setNotice(null);
     try {
@@ -1559,6 +1569,19 @@ function Workspace() {
       // generic field renderer — the API wants a plain boolean.
       if (moduleKey === 'users' && Array.isArray(payload.can_register_vehicles)) {
         finalPayload = { ...payload, can_register_vehicles: payload.can_register_vehicles.includes('Allow vehicle registration') };
+      }
+
+      // Admin owns the maintenance calendar — a Custodian filling in this same
+      // form is sending a suggestion, which books nothing.
+      if (moduleKey === 'schedules' && !existing && !canDo(user, 'schedule.create') && canDo(user, 'schedule.suggest')) {
+        await api.post('/maintenance-schedules/suggest', {
+          vehicle_id: payload.vehicle_id,
+          maintenance_type: payload.maintenance_type,
+          scheduled_date: payload.scheduled_date || undefined,
+          notes: payload.notes || undefined,
+        });
+        await finishFormPageSuccess(moduleKey, existing, 'Suggestion sent to Admin.');
+        return true;
       }
 
       if (moduleKey === 'maintenance' && payload.issue_report_id === '__new_issue__') {
@@ -2683,6 +2706,8 @@ function Workspace() {
                             openTicketProfile({ ticket_id: n.ticket_id });
                           } else if (n.issue_report_id) {
                             navigate(`${roleRoutes[user.role]}/issues/${n.issue_report_id}`);
+                          } else if (n.vehicle_id) {
+                            navigate(`${roleRoutes[user.role]}/vehicles/${n.vehicle_id}`);
                           } else if (n.schedule_id) {
                             // Not every role that can receive this (e.g. a
                             // Maintenance Personnel assignee) holds
@@ -3049,13 +3074,14 @@ function Workspace() {
               // entirely (view/download only now); Custodian keeps upload +
               // edit-own (VehicleFiles/VehicleFilesModal enforce the
               // ownership half via added_by), Admin unrestricted.
-              canManageDocuments={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
+              canManageDocuments={canDo(user, 'document.create')}
               // Final stabilization pass (2026-10-05, P0) — Maintenance
               // Personnel has NO Vehicle Documents access at all now, not
               // even read-only; they see repair evidence through the
               // ticket/work-order record itself instead.
               canViewDocuments={canDo(user, 'document.view')}
               canCheckReadiness={canDo(user, 'vehicle.readiness_check')}
+              canRequestInspection={canDo(user, 'vehicle.request_inspection')}
               // Production-readiness audit finding #8 — the reliability
               // endpoint was fully built with no UI anywhere; surfaced here
               // (an existing Admin page) rather than a new sidebar module.
@@ -3100,10 +3126,10 @@ function Workspace() {
             <FormPage
               description="Plan preventative maintenance and track schedule status."
               onBack={() => { setPrefilledScheduleData(null); returnToModule('schedules'); }}
-              fields={scheduleFields(lookups, allHubs, Boolean(editScheduleId))}
+              fields={scheduleFields(lookups, allHubs, Boolean(editScheduleId), !editScheduleId && !canDo(user, 'schedule.create'))}
               initialValues={scheduleInitialValues}
               onSubmit={(payload) => submitFormPage('schedules', editScheduleId ? { schedule_id: editScheduleId } : null, payload)}
-              submitLabel={editScheduleId ? 'Update Schedule' : 'Add Schedule'}
+              submitLabel={editScheduleId ? 'Update Schedule' : (canDo(user, 'schedule.create') ? 'Add Schedule' : 'Send Suggestion')}
               contextVehicles={lookups.vehicles}
               hubs={allHubs}
               onDirty={() => setHasUnsavedChanges(true)}
@@ -3117,6 +3143,7 @@ function Workspace() {
                 user={user}
                 onCreateTicketFromIssue={handleCreateTicketFromIssue}
                 onDismissIssue={setDismissIssueTarget}
+                onRecommendTicket={recommendTicketForIssue}
               />
               {renderDismissIssueModal()}
             </>
@@ -4233,10 +4260,10 @@ function Workspace() {
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search schedules..."
-                onAdd={canDo(user, 'schedule.create')
+                onAdd={(canDo(user, 'schedule.create') || canDo(user, 'schedule.suggest'))
                   ? () => navigate(`${roleRoutes[user.role]}/schedules/new`)
                   : undefined}
-                addLabel="Add Schedule"
+                addLabel={canDo(user, 'schedule.create') ? 'Add Schedule' : 'Suggest Schedule'}
                 onExport={() => exportRowsToCsv('maintenance-schedules.csv', SCHEDULE_EXPORT_COLUMNS, visibleRows)}
                 columnChooser={scheduleViewMode === 'card' ? undefined : scheduleColumnChooser}
               />
@@ -6186,7 +6213,7 @@ const ISSUE_STATUS_COLORS = {
 // a pure Custodian's own list is filtered to "mine", but a "View" link from
 // the duplicate-issue warning is specifically for a report FILED BY SOMEONE
 // ELSE on the same vehicle, which that filtered list would never contain.
-function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTicketFromIssue, onDismissIssue }) {
+function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTicketFromIssue, onDismissIssue, onRecommendTicket }) {
   const actions = useContext(RowActionsContext);
   const [issue, setIssue] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -6254,6 +6281,11 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTi
         {onDismissIssue && canDo(user, 'issue.dismiss') && issueNeedsTicket(issue) && (
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="ghost-button btn-delete-action" type="button" onClick={() => onDismissIssue(issue)}><Icon name="close" size={14} /> Dismiss</button>
+          </div>
+        )}
+        {onRecommendTicket && canDo(user, 'issue.recommend_ticket') && ['Pending', 'Under Review'].includes(issue.status) && !issue.maintenance_ticket && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="ghost-button btn-confirm-action" type="button" onClick={() => onRecommendTicket(issue)}><Icon name="ticket" size={14} /> Recommend Maintenance Ticket</button>
           </div>
         )}
         {onCreateTicketFromIssue && (canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && ['Pending', 'Under Review'].includes(issue.status) && !issue.maintenance_ticket && (
@@ -8785,10 +8817,13 @@ function maintenanceFields(lookups, role, liveValues = EMPTY_OBJ) {
 
 const NEW_ISSUE_OPTION = { value: '__new_issue__', label: '+ Add New Issue…' };
 
-function scheduleFields(lookups, allHubs = [], isEdit = false) {
+function scheduleFields(lookups, allHubs = [], isEdit = false, suggestOnly = false) {
   const hubOptions = allHubs.map((hub) => ({ value: hub.name, label: hub.name }));
 
-  return [
+  // A Custodian's suggestion only needs what Admin must see: which vehicle,
+  // what, roughly when, and why.
+  const keep = suggestOnly ? ['vehicle_id', 'maintenance_type', 'scheduled_date', 'notes'] : null;
+  const all = [
     { label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select' },
     { label: 'Maintenance Type', name: 'maintenance_type', options: lookups.maintenance_types, required: true, type: 'creatable-select', newItemLabel: 'maintenance type', catalogEndpoint: '/maintenance-types' },
     { label: 'Scheduled Date', name: 'scheduled_date', required: true, type: 'date' },
@@ -8826,6 +8861,7 @@ function scheduleFields(lookups, allHubs = [], isEdit = false) {
     ...(isEdit ? [{ label: 'Status', name: 'status', options: ['Scheduled', 'Cancelled'], type: 'select' }] : []),
     { label: 'Notes', name: 'notes', type: 'textarea' },
   ];
+  return keep ? all.filter((f) => keep.includes(f.name)) : all;
 }
 
 const REPORT_CATALOG = [
@@ -10534,7 +10570,7 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
               themselves created (matches the backend's ownership check on
               schedule.edit). A Maintenance Personnel assigned to it only ever
               gets to act on it via Mark as Done above. */}
-          {(isAdmin || (currentUserId != null && String(row.createdBy?.id) === String(currentUserId))) && (
+          {isAdmin && (
             <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
           )}
           {/* Reassigning/cancelling a schedule stays an Admin-only planning
@@ -12347,7 +12383,6 @@ function RepairContextDetails({ si }) {
 
 function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
   const [fields, setFields] = useState({
-    ticket_title: ticket.ticket_title ?? '',
     ticket_description: ticket.ticket_description ?? '',
     priority: ticket.priority ?? '',
   });
@@ -12367,7 +12402,6 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
     setSubmitting(true);
     try {
       await onApprove({
-        ticket_title: fields.ticket_title,
         ticket_description: fields.ticket_description,
         priority: fields.priority,
         sub_issues: subRows.map((r) => ({
@@ -12401,8 +12435,8 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
           <div className="proposal-review-group-title"><Icon name="clipboard" size={14} /> Ticket Details</div>
           <div className="ticket-form-grid-2" style={{ padding: 0, marginBottom: 12 }}>
             <label>
-              <span>Ticket Title</span>
-              <input type="text" value={fields.ticket_title} onChange={(e) => setField('ticket_title', e.target.value)} />
+              <span>Ticket</span>
+              <input type="text" value={ticket.ticket_title ?? ''} readOnly title="Generated by the system" />
             </label>
             <label>
               <span>Priority</span>
@@ -13943,14 +13977,9 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
 
     setSubmitting(true);
     try {
-      // The title is automatic (Vehicle - repair), not typed by the Custodian —
-      // kept in sync by the effect below, with a fallback here in case that
-      // hasn't caught up yet (e.g. submitted the instant a field changed).
-      const finalTitle = (liveValues.ticket_title ?? '').trim()
-        || `${selectedVehicle?.vehicle_name ?? 'Vehicle'} - ${titleHint || 'Repair'}`;
+      // No title is sent: the server builds "MT-0010 — Vehicle — Issue".
       const out = {
         vehicle_id: liveValues.vehicle_id,
-        ticket_title: finalTitle,
         ticket_description: liveValues.ticket_description,
         priority: liveValues.priority,
         entry_mode: entryMode,
@@ -14025,38 +14054,6 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
   }, [liveValues.vehicle_id, fromFlag]);
   const sourceVehicleOptions = vehicleOptions.filter((v) => String(v.vehicle_id) !== String(liveValues.vehicle_id));
 
-  // Auto-fills Ticket Title from Vehicle + the first sub-issue's Maintenance
-  // Type — the ticket's own # doesn't exist yet at proposal time (it's
-  // assigned on insert), so this pairing stands in for it. Tracked via
-  // lastAutoTitle (not a "touched" flag) so picking a different vehicle or
-  // maintenance type before typing anything of your own still updates it,
-  // but stops the moment you type a title we didn't generate.
-  // A title restored from a saved draft that still has the auto "Vehicle - …"
-  // shape counts as auto-generated, so it keeps tracking vehicle/mode changes.
-  const lastAutoTitleRef = useRef(
-    (ticketLookups.vehicles ?? []).some((v) => (liveValues.ticket_title ?? '').startsWith(`${v.vehicle_name} - `))
-      ? liveValues.ticket_title
-      : '',
-  );
-  const titleHint = isInHouse
-    ? (subIssueRows[0]?.maintenance_type || '')
-    : isCannibalized
-      ? (partRows[0]?.maintenance_type
-        || ((partRows[0]?.part_missing ?? '').trim()
-          ? `${partRows[0].part_missing.trim()}${partRows.length > 1 ? ` + ${partRows.length - 1} more` : ''} Replacement`
-          : ''))
-      : isExternal
-        ? (liveValues.external_maintenance_type || 'External Shop Repair')
-        : '';
-  useEffect(() => {
-    if (!selectedVehicle || !titleHint) return;
-    const autoTitle = `${selectedVehicle.vehicle_name} - ${titleHint}`;
-    const current = liveValues.ticket_title ?? '';
-    if (!current || current === lastAutoTitleRef.current) {
-      lastAutoTitleRef.current = autoTitle;
-      setField('ticket_title', autoTitle);
-    }
-  }, [selectedVehicle?.vehicle_name, titleHint]);
 
   return (
     <ModulePanel description="Propose a maintenance ticket for Admin review. Pick how it's being reported first — it stays Pending Approval until an Admin approves or declines it.">
@@ -15015,7 +15012,7 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
   const fileInputRef = useRef(null);
 
   const selected = documents.find((d) => d.document_id === selectedId);
-  const canEditSelected = !!selected && (hasRole(user, 'Admin') || (hasRole(user, 'Custodian') && String(selected.added_by?.id) === String(user.id)));
+  const canEditSelected = !!selected && (hasRole(user, 'Admin') || (canDo(user, 'document.edit') && String(selected.added_by?.id) === String(user.id)));
 
   const handlePick = (file) => {
     setPendingFile(file);
@@ -15224,7 +15221,7 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
   );
 }
 
-function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canViewReliability = false, setNotice, onSaved, onRequestConfirmation }) {
+function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canRequestInspection = false, canViewReliability = false, setNotice, onSaved, onRequestConfirmation }) {
   const location = useLocation();
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('tab') === 'edit');
   const [decommissioning, setDecommissioning] = useState(false);
@@ -15320,6 +15317,18 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
     );
   }
 
+  // Admin may not report an issue or open a ticket — the way to act on a
+  // hunch is to ask the Custodians to go and look.
+  const requestInspection = async () => {
+    setNotice(null);
+    try {
+      await api.post(`/vehicles/${vehicle.vehicle_id}/request-inspection`);
+      setNotice({ type: 'success', text: 'Custodians notified to inspect this vehicle.' });
+    } catch (error) {
+      showError(error, setNotice);
+    }
+  };
+
   const handleSave = async (payload) => {
     setNotice(null);
     try {
@@ -15343,6 +15352,11 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
           {canManage && vehicle.status !== 'Decommissioned' && !editing && (
             <button className="btn-sm primary-button" type="button" onClick={() => setEditing(true)}>
               <Icon name="edit" size={13} /> Edit Vehicle
+            </button>
+          )}
+          {canRequestInspection && !['Decommissioned', 'Inactive'].includes(vehicle.status) && !editing && (
+            <button className="btn-sm ghost-button" type="button" onClick={requestInspection}>
+              <Icon name="search" size={13} /> Request Custodian Inspection
             </button>
           )}
           {canCheckReadiness && !['Decommissioned', 'Inactive'].includes(vehicle.status) && !editing && (

@@ -314,10 +314,11 @@ class TicketWorkflowTest extends TestCase
         Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'overheating', // case/whitespace-insensitive match
             'ticket_description' => 'Reported again.',
             'priority' => 'Medium',
-            'sub_issues' => [['title' => 'Still overheating']],
+            // Same Main Issue = same issue summary (here the maintenance type),
+            // matched case-insensitively against the legacy 'Overheating' title.
+            'sub_issues' => [['title' => 'Still overheating', 'maintenance_type' => 'overheating']],
         ])->assertUnprocessable();
     }
 
@@ -1086,14 +1087,14 @@ class TicketWorkflowTest extends TestCase
     #[Test]
     public function double_booking_a_vehicle_warns_instead_of_blocking_and_a_confirm_proceeds(): void
     {
-        // Custodian creates schedules now, not Admin — see PhaseB4RoleModelTest
+        // Admin creates schedules (spec §19) — see PhaseB4RoleModelTest
         // for that reversal's own dedicated coverage. This test is about the
         // double-booking rule itself, which used to be a hard 422 and is now
         // a warning the caller can confirm past (see FleetController::
         // checkScheduleConflicts()).
         $vehicle = $this->vehicle();
 
-        Sanctum::actingAs($this->custodian, ['*']);
+        Sanctum::actingAs($this->admin, ['*']);
         $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
@@ -1624,13 +1625,13 @@ class TicketWorkflowTest extends TestCase
     public function a_pending_proposal_does_not_hold_a_vehicle_out_of_service_when_another_ticket_ends(): void
     {
         $vehicle = $this->vehicle();
-        $activeId = $this->propose($vehicle, ['ticket_title' => 'Brakes'])->assertCreated()->json('ticket_id');
+        $activeId = $this->propose($vehicle, ['sub_issues' => [['title' => 'Brakes']]])->assertCreated()->json('ticket_id');
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$activeId}/approve", [])->assertOk();
         $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
 
         // A second, still-unapproved proposal on the same vehicle.
-        $this->propose($vehicle, ['ticket_title' => 'Radio'])->assertCreated();
+        $this->propose($vehicle, ['sub_issues' => [['title' => 'Radio']]])->assertCreated();
 
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$activeId}/cancel", [])->assertOk();

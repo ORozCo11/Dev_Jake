@@ -247,11 +247,9 @@ class ScheduleCompletionTest extends TestCase
     public function a_new_schedule_always_starts_scheduled_even_if_a_different_status_is_submitted(): void
     {
         $vehicle = $this->vehicle();
-        // Custodian creates schedules now, not Admin — see PhaseB4RoleModelTest
-        // for the reversal's own dedicated coverage; this test only cares
-        // about the status-ignored behavior, so the actor just needs to be
-        // someone who's actually allowed to hit this endpoint.
-        $custodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian']]);
+        // Admin creates schedules (spec §19); this test only cares about the
+        // status-ignored behavior.
+        $custodian = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
 
         Sanctum::actingAs($custodian, ['*']);
         $response = $this->postJson('/api/maintenance-schedules', [

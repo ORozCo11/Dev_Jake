@@ -450,7 +450,8 @@ class TicketController extends Controller
             'vehicle_id'          => ['required', 'exists:vehicles,vehicle_id'],
             'issue_report_id'     => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
             'condition_check_id'  => ['nullable', 'exists:vehicle_condition_checks,condition_check_id'],
-            'ticket_title'        => ['required', 'string', 'max:255'],
+            // Ignored if sent — the server composes the "MT-0010 — Vehicle — Issue" title.
+            'ticket_title'        => ['nullable', 'string', 'max:255'],
             'ticket_description'  => ['required', 'string'],
             'priority'            => ['required', Rule::in($this->priorities)],
             // How the repair will be done. A proposal always states what is
@@ -531,28 +532,32 @@ class TicketController extends Controller
             abort_if(in_array($donor->status, ['Inactive', 'Decommissioned'], true), 422, 'The donor vehicle is archived or decommissioned.');
         }
 
+        $maintenanceTypes = array_column($data['sub_issues'], 'maintenance_type');
+        $issueType = !empty($data['issue_report_id']) ? optional(VehicleIssueReport::find($data['issue_report_id']))->issue_type : null;
+        $issueSummary = collect($maintenanceTypes)->filter()->first() ?: ($issueType ?: ($data['sub_issues'][0]['title'] ?? 'Maintenance'));
+        // Provisional (no number yet) — gets its MT-#### prefix once the row has an id.
+        $data['ticket_title'] = "{$vehicle->vehicle_name} — {$issueSummary}";
+
         // Same "no duplicate open Main Issue on this vehicle" precheck
         // createTicket() does — a fast, friendly rejection before the real,
         // row-locked recheck inside the transaction below.
-        $normalizedIncomingTitle = $this->normalizeTicketTitle($data['ticket_title']);
+        $normalizedIncomingTitle = $this->normalizeTicketTitle($issueSummary);
         $duplicateMainIssue = MaintenanceTicket::where('vehicle_id', $data['vehicle_id'])
             ->whereNotIn('status', ['Closed', 'Cancelled'])
             ->get(['ticket_id', 'ticket_title'])
-            ->first(fn ($t) => $this->normalizeTicketTitle($t->ticket_title) === $normalizedIncomingTitle);
+            ->first(fn ($t) => $this->normalizeSummaryForVehicle($t->ticket_title, $vehicle->vehicle_name) === $normalizedIncomingTitle);
 
         if ($duplicateMainIssue) {
             return response()->json([
-                'message' => "This vehicle already has an open ticket for \"{$data['ticket_title']}\" (Ticket #{$duplicateMainIssue->ticket_id}). Add this as a sub-issue on that ticket instead of proposing a new one."
+                'message' => "This vehicle already has an open ticket for \"{$issueSummary}\" (Ticket #{$duplicateMainIssue->ticket_id}). Add this as a sub-issue on that ticket instead of proposing a new one."
             ], 422);
         }
 
-        $maintenanceTypes = array_column($data['sub_issues'], 'maintenance_type');
-        $issueType = !empty($data['issue_report_id']) ? optional(VehicleIssueReport::find($data['issue_report_id']))->issue_type : null;
-        $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $maintenanceTypes, $issueType, $data['ticket_title']);
+        $recurrenceInfo = $this->checkRecurrence((int) $data['vehicle_id'], $maintenanceTypes, $issueType, $issueSummary);
         $recurrence = $recurrenceInfo['count'];
         $recurrenceLabel = implode(' / ', array_filter(array_unique($maintenanceTypes))) ?: ($issueType ?? $data['ticket_title']);
 
-        $ticket = DB::transaction(function () use ($data, $request, $vehicle, $recurrence, $recurrenceInfo, $normalizedIncomingTitle, $repairType, $recurrenceLabel) {
+        $ticket = DB::transaction(function () use ($data, $request, $vehicle, $recurrence, $recurrenceInfo, $normalizedIncomingTitle, $repairType, $recurrenceLabel, $issueSummary) {
             // Lock the vehicle row first — same TOCTOU fix as createTicket(),
             // serializing concurrent proposals for the SAME vehicle so two
             // requests can't both pass the duplicate check before either has
@@ -562,7 +567,7 @@ class TicketController extends Controller
             $duplicateMainIssue = MaintenanceTicket::where('vehicle_id', $data['vehicle_id'])
                 ->whereNotIn('status', ['Closed', 'Cancelled'])
                 ->get(['ticket_id', 'ticket_title'])
-                ->first(fn ($t) => $this->normalizeTicketTitle($t->ticket_title) === $normalizedIncomingTitle);
+                ->first(fn ($t) => $this->normalizeSummaryForVehicle($t->ticket_title, $vehicle->vehicle_name) === $normalizedIncomingTitle);
 
             abort_if(
                 $duplicateMainIssue,
@@ -583,6 +588,11 @@ class TicketController extends Controller
                 'recurrence_count'        => $recurrence,
                 'recurrence_of_ticket_id' => $recurrenceInfo['last_type'] === 'ticket' ? $recurrenceInfo['last_id'] : null,
             ]);
+
+            // The number only exists now — finish the "MT-0010 — Vehicle —
+            // Issue" title (and use it in the log/notification text below).
+            $data['ticket_title'] = MaintenanceTicket::composeTitle($ticket->ticket_id, $vehicle->vehicle_name, $issueSummary);
+            $ticket->update(['ticket_title' => $data['ticket_title']]);
 
             foreach ($data['sub_issues'] as $sub) {
                 TicketSubIssue::create([
@@ -666,7 +676,6 @@ class TicketController extends Controller
         abort_unless($ticket->status === 'Pending Approval', 422, "Only a Pending Approval ticket can be approved. Current: {$ticket->status}.");
 
         $data = $request->validate([
-            'ticket_title'          => ['sometimes', 'string', 'max:255'],
             'ticket_description'    => ['sometimes', 'string'],
             'priority'              => ['sometimes', Rule::in($this->priorities)],
             'assigned_custodian_id' => ['sometimes', 'exists:users,id'],
@@ -696,7 +705,7 @@ class TicketController extends Controller
             abort_unless($locked && $locked->status === 'Pending Approval', 422, 'This proposal was already approved or declined.');
 
             $ticket->update(array_intersect_key($data, array_flip([
-                'ticket_title', 'ticket_description', 'priority', 'assigned_custodian_id',
+                'ticket_description', 'priority', 'assigned_custodian_id',
             ])));
 
             foreach ($data['sub_issues'] ?? [] as $subData) {
@@ -730,14 +739,6 @@ class TicketController extends Controller
                 'inspected_at'      => $ticket->created_at,
             ]);
             $vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
-
-            // The Custodian's title has no ticket number yet (a proposal is
-            // created before its own ID is known) — fold it in now, so every
-            // approved ticket reads "#<id> - <vehicle> - <issue>".
-            $idPrefix = "#{$ticket->ticket_id} - ";
-            if (!str_starts_with($ticket->ticket_title, $idPrefix)) {
-                $ticket->update(['ticket_title' => $idPrefix . $ticket->ticket_title]);
-            }
 
             $dispatchedMechanics = [];
             foreach ($ticket->subIssues()->get() as $subIssue) {

@@ -239,7 +239,6 @@ class TicketProposalWorkflowTest extends TestCase
 
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
-            'ticket_title' => 'Overheating — confirmed radiator leak',
             'priority' => 'Medium',
             'sub_issues' => [
                 ['sub_issue_id' => $subIssue->sub_issue_id, 'suggested_mechanic_id' => $otherMechanic->id],
@@ -247,24 +246,28 @@ class TicketProposalWorkflowTest extends TestCase
         ])->assertOk();
 
         $ticket->refresh();
-        // The ticket's own # is folded in on approval — a proposal is created
-        // before its ID is known, so the Custodian's title never has it.
-        $this->assertSame("#{$ticket->ticket_id} - Overheating — confirmed radiator leak", $ticket->ticket_title);
+        // Titles are server-composed and not editable at approval (spec §7).
+        $this->assertSame(sprintf('MT-%04d — %s — Worn belt', $ticket->ticket_id, $vehicle->vehicle_name), $ticket->ticket_title);
         $this->assertSame('Medium', $ticket->priority);
         $this->assertSame($otherMechanic->id, $ticket->subIssues->first()->assigned_mechanic_id);
     }
 
 
     #[Test]
-    public function approving_folds_the_tickets_own_number_into_its_title(): void
+    public function a_proposal_gets_a_server_built_mt_number_title_that_a_typed_title_cannot_override(): void
     {
         $vehicle = $this->vehicle();
-        $ticket = $this->propose($vehicle, ['ticket_title' => 'Overheating']);
+        // A client-supplied title is ignored; the server builds
+        // "MT-0001 — Vehicle — Issue" from the number, vehicle and issue.
+        $ticket = $this->propose($vehicle, ['ticket_title' => 'Typed by a user', 'sub_issues' => [['title' => 'Worn belt', 'maintenance_type' => 'Belt Replacement']]]);
+
+        $expected = sprintf('MT-%04d — %s — Belt Replacement', $ticket->ticket_id, $vehicle->vehicle_name);
+        $this->assertSame($expected, $ticket->ticket_title);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", ['ticket_title' => 'Admin override attempt'])->assertOk();
 
-        $this->assertSame("#{$ticket->ticket_id} - Overheating", $ticket->fresh()->ticket_title);
+        $this->assertSame($expected, $ticket->fresh()->ticket_title);
     }
 
     #[Test]

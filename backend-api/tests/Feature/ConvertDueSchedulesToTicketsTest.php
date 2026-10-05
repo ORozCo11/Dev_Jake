@@ -149,7 +149,7 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
         $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
 
         $ticket = MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id);
-        $this->assertSame('Preventive Maintenance - Oil Change', $ticket->ticket_title);
+        $this->assertSame(sprintf('MT-%04d — %s — Preventive Maintenance - Oil Change', $ticket->ticket_id, $ticket->vehicle->vehicle_name), $ticket->ticket_title);
         $this->assertSame('Scheduled Maintenance', $ticket->subIssues->first()->title);
         $this->assertSame('Oil Change', $ticket->subIssues->first()->maintenance_type);
     }

@@ -11,6 +11,13 @@ class MaintenanceTicket extends Model
 
     protected $primaryKey = 'ticket_id';
 
+    // The one place a ticket title is built — always server-side, never typed:
+    // "MT-0010 — Fire Truck Uno — Brake Failure".
+    public static function composeTitle(int $ticketId, string $vehicleName, string $summary): string
+    {
+        return sprintf('MT-%04d — %s — %s', $ticketId, $vehicleName, $summary);
+    }
+
     protected $fillable = [
         'vehicle_id',
         'issue_report_id',

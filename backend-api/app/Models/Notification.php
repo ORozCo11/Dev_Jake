@@ -20,6 +20,7 @@ class Notification extends Model
         'ticket_id',
         'issue_report_id',
         'schedule_id',
+        'vehicle_id',
         'read_at',
     ];
 

@@ -2290,13 +2290,93 @@ class FleetController extends Controller
         return $query->orderBy('scheduled_date')->orderBy('scheduled_time')->get();
     }
 
+    // A Custodian's nudge that a vehicle is due for preventive maintenance.
+    // Books nothing — Admin owns the calendar and decides whether to schedule it.
+    public function suggestSchedule(Request $request)
+    {
+        $this->requireAbility($request, 'schedule.suggest');
+
+        $data = $request->validate([
+            'vehicle_id' => ['required', 'integer'],
+            'maintenance_type' => ['required', 'string', 'max:150'],
+            'scheduled_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        // Vehicle carries the barangay scope, so another barangay's id 404s.
+        $vehicle = Vehicle::findOrFail($data['vehicle_id']);
+        $who = $request->user()->name;
+        $when = !empty($data['scheduled_date']) ? ' around ' . \Illuminate\Support\Carbon::parse($data['scheduled_date'])->format('M j, Y') : '';
+        $notes = !empty($data['notes']) ? " Note: {$data['notes']}" : '';
+
+        $this->notifyAdmins(
+            'Maintenance Schedule Suggested',
+            "{$who} suggests scheduling {$data['maintenance_type']} for {$vehicle->vehicle_name}{$when}.{$notes}",
+            'schedule_suggested',
+            $vehicle->barangay_id,
+            ['vehicle_id' => $vehicle->vehicle_id]
+        );
+        $this->log($request, 'Suggest Schedule', 'Maintenance Schedule', $vehicle->vehicle_id, "Suggested {$data['maintenance_type']} for {$vehicle->vehicle_name}.");
+
+        return response()->json(['message' => 'Suggestion sent to Admin.'], 201);
+    }
+
+    // Admin suspects a problem but may not report or ticket it themselves —
+    // this asks the Custodians to go look, and opens the vehicle for them.
+    public function requestInspection(Request $request, Vehicle $vehicle)
+    {
+        $this->requireAbility($request, 'vehicle.request_inspection');
+
+        $data = $request->validate(['note' => ['nullable', 'string', 'max:1000']]);
+
+        $hasCustodian = User::where('barangay_id', $vehicle->barangay_id)->havingRole('Custodian')->where('is_active', true)->exists();
+        abort_unless($hasCustodian, 422, 'There is no active Custodian in this barangay to notify.');
+
+        $note = !empty($data['note']) ? " Note: {$data['note']}" : '';
+        $this->notifyCustodians(
+            'Inspection Requested',
+            "{$request->user()->name} asks you to physically inspect {$vehicle->vehicle_name} ({$vehicle->plate_number}).{$note}",
+            'inspection_requested',
+            $vehicle->barangay_id,
+            ['vehicle_id' => $vehicle->vehicle_id]
+        );
+        $this->log($request, 'Request Inspection', 'Vehicles', $vehicle->vehicle_id, "Requested a Custodian inspection of {$vehicle->vehicle_name}.");
+
+        return response()->json(['message' => 'Custodians notified.'], 201);
+    }
+
+    // Maintenance Personnel can't open a ticket, but a technical finding often
+    // warrants one — this points the Custodians at the exact issue to do it.
+    public function recommendTicket(Request $request, VehicleIssueReport $issue)
+    {
+        $this->requireAbility($request, 'issue.recommend_ticket');
+
+        abort_unless(
+            in_array($issue->status, ['Pending', 'Under Review'], true) && !$issue->maintenanceTicket,
+            422,
+            'This issue already has a ticket or is no longer open.'
+        );
+
+        $data = $request->validate(['note' => ['nullable', 'string', 'max:1000']]);
+        $vehicle = $issue->vehicle;
+        $note = !empty($data['note']) ? " Note: {$data['note']}" : '';
+
+        $this->notifyCustodians(
+            'Maintenance Ticket Recommended',
+            "{$request->user()->name} recommends a maintenance ticket for {$vehicle->vehicle_name} — {$issue->issue_type}.{$note}",
+            'ticket_recommended',
+            $vehicle->barangay_id,
+            ['issue_report_id' => $issue->issue_report_id]
+        );
+        $this->log($request, 'Recommend Ticket', 'Issue Reports', $issue->issue_report_id, "Recommended a maintenance ticket for issue #{$issue->issue_report_id}.");
+
+        return response()->json(['message' => 'Custodians notified.'], 201);
+    }
+
     public function storeSchedule(Request $request)
     {
-        // Custodian books directly — they have the day-to-day visibility
-        // into a vehicle's condition, and a date on a calendar isn't yet a
-        // cost/risk commitment the way completing it is. Admin keeps
-        // oversight (edit/cancel/reassign any of them) without needing to
-        // originate one.
+        // Admin owns the maintenance calendar (spec §19, 2026-10-06). A
+        // Custodian who spots something due uses suggestSchedule() instead.
         $this->requireAbility($request, 'schedule.create');
 
         $data = $request->validate([

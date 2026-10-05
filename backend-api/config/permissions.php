@@ -37,6 +37,9 @@ return [
     // reading its timeline isn't a management-only concern the way editing
     // it is.
     'vehicle.view_history' => ['Admin', 'Custodian'],
+    // Admin who suspects a problem can't report an issue or open a ticket
+    // themselves — they ask the Custodian to physically inspect instead.
+    'vehicle.request_inspection' => ['Admin'],
 
     // Hubs
     'hub.create' => ['Admin'],
@@ -55,7 +58,12 @@ return [
 
     // Issue reports
     'issue.view' => ['Admin', 'Custodian', 'Maintenance Personnel'],
-    'issue.create' => ['Admin', 'Custodian', 'Maintenance Personnel'],
+    // Admin does not originate reports (spec: Admin can view/manage them, and
+    // asks a Custodian to inspect via vehicle.request_inspection instead).
+    'issue.create' => ['Custodian', 'Maintenance Personnel'],
+    // Maintenance Personnel can't create a ticket, but can ask the Custodian
+    // to open one from a technical finding.
+    'issue.recommend_ticket' => ['Maintenance Personnel'],
     // Phase B4 — Maintenance Personnel no longer edits issue reports (their
     // Status+Remarks form and the whole module are removed); Custodian's
     // existing own-report-while-Pending narrowing is unaffected.
@@ -76,9 +84,12 @@ return [
     // before — the list endpoint had no ability check at all, reachable by
     // anyone authenticated; this makes the Maintenance Personnel exclusion
     // an explicit grant instead of an accident of what wasn't gated.
-    'document.view' => ['Admin', 'Custodian'],
-    'document.create' => ['Admin', 'Custodian'],
-    'document.edit' => ['Admin', 'Custodian'],
+    // Spec §16 (2026-10-06) reverses the 2026-10-05 exclusion: Maintenance
+    // Personnel may view documents and upload repair/service evidence,
+    // editing only what they uploaded themselves; delete stays Admin-only.
+    'document.view' => ['Admin', 'Custodian', 'Maintenance Personnel'],
+    'document.create' => ['Admin', 'Custodian', 'Maintenance Personnel'],
+    'document.edit' => ['Admin', 'Custodian', 'Maintenance Personnel'],
     'document.delete' => ['Admin'],
 
     // Maintenance records (standalone ledger) — Phase B4: only Admin makes
@@ -99,11 +110,15 @@ return [
     // not just their own) without originating new ones.
     // `schedule.suggest`/suggestSchedule() retired in the final
     // stabilization pass (2026-10-05, P1) — confirmed zero callers.
-    'schedule.create' => ['Custodian'],
+    // Spec §19 (2026-10-06) reverses the earlier Custodian-owned model: Admin
+    // controls create/update/reschedule/cancel; a Custodian only suggests
+    // (schedule.suggest notifies Admin, books nothing).
+    'schedule.create' => ['Admin'],
+    'schedule.suggest' => ['Custodian'],
     // Custodian may edit their OWN created entry (ownership enforced in
     // FleetController::updateSchedule, same pattern as condition.edit);
     // Admin edits any.
-    'schedule.edit' => ['Admin', 'Custodian'],
+    'schedule.edit' => ['Admin'],
     'schedule.reassign' => ['Admin'],
     // Final senior system review (2026-10-05, §2/§12) — Admin no longer
     // completes a schedule directly. "Complete" means physically performed

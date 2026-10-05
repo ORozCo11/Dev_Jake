@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Barangay;
 use App\Models\MaintenanceTicket;
+use App\Models\TicketSubIssue;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleCategory;
@@ -118,7 +119,7 @@ class FleetIntelligenceTest extends TestCase
         $vehicle = $this->vehicle();
 
         // A previously fixed-and-closed "Overheating" ticket, recently closed.
-        MaintenanceTicket::create([
+        $prior = MaintenanceTicket::create([
             'vehicle_id' => $vehicle->vehicle_id,
             'created_by' => $this->admin->id,
             'ticket_title' => 'Overheating',
@@ -128,13 +129,14 @@ class FleetIntelligenceTest extends TestCase
             'closed_at' => now(),
         ]);
 
+        TicketSubIssue::create(['ticket_id' => $prior->ticket_id, 'created_by' => $this->admin->id, 'title' => 'Fixed before', 'maintenance_type' => 'Cooling System', 'status' => 'Done']);
+
         Sanctum::actingAs($this->custodian, ['*']);
         $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'Overheating',
             'ticket_description' => "it's back",
             'priority' => 'High',
-            'sub_issues' => [['title' => "it's back"]],
+            'sub_issues' => [['title' => "it's back", 'maintenance_type' => 'Cooling System']],
         ])->assertCreated();
 
         $this->assertSame(1, $response->json('recurrence_count'));
@@ -159,13 +161,14 @@ class FleetIntelligenceTest extends TestCase
         ]);
         $prior->forceFill(['created_at' => now()->subDays(120)])->save();
 
+        TicketSubIssue::create(['ticket_id' => $prior->ticket_id, 'created_by' => $this->admin->id, 'title' => 'Fixed before', 'maintenance_type' => 'Cooling System', 'status' => 'Done']);
+
         Sanctum::actingAs($this->custodian, ['*']);
         $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'Overheating',
             'ticket_description' => "it's back again",
             'priority' => 'High',
-            'sub_issues' => [['title' => "it's back again"]],
+            'sub_issues' => [['title' => "it's back again", 'maintenance_type' => 'Cooling System']],
         ])->assertCreated();
 
         $this->assertSame(1, $response->json('recurrence_count'));
@@ -191,10 +194,9 @@ class FleetIntelligenceTest extends TestCase
         Sanctum::actingAs($this->custodian, ['*']);
         $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'Overheating',
             'ticket_description' => "it's back",
             'priority' => 'High',
-            'sub_issues' => [['title' => "it's back"]],
+            'sub_issues' => [['title' => "it's back", 'maintenance_type' => 'Cooling System']],
         ])->assertCreated();
 
         $this->assertSame(0, $response->json('recurrence_count'));

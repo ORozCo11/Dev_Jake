@@ -27,7 +27,7 @@ class ScheduleConflictWarningTest extends TestCase
     use RefreshDatabase;
 
     private int $barangayId;
-    private User $custodian;
+    private User $admin;
 
     protected function setUp(): void
     {
@@ -35,8 +35,8 @@ class ScheduleConflictWarningTest extends TestCase
         $province = Province::create(['code' => 'TST', 'name' => 'Test Province']);
         $city = City::create(['province_id' => $province->id, 'code' => 'TSTC', 'name' => 'Test City']);
         $this->barangayId = Barangay::create(['name' => 'Test Barangay', 'city_id' => $city->id])->id;
-        $this->custodian = User::factory()->create([
-            'role' => 'Custodian', 'roles' => ['Custodian'], 'barangay_id' => $this->barangayId,
+        $this->admin = User::factory()->create([
+            'role' => 'Admin', 'roles' => ['Admin'], 'barangay_id' => $this->barangayId,
         ]);
     }
 
@@ -57,7 +57,7 @@ class ScheduleConflictWarningTest extends TestCase
     #[Test]
     public function a_quiet_day_has_no_warning_at_all(): void
     {
-        Sanctum::actingAs($this->custodian, ['*']);
+        Sanctum::actingAs($this->admin, ['*']);
         $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $this->vehicle()->vehicle_id,
             'maintenance_type' => 'Oil Change',
@@ -78,12 +78,12 @@ class ScheduleConflictWarningTest extends TestCase
                 'vehicle_id' => $this->vehicle()->vehicle_id,
                 'maintenance_type' => 'Oil Change',
                 'scheduled_date' => '2026-08-01',
-                'created_by' => $this->custodian->id,
+                'created_by' => $this->admin->id,
                 'status' => 'Scheduled',
             ]);
         }
 
-        Sanctum::actingAs($this->custodian, ['*']);
+        Sanctum::actingAs($this->admin, ['*']);
         $newVehicle = $this->vehicle();
 
         $warned = $this->postJson('/api/maintenance-schedules', [
@@ -126,12 +126,12 @@ class ScheduleConflictWarningTest extends TestCase
                 ])->vehicle_id,
                 'maintenance_type' => 'Oil Change',
                 'scheduled_date' => '2026-08-01',
-                'created_by' => $this->custodian->id,
+                'created_by' => $this->admin->id,
                 'status' => 'Scheduled',
             ]);
         }
 
-        Sanctum::actingAs($this->custodian, ['*']);
+        Sanctum::actingAs($this->admin, ['*']);
         $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $this->vehicle()->vehicle_id,
             'maintenance_type' => 'Tire Rotation',
@@ -149,7 +149,7 @@ class ScheduleConflictWarningTest extends TestCase
                 'vehicle_id' => $this->vehicle()->vehicle_id,
                 'maintenance_type' => 'Oil Change',
                 'scheduled_date' => '2026-08-01',
-                'created_by' => $this->custodian->id,
+                'created_by' => $this->admin->id,
                 'status' => 'Scheduled',
             ]);
         }
@@ -158,11 +158,11 @@ class ScheduleConflictWarningTest extends TestCase
             'vehicle_id' => $this->vehicle()->vehicle_id,
             'maintenance_type' => 'Brake Check',
             'scheduled_date' => '2026-09-01',
-            'created_by' => $this->custodian->id,
+            'created_by' => $this->admin->id,
             'status' => 'Scheduled',
         ]);
 
-        Sanctum::actingAs($this->custodian, ['*']);
+        Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
             'scheduled_date' => '2026-08-01',
         ])->assertStatus(409);

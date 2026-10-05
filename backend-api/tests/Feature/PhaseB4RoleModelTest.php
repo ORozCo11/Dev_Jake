@@ -159,26 +159,27 @@ class PhaseB4RoleModelTest extends TestCase
     // =======================================================================
 
     #[Test]
-    public function maintenance_personnel_cannot_upload_a_document(): void
+    public function maintenance_personnel_can_upload_repair_evidence_as_a_document(): void
     {
+        // Spec §16 (2026-10-06): Maintenance may upload repair/service evidence.
         Storage::fake('supabase');
         $vehicle = $this->vehicle();
-        $file = UploadedFile::fake()->create('registration.pdf', 50, 'application/pdf');
+        $file = UploadedFile::fake()->create('brake-job.pdf', 50, 'application/pdf');
 
         Sanctum::actingAs($this->mechanic, ['*']);
         $this->postJson("/api/vehicles/{$vehicle->vehicle_id}/documents", [
-            'title' => 'Registration',
+            'title' => 'Brake job evidence',
             'file' => $file,
-        ])->assertForbidden();
+        ])->assertCreated();
     }
 
     #[Test]
-    public function maintenance_personnel_cannot_even_view_vehicle_documents(): void
+    public function maintenance_personnel_can_view_vehicle_documents(): void
     {
         $vehicle = $this->vehicle();
 
         Sanctum::actingAs($this->mechanic, ['*']);
-        $this->getJson("/api/vehicles/{$vehicle->vehicle_id}/documents")->assertForbidden();
+        $this->getJson("/api/vehicles/{$vehicle->vehicle_id}/documents")->assertOk();
     }
 
     #[Test]
@@ -327,8 +328,9 @@ class PhaseB4RoleModelTest extends TestCase
     // =======================================================================
 
     #[Test]
-    public function a_custodian_can_create_a_maintenance_schedule(): void
+    public function a_custodian_cannot_create_a_maintenance_schedule_only_suggest_one(): void
     {
+        // Spec §19 (2026-10-06): Admin owns the calendar.
         $vehicle = $this->vehicle();
 
         Sanctum::actingAs($this->custodian, ['*']);
@@ -336,7 +338,14 @@ class PhaseB4RoleModelTest extends TestCase
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
             'scheduled_date' => now()->addWeek()->toDateString(),
+        ])->assertForbidden();
+
+        $this->postJson('/api/maintenance-schedules/suggest', [
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
         ])->assertCreated();
+        $this->assertDatabaseHas('notifications', ['user_id' => $this->admin->id, 'type' => 'schedule_suggested', 'vehicle_id' => $vehicle->vehicle_id]);
+        $this->assertDatabaseCount('vehicle_maintenance_schedules', 0);
     }
 
     #[Test]
@@ -353,7 +362,7 @@ class PhaseB4RoleModelTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_no_longer_create_a_maintenance_schedule_directly(): void
+    public function admin_creates_maintenance_schedules(): void
     {
         $vehicle = $this->vehicle();
 
@@ -362,11 +371,11 @@ class PhaseB4RoleModelTest extends TestCase
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
             'scheduled_date' => now()->addWeek()->toDateString(),
-        ])->assertForbidden();
+        ])->assertCreated();
     }
 
     #[Test]
-    public function admin_can_still_edit_any_schedule_though_not_create_one(): void
+    public function admin_can_edit_any_schedule(): void
     {
         $vehicle = $this->vehicle();
         $schedule = VehicleMaintenanceSchedule::create([
@@ -383,7 +392,7 @@ class PhaseB4RoleModelTest extends TestCase
     }
 
     #[Test]
-    public function a_custodian_can_edit_a_schedule_they_created_themselves(): void
+    public function a_custodian_can_no_longer_edit_a_schedule_even_one_they_created(): void
     {
         $vehicle = $this->vehicle();
         $schedule = VehicleMaintenanceSchedule::create([
@@ -396,7 +405,7 @@ class PhaseB4RoleModelTest extends TestCase
         Sanctum::actingAs($this->custodian, ['*']);
         $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
             'notes' => 'Fixing a typo.',
-        ])->assertOk();
+        ])->assertForbidden();
     }
 
     #[Test]
