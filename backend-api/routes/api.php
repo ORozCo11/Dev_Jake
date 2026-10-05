@@ -14,6 +14,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProvinceController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\VehicleImportController;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\RestrictImpersonatedToReadOnly;
 use App\Http\Middleware\RestrictSuperAdminScope;
@@ -107,6 +108,10 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     Route::get('/vehicles', [FleetController::class, 'vehicles']);
     Route::post('/vehicles', [FleetController::class, 'storeVehicle']);
+    Route::get('/vehicle-imports/template', [VehicleImportController::class, 'template']);
+    Route::post('/vehicle-imports', [VehicleImportController::class, 'preview']);
+    Route::post('/vehicle-imports/{import}/commit', [VehicleImportController::class, 'commit']);
+    Route::get('/vehicle-imports/{import}/errors', [VehicleImportController::class, 'errorReport']);
     Route::put('/vehicles/{vehicle}', [FleetController::class, 'updateVehicle']);
     Route::delete('/vehicles/{vehicle}', [FleetController::class, 'archiveVehicle']);
     Route::post('/vehicles/{vehicle}/restore', [FleetController::class, 'restoreVehicle']);

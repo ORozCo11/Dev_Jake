@@ -752,6 +752,7 @@ function Workspace() {
   };
   const [report, setReport] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [vehicleImportOpen, setVehicleImportOpen] = useState(false);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), notice.lines ? 8000 : 5000);
@@ -3508,10 +3509,12 @@ function Workspace() {
               columnChooser={vehicleColumnChooser}
               onAdd={canRegisterVehicles(user) ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`) : undefined}
               addLabel="Add Vehicle"
+              onImport={canDo(user, 'vehicle.import') && canRegisterVehicles(user) ? () => setVehicleImportOpen(true) : undefined}
               onExport={() => exportRowsToCsv('vehicles.csv', VEHICLE_EXPORT_COLUMNS, visibleRows)}
             />
           </div>
           <PaginatedTable columns={vehicleColumnChooser.visibleColumns} rows={visibleRows} onRowClick={openVehicleProfile} onReorderColumn={vehicleColumnChooser.reorderColumn} emptyMessage="No vehicles here yet — click the + button to register one." />
+          <VehicleImportModal open={vehicleImportOpen} onClose={() => setVehicleImportOpen(false)} onImported={refreshCurrent} />
           <FormModal
             open={!!readinessPromptTarget}
             title={`Readiness Check — ${readinessPromptTarget?.vehicle_name ?? ''}`}
@@ -17616,7 +17619,115 @@ function FilterBar({
   );
 }
 
-function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add", columnChooser }) {
+// "Import Vehicle Data" wizard: template -> upload -> preview (nothing is saved
+// yet) -> confirm -> summary. The server re-reads and re-validates the stored
+// file on confirm, so this only ever names which preview to confirm.
+function VehicleImportModal({ open, onClose, onImported }) {
+  const [step, setStep] = useState('upload'); // upload | preview | done
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  if (!open) return null;
+
+  const close = () => {
+    setStep('upload'); setFile(null); setError(''); setResult(null); setBusy(false);
+    onClose();
+  };
+
+  const saveBlob = async (path, params, filename) => {
+    const response = await api.get(path, { params, responseType: 'blob' });
+    const url = URL.createObjectURL(response.data);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const guard = async (fn) => {
+    setBusy(true); setError('');
+    try { await fn(); } catch (err) {
+      setError(err.response?.data?.message || err.response?.data?.errors?.file?.[0] || 'Something went wrong. Please try again.');
+    } finally { setBusy(false); }
+  };
+
+  const upload = () => guard(async () => {
+    const body = new FormData();
+    body.append('file', file);
+    const res = await api.post('/vehicle-imports', body, { headers: { 'Content-Type': 'multipart/form-data' } });
+    setResult(res.data); setStep('preview');
+  });
+
+  const confirm = () => guard(async () => {
+    const res = await api.post(`/vehicle-imports/${result.id}/commit`);
+    setResult(res.data); setStep('done');
+    await onImported?.();
+  });
+
+  const findings = result?.findings ?? [];
+
+  return (
+    <FormModal open title="Import Vehicle Data" onClose={close} wide>
+      {error && <div className="notice error" style={{ marginBottom: 12 }}>{error}</div>}
+
+      {step === 'upload' && (
+        <div style={{ display: 'grid', gap: 14 }}>
+          <p style={{ margin: 0 }}>1. Download the template, fill in one vehicle per row, then upload it as .xlsx or .csv (up to 500 rows, 2 MB). You will review everything before anything is saved.</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="ghost-button" onClick={() => guard(() => saveBlob('/vehicle-imports/template', { format: 'xlsx' }, 'vehicle-import-template.xlsx'))}>Download Excel template</button>
+            <button type="button" className="ghost-button" onClick={() => guard(() => saveBlob('/vehicle-imports/template', { format: 'csv' }, 'vehicle-import-template.csv'))}>Download CSV template</button>
+          </div>
+          <input type="file" accept=".xlsx,.csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <div className="form-actions">
+            <button type="button" className="ghost-button" onClick={close}>Cancel</button>
+            <button type="button" className="primary-button" disabled={!file || busy} onClick={upload}>{busy ? 'Checking…' : 'Upload & Preview'}</button>
+          </div>
+        </div>
+      )}
+
+      {step === 'preview' && result && (
+        <div style={{ display: 'grid', gap: 14 }}>
+          <p style={{ margin: 0 }}><strong>{result.file_name}</strong> — {result.total_rows} rows: <strong>{result.valid_rows} valid</strong>, <strong>{result.error_rows} with errors</strong>, <strong>{result.warning_rows} with warnings</strong>.</p>
+          {findings.length > 0 && (
+            <div style={{ maxHeight: 260, overflow: 'auto', border: '1px solid var(--border, #d0d7e2)', borderRadius: 8 }}>
+              <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                <thead><tr><th align="left">Row</th><th align="left">Field</th><th align="left">Issue</th></tr></thead>
+                <tbody>
+                  {findings.map((f, i) => (
+                    <tr key={i} style={{ color: f.level === 'error' ? '#b42318' : '#b54708' }}>
+                      <td>{f.row}</td><td>{f.field.replace(/_/g, ' ')}</td><td>{f.level === 'warning' ? 'Warning: ' : ''}{f.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p style={{ margin: 0, fontSize: 13 }}>Rows with errors will be skipped. Only the {result.valid_rows} valid row(s) are imported.</p>
+          <div className="form-actions">
+            {result.error_rows > 0 && (
+              <button type="button" className="ghost-button" onClick={() => guard(() => saveBlob(`/vehicle-imports/${result.id}/errors`, {}, 'vehicle-import-errors.csv'))}>Download error report</button>
+            )}
+            <button type="button" className="ghost-button" onClick={() => { setStep('upload'); setResult(null); }}>Back</button>
+            <button type="button" className="primary-button" disabled={busy || result.valid_rows === 0} onClick={confirm}>{busy ? 'Importing…' : `Import ${result.valid_rows} vehicle(s)`}</button>
+          </div>
+        </div>
+      )}
+
+      {step === 'done' && result && (
+        <div style={{ display: 'grid', gap: 14 }}>
+          <p style={{ margin: 0 }}>Import complete: <strong>{result.imported_rows} vehicle(s) added</strong>, {result.failed_rows} skipped, out of {result.total_rows} rows.</p>
+          <div className="form-actions">
+            {result.failed_rows > 0 && (
+              <button type="button" className="ghost-button" onClick={() => guard(() => saveBlob(`/vehicle-imports/${result.id}/errors`, {}, 'vehicle-import-errors.csv'))}>Download error report</button>
+            )}
+            <button type="button" className="primary-button" onClick={close}>Done</button>
+          </div>
+        </div>
+      )}
+    </FormModal>
+  );
+}
+function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add", onImport, columnChooser }) {
   return (
     <div className="local-search-bar">
       <div className="local-search-container">
@@ -17642,6 +17753,11 @@ function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport
         <button className="icon-add-btn has-label" onClick={onAdd} type="button" title={addLabel} aria-label={addLabel}>
           <Icon name="plus" size={18} />
           <span className="icon-add-btn-label">{addLabel}</span>
+        </button>
+      )}
+      {onImport && (
+        <button className="export-btn" onClick={onImport} type="button" title="Import vehicles from a spreadsheet" aria-label="Import vehicles from a spreadsheet">
+          <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="download" size={15} /></span>
         </button>
       )}
       {onExport && (

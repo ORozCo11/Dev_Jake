@@ -25,6 +25,9 @@ return [
     // them, but vehicle.edit stays Admin-only below, so the protected
     // master record can't be freely changed afterward by whoever typed it in.
     'vehicle.create' => ['Admin', 'Custodian'],
+    // Bulk import registers vehicles, so FleetController::storeVehicle's
+    // per-account delegation check (canRegisterVehicles) still applies on top.
+    'vehicle.import' => ['Admin', 'Custodian'],
     'vehicle.edit' => ['Admin'],
     'vehicle.archive' => ['Admin'],
     'vehicle.restore' => ['Admin'],

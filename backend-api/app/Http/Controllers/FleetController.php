@@ -2894,11 +2894,14 @@ class FleetController extends Controller
         ]);
     }
 
-    private function validateVehicle(Request $request, ?Vehicle $vehicle = null): array
+    /**
+     * The Add/Edit Vehicle rules, shared with the spreadsheet import so a bulk
+     * row is held to exactly what the form enforces. $domain is the chosen
+     * Vehicle Type's domain (Land/Water).
+     */
+    public function vehicleRules(string $domain, ?Vehicle $vehicle = null): array
     {
-        $domain = VehicleCategory::find($request->input('category_id'))?->domain ?? 'Land';
-
-        return $request->validate([
+        return [
             'vehicle_name' => ['required', 'string', 'max:255'],
             'plate_number' => [
                 'required',
@@ -2928,9 +2931,19 @@ class FleetController extends Controller
             'estimated_return_date' => ['nullable', 'date'],
             'photo' => ['nullable', 'image', 'max:4096'],
             'remarks' => ['nullable', 'string'],
-        ], [
-            'plate_number.regex' => 'Enter a valid plate number, e.g. ABC 1234 or ABC-1234.',
-        ]);
+        ];
+    }
+
+    public function vehicleRuleMessages(): array
+    {
+        return ['plate_number.regex' => 'Enter a valid plate number, e.g. ABC 1234 or ABC-1234.'];
+    }
+
+    private function validateVehicle(Request $request, ?Vehicle $vehicle = null): array
+    {
+        $domain = VehicleCategory::find($request->input('category_id'))?->domain ?? 'Land';
+
+        return $request->validate($this->vehicleRules($domain, $vehicle), $this->vehicleRuleMessages());
     }
 
     private function storeVehiclePhoto($file): string
