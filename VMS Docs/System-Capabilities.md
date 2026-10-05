@@ -202,8 +202,7 @@ Has its own verify/confirm flow mirroring the ticket workflow (Custodian verifie
 | A non-Admin self-files a maintenance record | Barangay Admins |
 | A maintenance record is decision-closed without verification | Barangay Custodians |
 | A schedule is created/edited/reassigned/restored with an assignee | That assignee (+ the previous one, on reassignment) |
-| A schedule is "suggested" (no row created) | Barangay Admins |
-| A due schedule auto-converts into a ticket | That schedule's Custodian |
+| A due schedule auto-converts into a ticket proposal | That schedule's Custodian + Barangay Admins (it still needs their review, same as a human proposal) |
 
 ---
 
@@ -274,6 +273,7 @@ Capabilities: list every barangay (with staff counts, whether it has an active A
 - No raw/interpolated SQL — all queries go through parameterized Eloquent/query-builder calls.
 - Every controller action enforces a specific permission ability against a single source-of-truth role→ability map before doing anything; ownership and live-state rules (own record only, not-the-repairer, same barangay, last-Admin) are layered on top as separate, explicit checks rather than folded into that map.
 - A deactivated account's token dies immediately on its next request, independent of its stated expiry.
+- **Cross-barangay access is blocked structurally, not just by convention**: `Vehicle` (and models hanging off it, like its documents and location history) carries a global `BelongsToBarangay` query scope, so route-model binding itself 404s before a controller even runs if the requested record belongs to a different barangay — confirmed in the final stabilization pass by direct code review, not assumed from the permission map alone.
 
 ---
 
@@ -294,10 +294,12 @@ Stated plainly, as found in the code — not implied to be bugs, just not (yet) 
 This document was compiled by direct code review, not from memory or prior documentation, primarily against:
 
 - `backend-api/app/Http/Controllers/{FleetController,TicketController,UserController,AuthController,SuperAdminController,HubController,NotificationController}.php`
-- `backend-api/app/Http/Controllers/Concerns/{AuthorizesAbilities,ChecksRecurrence,GuardsLastAdmin,GuardsOpenWorkOnDeactivation}.php`
+- `backend-api/app/Http/Controllers/Concerns/{AuthorizesAbilities,ChecksRecurrence,GuardsLastAdmin,GuardsOpenWorkOnDeactivation,BelongsToBarangay}.php`
 - `backend-api/app/Http/Middleware/{SecurityHeaders,SanitizeInput,EnsureUserIsActive,RestrictImpersonatedToReadOnly,RestrictSuperAdminScope}.php`
+- `backend-api/app/Models/{User,Vehicle,Notification}.php`
 - `backend-api/config/{permissions,cors,sanctum,scheduling}.php`
 - `backend-api/app/Console/Commands/{ConvertDueSchedulesToTickets,PruneOldNotifications}.php`
+- `backend-api/database/migrations/2026_10_05_*.php` (vehicle-registration delegation, notification record links)
 - `frontend-spa/src/views/Workspace.jsx` and `frontend-spa/src/components/{LocationDensityMap,VehicleLocationMap,AddLocationMap}.jsx`
 
 See `Documentation.md` for the shorter architectural overview, and `Role-Realignment-Analysis.md` for the history behind the current role/permission model.
