@@ -1551,6 +1551,19 @@ class TicketController extends Controller
         $this->requireAbility($request, 'subissue.confirm');
         $this->assertBelongsToTicket($ticket, $subIssue);
 
+        // Defense-in-depth alongside verifyRepair()'s self-verification
+        // block — confirm is Admin-only, so this only bites a dual-role
+        // (Admin + Maintenance Personnel) account confirming their own
+        // repair. Tier 1 (verifyRepair) already keeps a self-repairing
+        // Custodian out of this stage, but Admin isn't exempt from that
+        // same "don't grade your own homework" rule just because it's the
+        // final tier instead of the first.
+        abort_if(
+            $subIssue->assigned_mechanic_id === $request->user()->id,
+            403,
+            'You performed this repair — another Admin needs to give the final confirmation.'
+        );
+
         abort_unless($ticket->status === 'Active', 422, "A sub-issue can only be confirmed while the ticket is Active. Current status: {$ticket->status}.");
         abort_unless($subIssue->status === 'For Confirmation', 422, "A sub-issue can only be confirmed when it is For Confirmation. Current: {$subIssue->status}.");
 

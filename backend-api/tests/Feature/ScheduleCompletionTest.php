@@ -180,6 +180,21 @@ class ScheduleCompletionTest extends TestCase
     }
 
     #[Test]
+    public function maintenance_personnel_can_complete_their_assigned_schedule(): void
+    {
+        $vehicle = $this->vehicle();
+        $schedule = $this->schedule($vehicle, ['assigned_to' => $this->mechanic->id]);
+
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [
+            'maintenance_personnel_id' => $this->mechanic->id,
+            'maintenance_cost' => 500,
+        ])->assertOk();
+
+        $this->assertSame('Completed', $schedule->fresh()->status);
+    }
+
+    #[Test]
     public function a_new_schedule_always_starts_scheduled_even_if_a_different_status_is_submitted(): void
     {
         $vehicle = $this->vehicle();

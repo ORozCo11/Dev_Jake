@@ -459,6 +459,66 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function only_admin_can_confirm_a_sub_issue(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->createTicket($vehicle);
+        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
+        $subIssue = $ticket->subIssues->first();
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+            'maintenance_type' => 'Engine Repair',
+        ])->assertOk();
+
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/log-repairs", [
+            'repair_logs' => 'Fixed it.',
+        ])->assertOk();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/verify", [
+            'verification_verdict' => 'Approved',
+            'test_attested' => true,
+            'functional_test' => [['item' => 'Reported issue no longer occurs', 'passed' => true]],
+        ])->assertOk();
+
+        foreach ([$this->custodian, $this->mechanic] as $user) {
+            Sanctum::actingAs($user, ['*']);
+            $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
+                'confirmation_verdict' => 'Confirmed',
+            ])->assertForbidden();
+        }
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
+            'confirmation_verdict' => 'Confirmed',
+        ])->assertOk();
+
+        $this->assertSame('Done', $subIssue->fresh()->status);
+    }
+
+    #[Test]
+    public function only_admin_can_close_a_ticket(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->createTicket($vehicle);
+        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
+        $this->driveSubIssueToDone($ticket, $ticket->subIssues->first());
+
+        foreach ([$this->custodian, $this->mechanic] as $user) {
+            Sanctum::actingAs($user, ['*']);
+            $this->putJson("/api/tickets/{$ticket->ticket_id}/close", [])->assertForbidden();
+        }
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/close", [])->assertOk();
+
+        $this->assertSame('Closed', $ticket->fresh()->status);
+    }
+
+    #[Test]
     public function a_ticket_cannot_close_until_every_sub_issue_is_done(): void
     {
         $vehicle = $this->vehicle();
@@ -704,6 +764,31 @@ class TicketWorkflowTest extends TestCase
 
         // Freshly created -> 0 whole days old, and the attribute is exposed.
         $this->assertSame(0, $ticket->fresh()->days_open);
+    }
+
+    #[Test]
+    public function only_admin_can_assign_a_mechanic(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->createTicket($vehicle);
+        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
+        $subIssue = $ticket->subIssues->first();
+
+        foreach ([$this->custodian, $this->mechanic] as $user) {
+            Sanctum::actingAs($user, ['*']);
+            $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+                'assigned_mechanic_id' => $this->mechanic->id,
+                'maintenance_type' => 'Engine Repair',
+            ])->assertForbidden();
+        }
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+            'maintenance_type' => 'Engine Repair',
+        ])->assertOk();
+
+        $this->assertSame($this->mechanic->id, $subIssue->fresh()->assigned_mechanic_id);
     }
 
     #[Test]

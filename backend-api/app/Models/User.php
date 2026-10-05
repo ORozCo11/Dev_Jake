@@ -108,6 +108,15 @@ class User extends Authenticatable
      * Match users who hold a given role either as their primary `role` or
      * anywhere in their `roles` list. Uses a portable LIKE against the JSON
      * text so it works identically on SQLite and Postgres (no JSON1 needed).
+     *
+     * This is a SQL-level mirror of hasRole()/allRoles() (PHP-level), kept
+     * separate deliberately — a query scope filters rows at the database
+     * before they're hydrated into User instances, so it can't call an
+     * instance method per row without pulling every row into PHP first,
+     * which would defeat the point of filtering in the query. Because the
+     * two are necessarily separate implementations of the same rule, they
+     * MUST be changed together — MultiRoleTest::scope_having_role_agrees_with_has_role_for_every_role_storage_shape
+     * guards against them silently drifting apart.
      */
     public function scopeHavingRole($query, string $role)
     {

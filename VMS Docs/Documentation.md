@@ -67,14 +67,29 @@ Extra signals layered on top: **recurrence detection** (the same fault reported 
 - **Activity Log** — a full audit trail of actions taken across the fleet, scoped per Barangay.
 - **Users** — account management: roles, activation, and (for Admin) approving pending signups.
 
-## 7. Security posture
+## 7. Role responsibility summary & sidebar/navigation decisions
+
+The one-line version of each role, for quick reference:
+
+- **Custodian**: Report → Create Ticket → Inspect → Verify.
+- **Admin**: Manage → Assign → Monitor → Confirm → Close.
+- **Maintenance Personnel**: Diagnose → Repair → Record → Complete.
+
+Four navigation decisions are deliberate and final — not oversights to "fix" in a future pass:
+
+1. **Custodian's "My Tasks" stays one tabbed sidebar entry** (Assigned Inspections / Repair Verification / Work Tracker), not three separate rows. Both inspection and verification are task-oriented work for the same Custodian; one consolidated entry reduces sidebar clutter for the same functionality.
+2. **Maintenance Personnel's "Vehicle Issues" and "Report Technical Issue" are one combined module** — the report action lives inline in the issue list's header, not as a second sidebar item. Reporting is an action performed from that list, so combining them avoids duplicate navigation.
+3. **Readiness Check has no standalone sidebar item.** It stays a contextual action on the relevant vehicle (View Vehicles / vehicle profile), since a readiness check is always about one specific vehicle — a separate module would just make the user pick the vehicle a second time.
+4. **Maintenance Personnel's repair evidence stays inside the repair/work-order workflow** (the repair log's own photo field), not the generic Vehicle Documents store. The repair already knows the vehicle, ticket, sub-issue, and mechanic — attaching evidence there avoids a duplicate upload with none of that context.
+
+## 8. Security posture
 
 - Sanctum bearer tokens, no server-side session state.
 - Per-role scoping enforced both in the UI (which modules render) and in the backend (`RestrictSuperAdminScope`, `EnsureUserIsActive`, and per-Barangay query scoping via a `BelongsToBarangay` model concern).
 - Inactive accounts cannot log in at all.
 - Destructive actions that matter operationally (e.g. deleting a hub with vehicles still on it) are blocked server-side, not just hidden in the UI.
 
-## 8. Where to look in the code
+## 9. Where to look in the code
 
 | Concern | File |
 |---|---|
@@ -88,10 +103,12 @@ Extra signals layered on top: **recurrence detection** (the same fault reported 
 | Super Admin backend | `backend-api/app/Http/Controllers/SuperAdminController.php` |
 | Route definitions | `backend-api/routes/api.php` |
 
-## 9. Related documents
+## 10. Related documents
 
 - `System-Architecture.svg` — component diagram (this folder).
 - `ERD.svg` — entity-relationship diagram of the database (this folder).
 - `Must-Haves.md` — required functionality checklist and known gaps (this folder).
-- Root `README.md` — an earlier project overview; **note it predates the Super Admin role and multi-tenancy work**, so where it disagrees with this document, treat this document (and the code) as current.
-- `docs/` (project root) — earlier QA, defense, and design documents from previous phases of the project.
+- `Role-Realignment-Analysis.md` — the analysis and decisions behind the current role/permission model and sidebar structure (this folder).
+- Root `README.md` — a fuller project overview (setup, data model, API endpoints, deployment); kept in sync with this document's role/workflow model, but where the two ever disagree, treat this document (and the code) as current.
+- Root `ROLE-AUDIT.md` and `VMS Docs/VMS-IMPROVEMENT-PLAN.md` — **point-in-time audit/planning snapshots**, not living documentation; several of the role/permission decisions they describe have since been superseded (see `Role-Realignment-Analysis.md`). Useful for history, not for "how the system works today."
+- `docs/` (project root) — earlier QA, defense, and design documents from previous phases of the project; same caveat as above.

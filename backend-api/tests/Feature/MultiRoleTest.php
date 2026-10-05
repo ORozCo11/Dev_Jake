@@ -204,4 +204,88 @@ class MultiRoleTest extends TestCase
             'action' => 'Repairs Logged',
         ]);
     }
+
+    #[Test]
+    public function an_admin_who_also_performed_the_repair_cannot_give_its_final_confirmation_either(): void
+    {
+        // Juan here holds Admin AND Maintenance Personnel — a different
+        // Custodian (not Juan) verifies the repair, clearing Tier 1, but
+        // Juan (acting as Admin) still cannot be the one to confirm it:
+        // "don't grade your own homework" applies at both confirmation
+        // tiers, not just the first.
+        $otherAdmin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        $juan = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin', 'Maintenance Personnel']]);
+        $custodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian']]);
+        $vehicle = $this->vehicle();
+
+        $ticketId = MaintenanceTicket::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'created_by' => $otherAdmin->id,
+            'ticket_title' => 'Overheating',
+            'ticket_description' => 'Runs hot.',
+            'priority' => 'High',
+            'status' => 'Open',
+            'assigned_custodian_id' => $custodian->id,
+            'assigned_at' => now(),
+        ])->ticket_id;
+
+        Sanctum::actingAs($custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/inspect", [
+            'inspection_result' => 'Needs Maintenance',
+            'inspection_notes' => 'Confirmed.',
+            'sub_issues' => [['title' => 'Low coolant level']],
+        ])->assertOk();
+        $subIssue = MaintenanceTicket::find($ticketId)->subIssues->first();
+
+        Sanctum::actingAs($otherAdmin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+            'assigned_mechanic_id' => $juan->id,
+            'maintenance_type' => 'Engine Repair',
+        ])->assertOk();
+
+        Sanctum::actingAs($juan, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/log-repairs", [
+            'repair_logs' => 'Refilled coolant, tested.',
+        ])->assertOk();
+
+        Sanctum::actingAs($custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/verify", [
+            'verification_verdict' => 'Approved',
+            'test_attested' => true,
+            'functional_test' => [['item' => 'Reported issue no longer occurs', 'passed' => true]],
+        ])->assertOk();
+
+        Sanctum::actingAs($juan, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
+            'confirmation_verdict' => 'Confirmed',
+        ])->assertForbidden()
+            ->assertJsonFragment(['message' => 'You performed this repair — another Admin needs to give the final confirmation.']);
+
+        Sanctum::actingAs($otherAdmin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
+            'confirmation_verdict' => 'Confirmed',
+        ])->assertOk();
+    }
+
+    #[Test]
+    public function scope_having_role_agrees_with_has_role_for_every_role_storage_shape(): void
+    {
+        // scopeHavingRole() (SQL) and hasRole() (PHP) are two independent
+        // implementations of "does this user hold role X" (see the comment
+        // on scopeHavingRole()) — this is the guard that would catch them
+        // silently disagreeing, across every shape role data can take.
+        $primaryOnly = User::factory()->create(['role' => 'Custodian', 'roles' => null]);
+        $rolesListOnly = User::factory()->create(['role' => 'Admin', 'roles' => ['Custodian']]);
+        $both = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian', 'Maintenance Personnel']]);
+        $neither = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+
+        foreach ([$primaryOnly, $rolesListOnly, $both, $neither] as $user) {
+            $matchedBySql = User::havingRole('Custodian')->whereKey($user->id)->exists();
+            $this->assertSame(
+                $user->hasRole('Custodian'),
+                $matchedBySql,
+                "scopeHavingRole()/hasRole() disagree for user #{$user->id} (role={$user->role}, roles=" . json_encode($user->roles) . ')'
+            );
+        }
+    }
 }
