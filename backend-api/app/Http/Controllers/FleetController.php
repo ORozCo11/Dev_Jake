@@ -1718,12 +1718,7 @@ class FleetController extends Controller
 
     public function maintenanceRecords(Request $request)
     {
-        // Maintenance Personnel see a vehicle's past repairs through its own
-        // profile instead of a barangay-wide ledger (VMS-IMPROVEMENT-PLAN.md Phase B3).
         $user = $request->user();
-        if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
-            return collect();
-        }
 
         $query = VehicleMaintenanceRecord::with([
             'vehicle.category',
@@ -1735,7 +1730,12 @@ class FleetController extends Controller
             'originatingSchedule',
         ]);
 
-        if ($request->boolean('mine')) {
+        // Maintenance Personnel see their own repairs (their "Maintenance
+        // Records"/"Maintenance History" sidebar entries) rather than the
+        // whole barangay-wide ledger — a Custodian/Admin concern.
+        if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
+            $query->where('maintenance_personnel_id', $user->id);
+        } elseif ($request->boolean('mine')) {
             $query->where('maintenance_personnel_id', $request->user()->id);
         }
 

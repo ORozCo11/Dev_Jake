@@ -32,7 +32,11 @@ return [
     'vehicle.readiness_check' => ['Custodian'],
     'vehicle.mark_available' => ['Admin', 'Custodian'],
     'vehicle.update_location' => ['Admin'],
-    'vehicle.view_history' => ['Admin'],
+    // Custodian gets a "Vehicle History" sidebar entry (role-realignment
+    // decision 13) — they're the ones day-to-day with the vehicle, so
+    // reading its timeline isn't a management-only concern the way editing
+    // it is.
+    'vehicle.view_history' => ['Admin', 'Custodian'],
 
     // Hubs
     'hub.create' => ['Admin'],

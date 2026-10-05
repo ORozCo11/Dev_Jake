@@ -90,12 +90,17 @@ const modulesByRole = {
       ['schedules', 'Maintenance Schedule'],
       ['maintenance', 'Maintenance Records'],
       ['conditions', 'Condition Monitoring'],
-      ['ticketArchives', 'Ticket Archives'],
     ] },
+    // 'vehicleDocuments' is a vehicle picker + the same per-vehicle Files
+    // card/modal VehicleProfilePage uses (see VehicleDocumentsPage) — not a
+    // new document store, just a cross-vehicle entry point into the
+    // existing one. Ticket Archives moved into the Maintenance Tickets
+    // module itself (a toolbar link there) instead of its own top-level row.
     { section: 'Fleet & Assets', icon: 'vehicle', items: [
       ['vehicles', 'Vehicle Management'],
       ['categories', 'Vehicle Types'],
       ['locations', 'Vehicle Location'],
+      ['vehicleDocuments', 'Vehicle Documents'],
     ] },
     { section: 'Administration', icon: 'key', items: [
       ['users', 'Users'],
@@ -105,6 +110,14 @@ const modulesByRole = {
   ],
   Custodian: [
     { section: null, items: [['dashboard', 'Dashboard']] },
+    // 'vehicles' already carries both "View Vehicles" and, for whoever
+    // holds vehicle.create, the "+ Add Vehicle" (register) action inline —
+    // no separate "Register Vehicle" row for the same page.
+    { section: 'Vehicles', icon: 'vehicle', items: [
+      ['vehicles', 'View Vehicles'],
+      ['vehicleDocuments', 'Vehicle Documents'],
+      ['histories', 'Vehicle History'],
+    ] },
     // 'reportOrPropose' ('issues' module under the hood) is the Issue
     // Reports list, with a "Report Vehicle Issue" action and a "Propose
     // Ticket" action both inline in its header — not a separate chooser
@@ -112,13 +125,12 @@ const modulesByRole = {
     // Repair Verification / Work Tracker — see renderModule's tab bar).
     // Neither key has its own moduleEndpoints entry — both are pure
     // navigation/presentation wrappers around shared components/data.
-    { section: 'Daily Tasks', icon: 'checkCircle', items: [
-      ['vehicles', 'View Vehicles'],
+    { section: 'Vehicle Operations', icon: 'checkCircle', items: [
       ['reportOrPropose', 'Report Vehicle Issue'],
       ['myTasks', 'My Tasks'],
-    ] },
-    { section: 'Monitoring & Schedules', icon: 'calendar', items: [
       ['conditions', 'Condition Monitoring'],
+    ] },
+    { section: 'Maintenance', icon: 'calendar', items: [
       ['schedules', 'Maintenance Schedule'],
       // Merged "Maintenance Status" + "Maintenance Records" — same
       // underlying data (see maintenanceLedgerLastTab above), tabbed.
@@ -126,16 +138,23 @@ const modulesByRole = {
     ] },
   ],
   'Maintenance Personnel': [
-    // Flat — no "Work Orders & Repairs" parent heading grouping these
-    // anymore, but both rows stay as direct sidebar links.
-    { section: null, items: [
-      ['dashboard', 'Dashboard'],
+    { section: null, items: [['dashboard', 'Dashboard']] },
+    { section: 'Maintenance', icon: 'wrench', items: [
       ['ticketWorkOrders', 'My Work Orders'],
       ['workTracker', 'Work Tracker'],
-      // Same Issue Reports list Admin/Custodian use — the "Report
-      // Technical Issue" action lives inline in its header (issue.create),
-      // gated the same way for every role that holds it.
+      ['maintenanceLedger', 'Maintenance Records'],
+      ['schedules', 'Maintenance Schedule'],
+    ] },
+    // Same Issue Reports list Admin/Custodian use, scoped server-side to
+    // reports this account personally filed — the "Report Technical Issue"
+    // action lives inline in its header (issue.create), gated the same way
+    // for every role that holds it.
+    { section: 'Issues', icon: 'issues', items: [
       ['issues', 'Vehicle Issues'],
+    ] },
+    { section: 'Vehicles', icon: 'vehicle', items: [
+      ['vehicles', 'View Vehicles'],
+      ['vehicleDocuments', 'Vehicle Documents'],
     ] },
   ],
 };
@@ -398,6 +417,14 @@ const moduleIcons = {
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  ),
+  vehicleDocuments: (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="9" y1="13" x2="15" y2="13" />
+      <line x1="9" y1="17" x2="13" y2="17" />
     </svg>
   ),
 };
@@ -2751,9 +2778,9 @@ function Workspace() {
                         // landing here via THIS plain entry (not the My
                         // Tasks tab bar above) means it's the latter.
                         if (key === 'workTracker') setWorkTrackerViaMyTasks(false);
-                        // "Report / Propose" lands on the Issue Reports list;
-                        // the flag-vs-propose choice is offered when the
-                        // Custodian presses "Report Issue" there.
+                        // 'reportOrPropose' is a relabeled alias for the
+                        // Issue Reports list — its "Report Vehicle Issue" and
+                        // "Propose Ticket" actions both live inline there.
                         setActiveModule(key === 'reportOrPropose' ? 'issues' : key);
                       }
                       if (isOnSpecialPage) {
@@ -3690,6 +3717,16 @@ function Workspace() {
       );
     }
 
+    if (activeModule === 'vehicleDocuments') {
+      return (
+        <VehicleDocumentsPage
+          vehicles={lookups.vehicles ?? []}
+          canManage={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
+          onRequestConfirmation={setConfirmDialog}
+        />
+      );
+    }
+
     if (activeModule === 'conditions') {
       return (
         <ModulePanel
@@ -4346,6 +4383,7 @@ function Workspace() {
           notifications={notifications}
           onViewTicket={openTicketProfile}
           onCreateNew={canDo(user, 'ticket.create') ? () => navigate(`${roleRoutes[user.role]}/tickets/new`) : undefined}
+          onViewArchives={canDo(user, 'ticket.view_archives') ? () => setActiveModule('ticketArchives') : undefined}
           notice={notice}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
@@ -4561,6 +4599,9 @@ function Workspace() {
         >
           <div className="panel-header-bar">
             <h3>
+              <button type="button" className="ghost-button" style={{ marginRight: 10 }} onClick={() => setActiveModule('tickets')}>
+                <Icon name="arrowLeft" size={14} /> Tickets
+              </button>
               Archived Tickets <span className="count-badge">{visibleRows.length}</span>
               {visibleRows.length !== allArchiveRows.length && (
                 <span style={{ fontWeight: 400, fontSize: '0.8rem', marginLeft: 6 }}>of {allArchiveRows.length} total</span>
@@ -14308,6 +14349,7 @@ function TicketModule({
   notifications = [],
   onViewTicket,
   onCreateNew,
+  onViewArchives,
   searchQuery,
   setSearchQuery,
   categories,
@@ -14438,6 +14480,11 @@ function TicketModule({
         <div className="panel-header-bar" style={{ marginBottom: '8px' }}>
           <h3>All Tickets <span className="count-badge">{tickets.length}</span></h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {onViewArchives && (
+              <button type="button" className="ghost-button" onClick={onViewArchives}>
+                <Icon name="archive" size={14} /> Archives
+              </button>
+            )}
             <ViewModeDropdown value={ticketViewMode} onChange={changeTicketViewMode} />
             <LocalSearchInput
               value={searchQuery}
@@ -14659,6 +14706,64 @@ function IssueFilesCard({ issue }) {
         )}
       </div>
     </section>
+  );
+}
+
+// Cross-vehicle "Vehicle Documents" sidebar entry — a vehicle picker beside
+// the exact same per-vehicle Files card (VehicleFiles/VehicleFilesModal)
+// VehicleProfilePage already uses, so there's no second document store or
+// upload path to keep in sync, just another way to reach the existing one.
+function VehicleDocumentsPage({ vehicles, canManage, onRequestConfirmation }) {
+  const [query, setQuery] = useState('');
+  const [selectedId, setSelectedId] = useState(null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return vehicles;
+    return vehicles.filter((v) => `${v.vehicle_name} ${v.plate_number}`.toLowerCase().includes(q));
+  }, [vehicles, query]);
+
+  const selected = vehicles.find((v) => String(v.vehicle_id) === String(selectedId));
+
+  return (
+    <ModulePanel description="Browse and manage each vehicle's uploaded documents — registration papers, inspection reports, repair evidence, and photos.">
+      <section className="panel">
+        <div className="panel-header-bar">
+          <h3>Vehicle Documents</h3>
+          <LocalSearchInput value={query} onChange={setQuery} placeholder="Search vehicles..." />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 300px) 1fr', gap: 18, alignItems: 'start', marginTop: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 560, overflowY: 'auto' }}>
+            {filtered.map((v) => (
+              <button
+                key={v.vehicle_id}
+                type="button"
+                onClick={() => setSelectedId(v.vehicle_id)}
+                style={{
+                  textAlign: 'left', padding: '8px 10px', borderRadius: 8,
+                  border: String(v.vehicle_id) === String(selectedId) ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                  background: String(v.vehicle_id) === String(selectedId) ? '#eff6ff' : '#fff', cursor: 'pointer',
+                }}
+              >
+                <strong>{v.vehicle_name}</strong>
+                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{v.plate_number}</div>
+              </button>
+            ))}
+            {filtered.length === 0 && <p className="muted" style={{ padding: 10 }}>No vehicles match.</p>}
+          </div>
+          <div>
+            {selected ? (
+              <VehicleFiles vehicleId={selected.vehicle_id} canManage={canManage} onRequestConfirmation={onRequestConfirmation} />
+            ) : (
+              <div className="empty-prereq">
+                <h3>Select a vehicle</h3>
+                <p>Pick a vehicle on the left to view or manage its documents.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    </ModulePanel>
   );
 }
 

@@ -285,12 +285,13 @@ class PhaseB3DataScopingTest extends TestCase
     }
 
     // =======================================================================
-    // GET /maintenance-records — Maintenance sees NONE (sees history via the
-    // vehicle profile instead)
+    // GET /maintenance-records — Maintenance Personnel's "Maintenance
+    // Records"/"Maintenance History" sidebar entries are scoped to records
+    // THEY performed, not the whole barangay-wide ledger.
     // =======================================================================
 
     #[Test]
-    public function maintenance_personnel_sees_no_maintenance_records(): void
+    public function maintenance_personnel_sees_only_their_own_maintenance_records(): void
     {
         $vehicle = $this->vehicle();
         VehicleMaintenanceRecord::create([
@@ -299,10 +300,17 @@ class PhaseB3DataScopingTest extends TestCase
             'problem_reason' => 'Scheduled service.',
             'maintenance_personnel_id' => $this->mechanic->id,
         ]);
+        VehicleMaintenanceRecord::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Brake Repair',
+            'problem_reason' => 'Performed by someone else entirely.',
+            'maintenance_personnel_id' => $this->otherMechanic->id,
+        ]);
 
         Sanctum::actingAs($this->mechanic, ['*']);
         $response = $this->getJson('/api/maintenance-records')->assertOk();
-        $this->assertCount(0, $response->json());
+        $this->assertCount(1, $response->json());
+        $this->assertSame('Oil Change', $response->json()[0]['maintenance_type']);
     }
 
     // =======================================================================

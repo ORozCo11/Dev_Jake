@@ -50,5 +50,7 @@ class PhaseB2AbilitiesExposureTest extends TestCase
         // realignment decision 6), but still can't edit one afterward.
         $this->assertContains('vehicle.create', $abilities);
         $this->assertNotContains('vehicle.edit', $abilities);
+        // Decision 13 gives Custodian a "Vehicle History" sidebar entry.
+        $this->assertContains('vehicle.view_history', $abilities);
     }
 }
