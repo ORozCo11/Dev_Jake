@@ -2655,6 +2655,13 @@ function Workspace() {
               <button type="button" onClick={doImpersonate}>Impersonate</button>
             </div>
           )}
+          {/* Shown whenever an impersonation session is active (also in production,
+              where the dev account switcher above isn't rendered). */}
+          {showReturnButton && (
+            <button type="button" className="ghost-button" onClick={stopImpersonating} title="Stop impersonating and go back to your own account">
+              <Icon name="undo" size={13} /> Return to {impersonatorName || 'my account'}
+            </button>
+          )}
         </div>
 
         <div className="topbar-right">
@@ -2775,23 +2782,6 @@ function Workspace() {
         </div>
       </div>
       </header>
-
-      {/* Phase A5 — persistent, impossible-to-miss (spans every page, not
-          just a topbar button) reminder that this session is read-only:
-          RestrictImpersonatedToReadOnly rejects every non-GET request the
-          impersonated token makes except logout/switch-account, so this
-          also sets expectations before an action gets silently 403'd. */}
-      {showReturnButton && (
-        <div className="impersonation-banner" role="status">
-          <Icon name="alert" size={16} />
-          <span>
-            You're viewing <strong>{user.name}</strong>'s account as <strong>{impersonatorName || 'yourself'}</strong> — {import.meta.env.DEV ? 'full access (dev environment), no expiry.' : 'read-only, expires automatically.'}
-          </span>
-          <button type="button" className="impersonation-banner-return" onClick={stopImpersonating}>
-            <Icon name="undo" size={13} /> Return to {impersonatorName || 'your account'}
-          </button>
-        </div>
-      )}
 
       <main className={`workspace${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
         <aside className={`sidebar${isSidebarCollapsed ? ' collapsed' : ''}`}>
