@@ -193,7 +193,16 @@ class FleetController extends Controller
                         ->where('assigned_to', $user->id)
                         ->whereDate('scheduled_date', '>=', now()->toDateString())
                         ->count()
-                    : $upcomingMaintenance,
+                    : $upcomingMaintenance + $overdueMaintenance,
+                // Maintenance Records waiting on someone's check — the same
+                // "For Verification" list the Records page filters to.
+                'maintenance' => ($user->hasRole('Admin') || $user->hasRole('Custodian'))
+                    ? VehicleMaintenanceRecord::where('progress_status', 'For Verification')->count()
+                    : 0,
+                // Admin only: self-registrations still waiting for approval.
+                'users' => $user->hasRole('Admin')
+                    ? User::whereNull('approved_at')->where('is_active', false)->where('barangay_id', $user->barangay_id)->count()
+                    : 0,
                 'ticketInspections' => MaintenanceTicket::where('assigned_custodian_id', $request->user()->id)
                     ->where('status', 'Open')
                     ->count(),
