@@ -1266,11 +1266,26 @@
   color: #fcd34d;
   font-size: 0.85rem;
 }
-/* The topbar is position:fixed (out of flow), so the banner has to clear it itself;
-   and because the banner now does the clearing, the workspace right after it must
-   not add its own topbar padding on top — that doubled space was the visible gap. */
-.impersonation-banner { margin-top: var(--topbar-height, 64px); }
-.impersonation-banner + .workspace { padding-top: 0; }
+/* Pinned directly under the fixed topbar (out of flow, like the topbar), so the
+   sticky sidebar can never slide over it. While it is showing, the workspace and
+   its sticky sidebar make room for it via --impersonation-banner-height. */
+.impersonation-banner {
+  --impersonation-banner-height: 54px;
+  position: fixed;
+  top: var(--topbar-height, 64px);
+  left: 0;
+  right: 0;
+  z-index: 90;
+  height: var(--impersonation-banner-height);
+  box-sizing: border-box;
+}
+.impersonation-banner + .workspace {
+  padding-top: calc(var(--topbar-height, 64px) + 54px);
+}
+.impersonation-banner + .workspace .sidebar {
+  top: calc(var(--topbar-height, 64px) + 54px);
+  height: calc(100vh - var(--topbar-height, 64px) - 54px);
+}
 .impersonation-banner > svg { flex-shrink: 0; }
 .impersonation-banner strong { color: #fde68a; }
 .impersonation-banner-return {

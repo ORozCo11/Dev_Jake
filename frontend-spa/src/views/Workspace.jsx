@@ -2785,7 +2785,7 @@ function Workspace() {
         <div className="impersonation-banner" role="status">
           <Icon name="alert" size={16} />
           <span>
-            You're viewing <strong>{user.name}</strong>'s account as <strong>{impersonatorName || 'yourself'}</strong> — read-only, expires automatically.
+            You're viewing <strong>{user.name}</strong>'s account as <strong>{impersonatorName || 'yourself'}</strong> — {import.meta.env.DEV ? 'full access (dev environment), no expiry.' : 'read-only, expires automatically.'}
           </span>
           <button type="button" className="impersonation-banner-return" onClick={stopImpersonating}>
             <Icon name="undo" size={13} /> Return to {impersonatorName || 'your account'}
