@@ -10,7 +10,7 @@ A complete, code-verified catalog of everything the system can do today, organiz
 |---|---|---|
 | **Admin** | One Barangay | Manage → Assign → Monitor → Confirm → Close. Runs the fleet; does **not** create tickets directly. |
 | **Custodian** | One Barangay | Report → Create Ticket → Inspect → Verify. The only role that creates a Maintenance Ticket. |
-| **Maintenance Personnel** | One Barangay | Diagnose → Repair → Record → Complete. |
+| **Maintenance Personnel** | One Barangay | Diagnose → Report / Recommend a ticket → Repair → Record → Complete. Can report an issue and *recommend* a ticket (the Custodian proposes it), but never creates one. |
 | **Super Admin** | Platform-wide | Account/platform administration only — **no access to fleet data** (vehicles, tickets, issues) at all; enforced server-side, not just hidden in the UI. |
 
 A user can hold more than one of the three barangay roles at once (a "dual-hat" account, e.g. Custodian + Maintenance Personnel in a small barangay). Every permission check ORs across every role an account holds, and several workflow guards (most notably self-verification) specifically account for dual-hat accounts rather than assuming one person = one role.
@@ -35,12 +35,16 @@ A user can hold more than one of the three barangay roles at once (a "dual-hat" 
 
 **Registration** (Admin always; a Custodian only if an Admin has specifically granted them "Vehicle Registration" on their account — a real per-account toggle on the Edit User form, not a blanket role grant) is a 3-step wizard:
 1. **Basic Information** — Land/Water domain (asked first, drives the rest of the form), Vehicle Name, Plate Number (labeled "Registration/Hull No." for Water), Vehicle Type (a creatable dropdown — a new type can be added inline without leaving the form).
-2. **Specs** — Brand, Model, Year, Capacity (with unit — kg/tons/L/pax for Land, L/gal/m³/pax for Water), Acquisition Cost (optional — feeds the Reliability card's decommission signal, §9.7), Color, Fuel Type; Water vehicles additionally require Hull Material (Fiberglass/Aluminum/Steel/Wood/Rubber-Inflatable) and Engine Type.
+2. **Specs** — Brand, Model, Year, Capacity (with unit — kg/tons/L/pax for Land, L/gal/m³/pax for Water), Acquisition Cost (optional — feeds the Reliability card's decommission signal, §9.7), Color, Fuel Type; Water vehicles additionally require Hull Material (Fiberglass/Aluminum/Steel/Wood/Rubber-Inflatable) and Engine Type. Any **custom fields** an Admin defined for the chosen Vehicle Type (§3.2) appear at the end of this step and are validated server-side.
 3. **Photo & Location** — an optional photo (≤4MB), Current Location (tied into the hub system, with a live map preview as you pick/create a hub), and optional Remarks.
 
-New vehicles start at status **Available**, condition **Good**.
+New vehicles start at status **Available**, condition **Good**. Registration has no document upload — documents are added from the vehicle's own profile (§3.4).
 
-**Editing** (Admin only) reuses the same field set. Changing Current Location through the edit form also writes a location-history record automatically, same as the dedicated "set location" flow.
+**Import Vehicle Data** (Admin, and a Custodian with the same Vehicle Registration grant — it is registration in bulk, so that gate still applies; Maintenance Personnel cannot import): an Import button on the Vehicles list opens a wizard — download an Excel or CSV template (columns for every Add Vehicle field plus a column per active custom field, with an Instructions sheet of valid Vehicle Types/Locations/Hull Materials) → upload → **preview with nothing saved** ("N valid / N errors / N warnings", each with its row and field, plus a downloadable CSV error report) → confirm → valid rows are imported in one database transaction and invalid rows are skipped → summary. Every row goes through the *same* validation rules the Add Vehicle form uses (shared in `FleetController::vehicleRules`), duplicate plates are caught both within the file and against the database, and the barangay is always the importer's own — no cross-barangay imports. The upload is checked for extension **and** real file contents (≤2 MB, ≤500 rows), cells starting with `=` are rejected, and confirming re-reads and re-validates the stored file rather than trusting rows sent back by the browser. Each import is recorded (who, when, file name, total/imported/failed/warning counts) and writes one Activity Log entry plus a "Vehicle Added" history entry per vehicle.
+
+**Operational criticality** (Critical / High / Normal): each Vehicle Type has a default; an Admin can override it per vehicle (or choose *Inherit* to return to the default). A Custodian cannot set it at registration. It ranks the readiness watch (§9).
+
+**Editing** (Admin only) reuses the same field set; blanking an optional custom field clears its stored value. Changing Current Location through the edit form also writes a location-history record automatically, same as the dedicated "set location" flow.
 
 **Archiving** ("Deactivate" in the UI) sets a vehicle Inactive; **Decommissioning** is a documented end-of-life retirement requiring a written reason, setting it Decommissioned/Needs Repair. Both are blocked while the vehicle has any open (non-Closed/Cancelled) ticket. **Restoring** (from either Inactive or Decommissioned) brings a vehicle back to Available/Good and clears the archive/decommission fields; the same action is relabeled "Recommission" when shown for a Decommissioned vehicle.
 
@@ -48,11 +52,11 @@ New vehicles start at status **Available**, condition **Good**.
 
 **Conditions**: Good, Needs Inspection, Needs Repair — driven by issue reports, condition checks, or a ticket moving into maintenance. A retired vehicle (Inactive/Decommissioned) is explicitly protected from having any of this un-retire it.
 
-**Vehicle Profile page** is a single dashboard-style layout (not tabs): Vehicle Information, Status & Key Dates (availability/condition/readiness badges, current location, estimated return date), a Reports card (print a Vehicle Summary Report), a Files card (documents, §3.4), a single-pin location map, and role-gated header actions (Edit — Admin; Readiness Check — Custodian; Decommission/Recommission — Admin).
+**Vehicle Profile page** is a single dashboard-style layout (not tabs): Vehicle Information, Status & Key Dates (availability/condition/readiness badges, current location, estimated return date), a Reports card (print a Vehicle Summary Report), a Files card (documents, §3.4), a single-pin location map, a **Usage Log** card (Admin and Custodian — "Take Out" records purpose/destination/driver/odometer for an Available vehicle, one open trip at a time; "Mark Returned" closes it with an optional return odometer; it writes history and Activity Log entries but never changes the vehicle's status), and role-gated header actions (Edit — Admin; Readiness Check — Custodian; **Request Custodian Inspection** — Admin, which notifies the Custodians to inspect without opening an issue or ticket on their behalf; Decommission/Recommission — Admin).
 
 ### 3.2 Vehicle Types
 
-A Vehicle Type captures a unique name, a Domain (Land/Water, required), and an optional description. Fully Admin-only CRUD; deletion is blocked while any vehicle (in any barangay) still references the type. Domain is what makes a vehicle "Water" for every Hull Material/Engine Type requirement elsewhere in the system, and it also relabels fields (Plate Number → "Registration/Hull No.") and changes the capacity-unit choices offered.
+A Vehicle Type captures a unique name, a Domain (Land/Water, required), a **default operational criticality** (Critical/High/Normal), and an optional description. It can also carry Admin-defined **custom fields** — field name, type (Text, Number, Dropdown, Date, Yes/No), required or not, an optional unit, dropdown options and display order — managed from the Edit Vehicle Type page. Fields are **archived, never deleted**: an archived field stops being asked for, but vehicles keep the values they hold (and the profile still shows them); a field's type is fixed once created so stored values stay valid. Values are stored per vehicle and validated server-side on add, edit and import. Fully Admin-only CRUD; deletion is blocked while any vehicle (in any barangay) still references the type. Domain is what makes a vehicle "Water" for every Hull Material/Engine Type requirement elsewhere in the system, and it also relabels fields (Plate Number → "Registration/Hull No.") and changes the capacity-unit choices offered.
 
 ### 3.3 Vehicle Location
 
@@ -63,11 +67,11 @@ One module, two tabs:
 
 ### 3.4 Vehicle Documents
 
-A per-vehicle file cabinet, separate from the vehicle's cover photo — Title (required), Category (free text), File (jpg/jpeg/png/pdf/doc/docx, ≤10MB). Admin can manage any document; Custodian can upload and edit only documents **they personally uploaded**; delete is Admin-only. **Maintenance Personnel has no access at all** — not even to view (enforced server-side via a dedicated `document.view` ability, not just left off their sidebar) — they see repair evidence through the ticket/work-order record itself instead (§5.3). Shown as a compact card on the vehicle profile (expandable into a full table), and also reachable as its own cross-vehicle sidebar page — a vehicle picker sitting in front of the exact same upload component, not a second document store.
+A per-vehicle file cabinet, separate from the vehicle's cover photo — Title (required), Category (free text), File (jpg/jpeg/png/pdf/doc/docx, ≤10MB). Admin can manage any document; Custodian can upload and edit only documents **they personally uploaded**; delete is Admin-only. **Maintenance Personnel can view documents and upload repair evidence** (they edit only their own uploads; they cannot delete — a 2026-10-06 spec decision that reversed the earlier no-access rule). Documents live **only in the vehicle profile** — a compact card expandable into a full table; the separate cross-vehicle "Vehicle Documents" sidebar page was removed.
 
 ### 3.5 Vehicle History
 
-A fully automatic, derived activity timeline — there is no manual "add a history entry." The backend writes an entry on nearly every vehicle-affecting action: added, info updated, location changed, archived, restored, decommissioned, readiness checked (pass/fail), marked available, condition checked/updated/deleted, issue reported/updated, document added. Viewable with activity-type and date-range filters, free-text search, a card/table toggle, CSV export, and print — available to Admin and Custodian.
+A fully automatic, derived activity timeline — there is no manual "add a history entry." The backend writes an entry on nearly every vehicle-affecting action: added, info updated, location changed, archived, restored, decommissioned, readiness checked (pass/fail), marked available, condition checked/updated/deleted, issue reported/updated, document added, vehicle taken out / returned (usage log), spreadsheet import. Viewable with activity-type and date-range filters, free-text search, a card/table toggle, CSV export, and print — available to Admin and Custodian.
 
 ### 3.6 Condition Monitoring
 
@@ -85,7 +89,7 @@ Recorded by Custodian only. A passing check is only considered **fresh for 24 ho
 
 An Issue Report captures: vehicle, issue type (a free-text catalog that grows as new values are typed, not a fixed list), description, severity (Low/Medium/High), any number of file attachments (jpg/jpeg/png/pdf/doc/docx, 10MB each), and optional remarks.
 
-**Who can file**: Admin, Custodian, and Maintenance Personnel. A pure Maintenance Personnel account only sees/tracks the reports **they themselves** filed — browsing the whole barangay's queue stays a Custodian/Admin concern. Filing one sets the vehicle's condition to "Needs Inspection," notifies that barangay's Admins, and — specifically when the reporter is a pure Maintenance Personnel account — also notifies its Custodians, since a mechanic's finding still has to go through a Custodian's ticket proposal.
+**Who can file**: Custodian and Maintenance Personnel (an Admin cannot report an issue — they request a Custodian inspection from the vehicle profile instead, §3.1). On a Pending/Under Review report with no ticket yet, Maintenance Personnel can **Recommend Maintenance Ticket**, which notifies the Custodians and deep-links them to that exact report to propose the ticket. A pure Maintenance Personnel account only sees/tracks the reports **they themselves** filed — browsing the whole barangay's queue stays a Custodian/Admin concern. Filing one sets the vehicle's condition to "Needs Inspection," notifies that barangay's Admins, and — specifically when the reporter is a pure Maintenance Personnel account — also notifies its Custodians, since a mechanic's finding still has to go through a Custodian's ticket proposal.
 
 After submitting, the system lands directly on that report's own detail page — not back on a list — with a **Create Maintenance Ticket** action right there for whoever holds that permission (Custodian).
 
@@ -118,9 +122,9 @@ Each sub-issue also carries a free-text maintenance-type (another growing catalo
 
 ### 5.2 Admin review (Admin only)
 
-Can edit title, description, priority, assigned custodian, and per-sub-issue title/maintenance-type/suggested-mechanic before deciding.
+Can edit description, priority, assigned custodian, and per-sub-issue title/maintenance-type/suggested-mechanic before deciding.
 
-**On approve**: status becomes Active; the vehicle goes Needs Repair/Under Maintenance; the ticket's own ID is folded into its title (`#<id> - <original title>`); every sub-issue with a still-valid suggested mechanic is automatically dispatched (assigned, notified) — a stale suggestion (deactivated account, moved barangay) is left unassigned rather than force-dispatched; the proposing Custodian is notified. At least one sub-issue must exist, and the vehicle must not have gone Inactive/Decommissioned since the proposal was filed.
+**On approve**: status becomes Active; the vehicle goes Needs Repair/Under Maintenance; the ticket's title is server-built as `MT-0010 — <Vehicle> — <Issue>` (nobody types or edits a ticket title; duplicate and recurrence matching compare the issue part only); every sub-issue with a still-valid suggested mechanic is automatically dispatched (assigned, notified) — a stale suggestion (deactivated account, moved barangay) is left unassigned rather than force-dispatched; the proposing Custodian is notified. At least one sub-issue must exist, and the vehicle must not have gone Inactive/Decommissioned since the proposal was filed.
 
 **On decline**: requires a reason. The entire proposal — and its sub-issues — is **permanently deleted**, by design — but the decline itself (ticket title, vehicle, original proposer, and reason) is captured as an Activity Log entry first, so the operational record disappearing doesn't erase the audit trail of why. Any linked Issue Report resets back to Pending.
 
@@ -128,7 +132,9 @@ Can edit title, description, priority, assigned custodian, and per-sub-issue tit
 
 Admin assigns (and can later reassign, with a reason) a mechanic per sub-issue — flagged, non-blocking, if the chosen mechanic is also this ticket's own Custodian (a self-verification conflict waiting to happen later). Admin can also reassign the ticket's Custodian entirely, which correctly carries any pending verification assignment along with it.
 
-The assigned mechanic logs repair notes (append-only, never overwritten), parts used, cost, start/completion dates, an optional photo/file, and can confirm or correct the repair-type details. A **cannibalized** repair routes to a dedicated Admin approval step first (since it's really two actions — fixing one vehicle by un-fixing another): approving it auto-files a new Issue Report on the donor vehicle so its own missing part is never invisible; rejecting it (with a reason) sends the sub-issue back to repair.
+While the ticket is Active, an Admin — or the ticket's assigned Custodian — can **add, rename or remove a sub-issue** from a single-input panel on the ticket page, but only while that sub-issue is still untouched (Open, no mechanic dispatched), and the last remaining sub-issue cannot be removed (cancel the ticket instead). Maintenance Personnel cannot.
+
+The assigned mechanic logs repair notes (append-only, never overwritten), parts used, cost, start/completion dates, an optional photo/file, and can confirm or correct the repair-type details. A **cannibalized** repair also records the donor part, quantity, condition, the reason for using a donor, and the date installed. An **external** repair has explicit stages: the mechanic marks it *sent to the shop* (shop, reason, work scope, contact, estimated cost), then *returned* (result, actual cost, warranty) — and the repair cannot be submitted for verification while it is still out. A **cannibalized** repair routes to a dedicated Admin approval step first (since it's really two actions — fixing one vehicle by un-fixing another): approving it auto-files a new Issue Report on the donor vehicle so its own missing part is never invisible; rejecting it (with a reason) sends the sub-issue back to repair.
 
 ### 5.4 Verification & confirmation — the two-tier gate
 
@@ -158,7 +164,7 @@ Captures vehicle, maintenance type, scheduled date/time, service location, notes
 
 **Conflict warnings** (never blocking, always "confirm anyway"): fire when the same vehicle already has another entry on that exact date, or when the barangay's total scheduled count for that date reaches a configurable daily-volume threshold.
 
-**Who does what**: Custodian creates (Admin no longer originates schedules directly — a deliberate, final decision); Admin edits any, Custodian edits only their own; reassigning the mechanic is Admin-only; cancel/restore is Admin-only; **completing is the specific Maintenance Personnel it's assigned to, and only them** — Admin no longer has a blanket override (final senior system review, 2026-10-05, since "complete" means physically performed the work, and Admin never performs repair work in this system). An Admin who needs to hand off a stuck or unassigned schedule reassigns it to someone else first, exactly like reassigning a ticket's mechanic.
+**Who does what** (2026-10-06 spec, reversing the earlier rule): **Admin creates and edits schedules**; a Custodian only **suggests** one (vehicle, type, date, notes) from the schedule page, which notifies the Admins and does not book anything; reassigning the mechanic is Admin-only; cancel/restore is Admin-only; **completing is the specific Maintenance Personnel it's assigned to, and only them** — Admin no longer has a blanket override (final senior system review, 2026-10-05, since "complete" means physically performed the work, and Admin never performs repair work in this system). An Admin who needs to hand off a stuck or unassigned schedule reassigns it to someone else first, exactly like reassigning a ticket's mechanic.
 
 Completing a schedule creates a proof-of-work maintenance record, always at **For Verification** — a receipt or completed-work photo can still be attached as evidence, but it never substitutes for an independent Custodian check (a "receipt attached = instantly Completed" shortcut existed here previously and was removed in the final stabilization pass, 2026-10-05, since it let whoever performed the work certify it themselves). A recurring schedule auto-creates its next occurrence at completion date + interval, correctly handling month-end edge cases (a Jan 31 monthly schedule lands on Feb 28, or Feb 29 in a leap year — not an overflow into March).
 
@@ -167,6 +173,8 @@ A **daily background job** automatically turns any schedule whose date has arriv
 ---
 
 ## 7. Maintenance Records (standalone ledger)
+
+> Records are written automatically from confirmed ticket sub-issues and completed schedules. Manual entry remains Admin-only, kept for legacy/historical work; it is not a standing workflow for other roles.
 
 A parallel record type for maintenance that didn't originate from a ticket sub-issue being confirmed (manual entries, historical/external work, or a mechanic self-filing a field repair) — though confirming a ticket sub-issue *also* writes one of these, so this ledger ends up as the single unified maintenance history regardless of where the work came from.
 
@@ -184,6 +192,9 @@ Has its own verify/confirm flow mirroring the ticket workflow (Custodian verifie
 
 | Event | Recipient |
 |---|---|
+| Maintenance Personnel recommends a ticket for an issue | Barangay Custodians (links to that issue) |
+| Admin requests a Custodian inspection of a vehicle | Barangay Custodians (links to that vehicle) |
+| Custodian suggests a maintenance schedule | Barangay Admins |
 | Custodian proposes a ticket | Barangay Admins |
 | Admin approves / declines a proposal | The proposing Custodian |
 | A mechanic is assigned or reassigned to a sub-issue | The (new) mechanic (+ the previous one, on reassignment) |
@@ -221,6 +232,12 @@ All computed live on every dashboard load — there is no caching or scheduled p
 9. **My Scheduled Work** (Maintenance Personnel) — that mechanic's own upcoming assigned schedules.
 10. **Sole-active-Admin warning** — proactively flags an Admin if they're the only one left for their barangay, before anyone tries to deactivate/demote them (the guard itself is described in §11.2).
 11. Supporting KPI tiles and charts: fleet counts by status, by type, by location, by condition; total maintenance spend; a recent-activity feed; role-tailored metric subsets (Admin gets the full operational/financial picture; Custodian gets issue-centric counts; Maintenance Personnel gets repair/schedule-centric counts plus a "vehicles needing attention" list).
+
+---
+
+### 9.x Fleet Readiness & Criticality Watch
+
+One list of every operational vehicle that is **not** currently verified ready — in maintenance, failed readiness check, never checked, or check out of date — ranked **Critical → High → Normal** using each vehicle's effective criticality (§3.1). It reuses the single readiness rule used everywhere else (`responseReadinessState`), so the watch can never disagree with the vehicle profile. Admins see it inside Risk & Readiness Watch; Custodians and Maintenance Personnel see it as a dashboard card.
 
 ---
 
@@ -285,6 +302,8 @@ Stated plainly, as found in the code — not implied to be bugs, just not (yet) 
 - **"In Use" vehicle status** exists in the database but is never set by any code path — dispatch state isn't tracked, only availability.
 - **File storage is bucket-public by design** — vehicle documents, issue attachments, and repair photos are reachable by anyone holding the exact (non-sequential, not browsable) generated URL, with no per-request authentication. A documented, deliberate trade-off, not an oversight — see the code comment on `config/filesystems.php`'s `'public'` visibility setting.
 - The **last-Admin protection** stops specific actions (deactivate, remove Admin role, platform role change) but doesn't prevent every conceivable way a barangay could end up without an active Admin — the Super Admin recovery tool exists specifically to fix that case after the fact, not to make it impossible in advance.
+- **Import / custom-field limits:** an import takes at most 500 rows / 2 MB per file; custom fields are per Vehicle Type (a template column per distinct label), and the import template does not yet include a per-row hull/engine hint beyond the Instructions sheet.
+- **Usage Log is recording only** — it does not gate or change vehicle status.
 - **Barangay boundary lookup** depends on a public third-party geocoder with no guaranteed coverage — a legitimate "no boundary found" result is expected for some barangays, not a bug.
 
 ---
@@ -300,6 +319,7 @@ This document was compiled by direct code review, not from memory or prior docum
 - `backend-api/config/{permissions,cors,sanctum,scheduling}.php`
 - `backend-api/app/Console/Commands/{ConvertDueSchedulesToTickets,PruneOldNotifications}.php`
 - `backend-api/database/migrations/2026_10_05_*.php` (vehicle-registration delegation, notification record links)
+- `backend-api/app/Http/Controllers/{VehicleImportController,VehicleTypeFieldController,VehicleUsageController}.php` and `backend-api/database/migrations/2026_10_0[6-9]_*.php` (notification vehicle link, vehicle imports, type custom fields, repair-method details, criticality & usage logs)
 - `frontend-spa/src/views/Workspace.jsx` and `frontend-spa/src/components/{LocationDensityMap,VehicleLocationMap,AddLocationMap}.jsx`
 
 See `Documentation.md` for the shorter architectural overview, and `Role-Realignment-Analysis.md` for the history behind the current role/permission model.
