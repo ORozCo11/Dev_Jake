@@ -10,10 +10,18 @@ class Barangay extends Model
         'name',
         'city_id',
         'boundary',
+        'boundary_status',
+        'boundary_source',
+        'boundary_verified_at',
+        'boundary_verified_by',
+        'pending_boundary',
+        'pending_boundary_source',
     ];
 
     protected $casts = [
         'boundary' => 'array',
+        'boundary_verified_at' => 'datetime',
+        'pending_boundary' => 'array',
     ];
 
     public function city()

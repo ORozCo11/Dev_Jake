@@ -1,10 +1,13 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import 'leaflet/dist/leaflet.css';
+import { MapContainer, Polygon, TileLayer } from 'react-leaflet';
 import api from '../api/axios';
 import Icon from '../components/Icon';
 import WorkspaceFooter from '../components/WorkspaceFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { DonutChart, HorizontalBarChart } from '../components/charts';
 import { AuthContext } from '../context/AuthContextObject';
+import { geoJsonToRings } from '../utils/boundary';
 
 // Kept separate from every other role's landing route — a Super Admin never
 // lands on the fleet-oriented Workspace.jsx shell, since RestrictSuperAdminScope
@@ -309,7 +312,7 @@ function SignalCard({ icon, label, value, detail, tone = '', meter, onClick }) {
 // clickable filter-tabs, a search/filter row, and the full barangay table
 // with Add/Recover — one page, same shape as a "records in the market"
 // overview page rather than scattered across separate tabs.
-function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPromote, onAddedBarangay, onRetryBoundary, onNavigate }) {
+function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPromote, onAddedBarangay, onRetryBoundary, onConfirmBoundary, onDiscardBoundary, onNavigate }) {
   // Tracks which rows have a retry in flight, purely so the button can show
   // "Checking…" and not be double-clicked — the lookup itself takes a couple
   // seconds (it can make two sequential OSM requests, see lookupBoundary()).
@@ -322,8 +325,11 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
       setRetryingBoundaryId(null);
     }
   };
+  // The barangay currently open in the boundary review modal, if any.
+  const [reviewingBoundary, setReviewingBoundary] = useState(null);
 
   const orphaned = barangays.filter((b) => !b.has_active_admin);
+  const needsBoundaryReview = barangays.filter((b) => b.boundary_status === 'needs_review');
   const openConcerns = concernReports.filter((r) => r.status !== 'Resolved').length;
   const activeUsers = users.filter((u) => u.is_active).length;
   const pendingCount = pendingApprovals.length;
@@ -357,6 +363,15 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
       detail: openConcerns > 0 ? 'Needs a look' : 'Inbox clear',
       meter: Math.min(100, openConcerns * 20), goto: 'concerns',
     },
+    {
+      key: 'boundary', label: 'Needs Boundary Review', value: needsBoundaryReview.length, icon: 'pin',
+      tone: needsBoundaryReview.length > 0 ? 'is-warn' : 'is-ok',
+      detail: needsBoundaryReview.length > 0 ? 'A candidate boundary is awaiting confirmation' : 'Nothing waiting on review',
+      meter: Math.min(100, needsBoundaryReview.length * 20),
+      // Same-page filter, not a cross-tab goto — this row below the KPI
+      // grid already does filtering for "Active"/"Orphaned"; this reuses it.
+      onClick: () => setActiveFilter('boundary_review'),
+    },
   ];
 
   // Filter-tabs + search/province filter — the grid's own filters, which
@@ -381,6 +396,7 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
     let rows = barangays;
     if (activeFilter === 'active') rows = rows.filter((b) => b.has_active_admin);
     if (activeFilter === 'orphaned') rows = rows.filter((b) => !b.has_active_admin);
+    if (activeFilter === 'boundary_review') rows = rows.filter((b) => b.boundary_status === 'needs_review');
     if (provinceFilter) rows = rows.filter((b) => b.province_name === provinceFilter);
     const q = search.trim().toLowerCase();
     if (q) rows = rows.filter((b) => [b.name, b.city_name, b.province_name].filter(Boolean).some((v) => v.toLowerCase().includes(q)));
@@ -434,19 +450,31 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
         : <span className="muted">Not yet</span>
     ) },
     { label: 'Boundary', className: 'cell-center', render: (b) => (
-      b.has_boundary
-        ? <span className="status-badge good" title="A map boundary polygon is on file."><Icon name="pin" size={11} /> On file</span>
-        : (
+      b.boundary_status === 'needs_review'
+        ? (
           <button
             type="button"
-            className="ghost-button"
-            disabled={retryingBoundaryId === b.id}
-            title="No boundary matched when this barangay was added — try the lookup again."
-            onClick={() => retryBoundary(b)}
+            className="status-badge pending"
+            style={{ border: 'none', cursor: 'pointer' }}
+            title="A candidate boundary was found and is waiting for your review before it becomes the barangay's official shape."
+            onClick={() => setReviewingBoundary(b)}
           >
-            {retryingBoundaryId === b.id ? 'Checking…' : 'Not set · Retry'}
+            <Icon name="alert" size={11} /> Needs Review
           </button>
         )
+        : b.boundary_status === 'verified'
+          ? <span className="status-badge good" title="A reviewed and confirmed boundary polygon is on file."><Icon name="pin" size={11} /> Verified</span>
+          : (
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={retryingBoundaryId === b.id}
+              title="No boundary matched when this barangay was added — try the lookup again."
+              onClick={() => retryBoundary(b)}
+            >
+              {retryingBoundaryId === b.id ? 'Checking…' : 'Not Found · Retry'}
+            </button>
+          )
     ) },
     { label: 'Action', render: (b) => (
       !b.has_active_admin ? (
@@ -476,7 +504,7 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
             detail={c.detail}
             tone={c.tone}
             meter={c.meter}
-            onClick={c.goto ? () => onNavigate(c.goto) : undefined}
+            onClick={c.onClick ?? (c.goto ? () => onNavigate(c.goto) : undefined)}
           />
         ))}
       </div>
@@ -518,6 +546,9 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
         </button>
         <button type="button" className={activeFilter === 'orphaned' ? 'active' : ''} onClick={() => setActiveFilter('orphaned')}>
           Orphaned <span>{orphaned.length}</span>
+        </button>
+        <button type="button" className={activeFilter === 'boundary_review' ? 'active' : ''} onClick={() => setActiveFilter('boundary_review')}>
+          Needs Boundary Review <span>{needsBoundaryReview.length}</span>
         </button>
       </div>
 
@@ -575,6 +606,69 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
           )}
         </div>
       )}
+
+      {reviewingBoundary && (
+        <BoundaryReviewModal
+          barangay={reviewingBoundary}
+          onClose={() => setReviewingBoundary(null)}
+          onConfirm={async () => { await onConfirmBoundary(reviewingBoundary); setReviewingBoundary(null); }}
+          onDiscard={async () => { await onDiscardBoundary(reviewingBoundary); setReviewingBoundary(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Final stabilization (§33.2/§33.3) — a found boundary candidate is never
+// auto-accepted. This lets a Super Admin actually see the shape before it
+// becomes the barangay's official boundary — a text "Boundary found" is not
+// enough to judge whether a polygon is actually usable. Reuses the same
+// react-leaflet primitives and geoJsonToRings() helper the fleet map already
+// uses — no new geospatial code.
+function BoundaryReviewModal({ barangay, onClose, onConfirm, onDiscard }) {
+  const [busy, setBusy] = useState(false);
+  const rings = useMemo(() => geoJsonToRings(barangay.pending_boundary), [barangay.pending_boundary]);
+  const allPoints = rings.flat();
+  const center = allPoints.length
+    ? [allPoints.reduce((s, p) => s + p[0], 0) / allPoints.length, allPoints.reduce((s, p) => s + p[1], 0) / allPoints.length]
+    : [10.3, 123.9];
+
+  const run = async (fn) => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Review Boundary — {barangay.name}</h3>
+          <button className="modal-close-btn" onClick={onClose} type="button" aria-label="Close"><Icon name="close" size={18} /></button>
+        </div>
+        <div className="modal-body">
+          <p className="muted" style={{ margin: '0 0 10px' }}>
+            Matched via OpenStreetMap — this is NOT yet the barangay's official boundary. Confirm it only if the shape below actually looks like {barangay.name}.
+          </p>
+          {rings.length === 0 ? (
+            <p className="notice error">This candidate's geometry couldn't be rendered — discard it and try again later.</p>
+          ) : (
+            <div style={{ height: 280, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+              <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
+                <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                {rings.map((ring, i) => (
+                  <Polygon key={i} positions={ring} pathOptions={{ color: '#d97706', fillColor: '#fbbf24', fillOpacity: 0.3 }} />
+                ))}
+              </MapContainer>
+            </div>
+          )}
+          <div className="form-actions" style={{ marginTop: 12 }}>
+            <button type="button" className="ghost-button" disabled={busy} onClick={() => run(onDiscard)}>Discard</button>
+            <button type="button" className="success-button" disabled={busy || rings.length === 0} onClick={() => run(onConfirm)}>
+              {busy ? 'Confirming…' : 'Confirm Boundary'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -655,6 +749,21 @@ function PendingApprovalsTab({ approvals, barangays, onApprove, onReject, onRequ
     });
   };
 
+  // A significant platform action (activating an account, sometimes the
+  // very first Admin for a barangay) previously fired on one click with no
+  // review step at all — asymmetric with Reject, which already confirms.
+  const requestApprove = (a) => {
+    onRequestConfirmation({
+      title: 'Approve Registration',
+      message: isFirstAdmin(a)
+        ? `${a.name} will become ${a.barangay_name ?? 'this barangay'}'s first Admin — this activates a brand-new barangay account.`
+        : `Approve ${a.name}'s registration for ${a.barangay_name ?? 'their barangay'} as ${a.role}?`,
+      confirmLabel: 'Approve',
+      variant: 'primary',
+      onConfirm: () => onApprove(a),
+    });
+  };
+
   const renderAccountCard = (a) => (
     <article key={a.id} className={`approval-card${isFirstAdmin(a) ? ' is-first-admin' : ''}`}>
       <div className="approval-card-main">
@@ -671,7 +780,7 @@ function PendingApprovalsTab({ approvals, barangays, onApprove, onReject, onRequ
       <div className="approval-card-submitted muted">Submitted {formatDate(a.created_at)}</div>
       <div className="approval-card-actions">
         <button type="button" className="ghost-button" onClick={() => requestReject(a)}>Reject</button>
-        <button type="button" className="primary-button" onClick={() => onApprove(a)}>Approve</button>
+        <button type="button" className="primary-button" onClick={() => requestApprove(a)}>Approve</button>
       </div>
     </article>
   );
@@ -925,6 +1034,7 @@ function RegistrationCodesTab({ barangays, onRequestConfirmation, setNotice }) {
   // single box, instead of two separate widgets for the same field.
   const [barangayId, setBarangayId] = useState('');
   const [code, setCode] = useState(null);
+  const [codeUpdatedAt, setCodeUpdatedAt] = useState(null);
   const [loadingCode, setLoadingCode] = useState(false);
 
   useEffect(() => {
@@ -944,15 +1054,17 @@ function RegistrationCodesTab({ barangays, onRequestConfirmation, setNotice }) {
 
   const loadCode = useCallback(async (id) => {
     requestedIdRef.current = id;
-    if (!id) { setCode(null); return; }
+    if (!id) { setCode(null); setCodeUpdatedAt(null); return; }
     setLoadingCode(true);
     try {
       const res = await api.get(`/superadmin/barangays/${id}/registration-code`);
       if (requestedIdRef.current !== id) return; // a newer request has since been made
       setCode(res.data.staff_code);
+      setCodeUpdatedAt(res.data.updated_at);
     } catch {
       if (requestedIdRef.current !== id) return;
       setCode(null);
+      setCodeUpdatedAt(null);
     } finally {
       if (requestedIdRef.current === id) setLoadingCode(false);
     }
@@ -970,6 +1082,7 @@ function RegistrationCodesTab({ barangays, onRequestConfirmation, setNotice }) {
         try {
           const res = await api.post(`/superadmin/barangays/${barangayId}/registration-code/regenerate`);
           setCode(res.data.staff_code);
+          setCodeUpdatedAt(res.data.updated_at);
         } catch (error) {
           setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not regenerate that code.' });
         } finally {
@@ -1004,7 +1117,7 @@ function RegistrationCodesTab({ barangays, onRequestConfirmation, setNotice }) {
             <span>Province</span>
             <select
               value={provinceId}
-              onChange={(e) => { setProvinceId(e.target.value); setCityId(''); setBarangayId(''); setCode(null); }}
+              onChange={(e) => { setProvinceId(e.target.value); setCityId(''); setBarangayId(''); setCode(null); setCodeUpdatedAt(null); }}
             >
               <option value="">Select a province</option>
               {provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -1015,7 +1128,7 @@ function RegistrationCodesTab({ barangays, onRequestConfirmation, setNotice }) {
             <select
               value={cityId}
               disabled={!provinceId}
-              onChange={(e) => { setCityId(e.target.value); setBarangayId(''); setCode(null); }}
+              onChange={(e) => { setCityId(e.target.value); setBarangayId(''); setCode(null); setCodeUpdatedAt(null); }}
             >
               <option value="">{provinceId ? 'Select a city' : 'Select a province first'}</option>
               {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1047,8 +1160,9 @@ function RegistrationCodesTab({ barangays, onRequestConfirmation, setNotice }) {
             {loadingCode ? (
               <p className="muted">Loading…</p>
             ) : code ? (
-              <div className="superadmin-inline-row">
+              <div className="superadmin-inline-row" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
                 <span className="superadmin-code-chip">{code}</span>
+                {codeUpdatedAt && <span className="muted" style={{ fontSize: '0.8rem' }}>Last changed {formatDate(codeUpdatedAt)}</span>}
                 <button type="button" className="ghost-button" onClick={regenerate}>Regenerate</button>
               </div>
             ) : (
@@ -1461,19 +1575,43 @@ export default function SuperAdminWorkspace() {
     await loadAll(true);
   };
 
-  // Only meaningful for a barangay that has_boundary === false — re-runs the
-  // same OSM lookup storeBarangay() tried on creation, for the (common) case
-  // where nothing trustworthy was found the first time. Never overwrites a
-  // boundary that's already on file (see refreshBarangayBoundary()).
+  // Only meaningful for a barangay without a verified boundary yet — re-runs
+  // the same OSM lookup storeBarangay() tried on creation, for the (common)
+  // case where nothing trustworthy was found the first time. Never
+  // overwrites a boundary that's already verified (see
+  // refreshBarangayBoundary()). A match found here lands as a candidate
+  // awaiting review (boundary_status 'needs_review'), not an immediate save.
   const retryBoundary = async (barangay) => {
     try {
       const res = await api.post(`/superadmin/barangays/${barangay.id}/boundary/refresh`);
-      setNotice(res.data.has_boundary
-        ? { type: 'success', text: `Found a boundary for ${barangay.name}.` }
-        : { type: 'error', text: `Still no boundary match for ${barangay.name} — try again later, or add it manually.` });
+      setNotice(res.data.boundary_status === 'needs_review'
+        ? { type: 'success', text: `Found a candidate boundary for ${barangay.name} — review it before confirming.` }
+        : res.data.boundary_status === 'verified'
+          ? { type: 'success', text: `${barangay.name} already has a verified boundary.` }
+          : { type: 'error', text: `Still no boundary match for ${barangay.name} — try again later, or add it manually.` });
       await loadAll(true);
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not retry that boundary lookup.' });
+    }
+  };
+
+  const confirmBoundary = async (barangay) => {
+    try {
+      await api.post(`/superadmin/barangays/${barangay.id}/boundary/confirm`);
+      setNotice({ type: 'success', text: `Boundary confirmed for ${barangay.name}.` });
+      await loadAll(true);
+    } catch (error) {
+      setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not confirm that boundary.' });
+    }
+  };
+
+  const discardBoundary = async (barangay) => {
+    try {
+      await api.delete(`/superadmin/barangays/${barangay.id}/boundary/pending`);
+      setNotice({ type: 'success', text: `Candidate boundary discarded for ${barangay.name}.` });
+      await loadAll(true);
+    } catch (error) {
+      setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not discard that candidate boundary.' });
     }
   };
 
@@ -1784,6 +1922,8 @@ export default function SuperAdminWorkspace() {
                 onPromote={promoteToAdmin}
                 onAddedBarangay={addBarangay}
                 onRetryBoundary={retryBoundary}
+                onConfirmBoundary={confirmBoundary}
+                onDiscardBoundary={discardBoundary}
                 onNavigate={setActiveTab}
               />
             ) : activeTab === 'pending' ? (

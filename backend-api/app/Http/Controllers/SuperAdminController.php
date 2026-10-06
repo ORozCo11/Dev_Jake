@@ -99,6 +99,13 @@ class SuperAdminController extends Controller
                     // for it.
                     'has_registration_code' => $b->registrationSetting !== null,
                     'has_boundary' => $b->boundary !== null,
+                    // Final stabilization — a real status instead of a bare
+                    // boolean. 'needs_review' is derived from a pending match
+                    // existing, not its own stored value, so there's exactly
+                    // one place a boundary is "live" and one it's "proposed".
+                    'boundary_status' => $b->pending_boundary !== null ? 'needs_review' : $b->boundary_status,
+                    'pending_boundary' => $b->pending_boundary,
+                    'pending_boundary_source' => $b->pending_boundary_source,
                 ];
             });
     }
@@ -132,9 +139,16 @@ class SuperAdminController extends Controller
         // public geocoder for one; if it can't find a match (or the
         // lookup fails/times out) the barangay is still created, just
         // without a boundary, exactly as before this existed.
+        //
+        // Final stabilization — a found match is no longer saved straight
+        // to `boundary`: it lands in `pending_boundary` for the Super Admin
+        // to actually look at and confirm first (§33.2). Nothing here is
+        // auto-accepted just because the HTTP request succeeded.
         $boundary = $this->lookupBoundary($barangay->name, $barangay->city?->name);
         if ($boundary) {
-            $barangay->update(['boundary' => $boundary]);
+            $barangay->update(['pending_boundary' => $boundary, 'pending_boundary_source' => 'osm_nominatim']);
+        } else {
+            $barangay->update(['boundary_status' => 'not_found']);
         }
 
         $this->log($request, 'Add', "Added barangay {$barangay->name} ({$barangay->city?->name}).");
@@ -147,7 +161,10 @@ class SuperAdminController extends Controller
             'staff_count' => 0,
             'has_active_admin' => false,
             'has_registration_code' => false,
-            'has_boundary' => $boundary !== null,
+            'has_boundary' => false,
+            'boundary_status' => $boundary ? 'needs_review' : 'not_found',
+            'pending_boundary' => $boundary,
+            'pending_boundary_source' => $boundary ? 'osm_nominatim' : null,
         ], 201);
     }
 
@@ -166,17 +183,83 @@ class SuperAdminController extends Controller
         $this->requireAbility($request, 'barangay.refresh_boundary', 'Only a Super Admin can perform this action.');
 
         if ($barangay->boundary !== null) {
-            return response()->json(['has_boundary' => true]);
+            return response()->json(['has_boundary' => true, 'boundary_status' => 'verified']);
         }
 
         $barangay->load('city');
         $boundary = $this->lookupBoundary($barangay->name, $barangay->city?->name);
         if ($boundary) {
-            $barangay->update(['boundary' => $boundary]);
-            $this->log($request, 'Edit', "Found a boundary for barangay {$barangay->name} ({$barangay->city?->name}) on retry.");
+            // Final stabilization — lands as a proposal, not an immediate
+            // save (§33.2); confirmBarangayBoundary() is what actually
+            // writes `boundary`. The Activity Log entry below now records
+            // that a match was FOUND, not that the boundary was finalized.
+            $barangay->update(['pending_boundary' => $boundary, 'pending_boundary_source' => 'osm_nominatim']);
+            $this->log($request, 'Edit', "Found a candidate boundary for barangay {$barangay->name} ({$barangay->city?->name}) on retry — awaiting review.");
+        } else {
+            $barangay->update(['boundary_status' => 'not_found']);
         }
 
-        return response()->json(['has_boundary' => $boundary !== null]);
+        return response()->json([
+            'has_boundary' => false,
+            'boundary_status' => $boundary ? 'needs_review' : 'not_found',
+            'pending_boundary' => $boundary,
+            'pending_boundary_source' => $boundary ? 'osm_nominatim' : null,
+        ]);
+    }
+
+    /**
+     * Final stabilization (§33.2/§33.6) — the Super Admin's explicit
+     * acceptance of a `pending_boundary` candidate. This is the ONLY place
+     * `boundary` is ever written to from a geocoder result; nothing upstream
+     * auto-confirms. Logged with before/after so a boundary's provenance is
+     * always answerable later.
+     */
+    public function confirmBarangayBoundary(Request $request, Barangay $barangay)
+    {
+        $this->requireAbility($request, 'barangay.refresh_boundary', 'Only a Super Admin can perform this action.');
+
+        abort_if($barangay->pending_boundary === null, 422, 'There is no candidate boundary waiting for review on this barangay.');
+
+        $barangay->load('city');
+        $source = $barangay->pending_boundary_source;
+
+        $barangay->update([
+            'boundary' => $barangay->pending_boundary,
+            'boundary_status' => 'verified',
+            'boundary_source' => $source,
+            'boundary_verified_at' => now(),
+            'boundary_verified_by' => $request->user()->id,
+            'pending_boundary' => null,
+            'pending_boundary_source' => null,
+        ]);
+
+        $this->log($request, 'Edit', "Confirmed the boundary for barangay {$barangay->name} ({$barangay->city?->name}) — source: {$source}.");
+
+        return response()->json(['has_boundary' => true, 'boundary_status' => 'verified']);
+    }
+
+    /**
+     * Rejects a `pending_boundary` candidate without touching `boundary` —
+     * e.g. the Super Admin looked at the map preview and it's visibly wrong.
+     * Leaves the barangay exactly where it was before the lookup that
+     * produced it (still 'not_found' if nothing was confirmed before).
+     */
+    public function discardPendingBoundary(Request $request, Barangay $barangay)
+    {
+        $this->requireAbility($request, 'barangay.refresh_boundary', 'Only a Super Admin can perform this action.');
+
+        abort_if($barangay->pending_boundary === null, 422, 'There is no candidate boundary waiting for review on this barangay.');
+
+        $barangay->load('city');
+        $barangay->update([
+            'pending_boundary' => null,
+            'pending_boundary_source' => null,
+            'boundary_status' => $barangay->boundary !== null ? 'verified' : 'not_found',
+        ]);
+
+        $this->log($request, 'Edit', "Discarded a candidate boundary for barangay {$barangay->name} ({$barangay->city?->name}) — did not match.");
+
+        return response()->json(['message' => 'Candidate boundary discarded.']);
     }
 
     /**
@@ -271,6 +354,9 @@ class SuperAdminController extends Controller
                 if (!in_array($geojson['type'] ?? null, ['Polygon', 'MultiPolygon'], true)) {
                     continue;
                 }
+                if (!self::isUsableGeometry($geojson)) {
+                    continue;
+                }
 
                 // Reject anything outside the requested city — a same-named
                 // barangay elsewhere in the country must not be accepted just
@@ -325,6 +411,47 @@ class SuperAdminController extends Controller
     private static function normalizeForMatch(string $name): string
     {
         return strtolower(preg_replace('/[^a-z0-9]/i', '', $name));
+    }
+
+    /**
+     * Final stabilization — a geocoder response succeeding at the HTTP level
+     * (and even passing the class/type/address-match checks above) doesn't
+     * guarantee the geometry itself is usable: a degenerate ring (too few
+     * points, not closed) or non-numeric coordinates would still draw
+     * garbage on the map. Checks the outer ring of every polygon (ignoring
+     * holes, same as the frontend's geoJsonToRings()) for a closed ring of
+     * at least 4 points with two finite numbers each.
+     */
+    private static function isUsableGeometry(array $geojson): bool
+    {
+        $polygons = $geojson['type'] === 'MultiPolygon' ? ($geojson['coordinates'] ?? []) : [$geojson['coordinates'] ?? null];
+
+        foreach ($polygons as $polygon) {
+            $ring = $polygon[0] ?? null;
+            if (!self::isUsableRing($ring)) {
+                return false;
+            }
+        }
+
+        return !empty($polygons);
+    }
+
+    private static function isUsableRing($ring): bool
+    {
+        if (!is_array($ring) || count($ring) < 4) {
+            return false;
+        }
+
+        foreach ($ring as $point) {
+            if (!is_array($point) || count($point) < 2 || !is_numeric($point[0]) || !is_numeric($point[1])) {
+                return false;
+            }
+        }
+
+        $first = $ring[0];
+        $last = $ring[count($ring) - 1];
+
+        return (float) $first[0] === (float) $last[0] && (float) $first[1] === (float) $last[1];
     }
 
     /**
@@ -459,7 +586,9 @@ class SuperAdminController extends Controller
     {
         $this->requireAbility($request, 'barangay.view_registration_code', 'Only a Super Admin can perform this action.');
 
-        return response()->json(['staff_code' => RegistrationSetting::for($barangay->id)->staff_code]);
+        $setting = RegistrationSetting::for($barangay->id);
+
+        return response()->json(['staff_code' => $setting->staff_code, 'updated_at' => $setting->updated_at]);
     }
 
     public function regenerateRegistrationCode(Request $request, Barangay $barangay)
@@ -469,7 +598,7 @@ class SuperAdminController extends Controller
         $setting = RegistrationSetting::regenerateFor($barangay->id);
         $this->log($request, 'Edit', "Regenerated the staff registration code for {$barangay->name}.");
 
-        return response()->json(['staff_code' => $setting->staff_code]);
+        return response()->json(['staff_code' => $setting->staff_code, 'updated_at' => $setting->updated_at]);
     }
 
     /**
