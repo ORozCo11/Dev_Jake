@@ -15,6 +15,7 @@ use App\Http\Controllers\ProvinceController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VehicleImportController;
+use App\Http\Controllers\VehicleTypeFieldController;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\RestrictImpersonatedToReadOnly;
 use App\Http\Middleware\RestrictSuperAdminScope;
@@ -105,6 +106,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/categories', [FleetController::class, 'storeCategory']);
     Route::put('/categories/{category}', [FleetController::class, 'updateCategory']);
     Route::delete('/categories/{category}', [FleetController::class, 'deleteCategory']);
+    Route::get('/categories/{category}/fields', [VehicleTypeFieldController::class, 'index']);
+    Route::post('/categories/{category}/fields', [VehicleTypeFieldController::class, 'store']);
+    Route::put('/category-fields/{field}', [VehicleTypeFieldController::class, 'update']);
 
     Route::get('/vehicles', [FleetController::class, 'vehicles']);
     Route::post('/vehicles', [FleetController::class, 'storeVehicle']);

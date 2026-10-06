@@ -3111,6 +3111,7 @@ function Workspace() {
               onDecisionClose={(r, payload) => updateRecord(`/maintenance-records/${r.maintenance_id}/decision-close`, payload, 'Record closed without verification.')}
             />
           ) : (isNewCategoryPage || editCategoryId) ? (
+            <>
             <FormPage
               description="Maintain standard vehicle type choices used across dropdowns."
               onBack={() => returnToModule('categories')}
@@ -3123,6 +3124,10 @@ function Workspace() {
               onDirty={() => setHasUnsavedChanges(true)}
               showDomainPreview
             />
+            {editCategoryId && canDo(user, 'vehicle_type.edit') && (
+              <CategoryFieldsManager categoryId={editCategoryId} onChanged={loadLookups} />
+            )}
+            </>
           ) : (isNewSchedulePage || editScheduleId) ? (
             <FormPage
               description="Plan preventative maintenance and track schedule status."
@@ -8061,6 +8066,33 @@ function vehicleDomainFields(domain) {
     : [{ label: 'Fuel Type', name: 'fuel_type', options: FUEL_TYPE_OPTIONS, required: true, type: 'select' }];
 }
 
+// Admin-defined per-Vehicle-Type fields, rendered as ordinary form inputs
+// named cf_<key> (the API folds them into custom_values).
+function customFieldInputs(category, group) {
+  return (category?.fields ?? []).filter((f) => f.is_active).map((f) => ({
+    label: f.unit ? `${f.label} (${f.unit})` : f.label,
+    name: `cf_${f.key}`,
+    required: f.is_required,
+    type: f.field_type === 'number' ? 'number' : f.field_type === 'date' ? 'date' : (f.field_type === 'dropdown' || f.field_type === 'yes_no') ? 'select' : 'text',
+    options: f.field_type === 'yes_no' ? ['Yes', 'No'] : (f.options ?? undefined),
+    ...(group ? { group } : {}),
+  }));
+}
+
+function vehicleWithCustomInitials(vehicle) {
+  return { ...vehicle, ...Object.fromEntries(Object.entries(vehicle?.custom_values ?? {}).map(([k, v]) => [`cf_${k}`, v])) };
+}
+
+// Profile rows for a vehicle's custom values (archived fields still show what they hold).
+function customValueRows(vehicle, lookups) {
+  const category = (lookups.categories ?? []).find((c) => String(c.category_id) === String(vehicle.category_id));
+  return (category?.fields ?? [])
+    .filter((f) => vehicle.custom_values?.[f.key] != null && vehicle.custom_values[f.key] !== '')
+    .map((f) => (
+      <div key={f.key}><dt>{f.label}</dt><dd>{vehicle.custom_values[f.key]}{f.unit ? ` ${f.unit}` : ''}</dd></div>
+    ));
+}
+
 const VEHICLE_WIZARD_STEP_LABELS = ['Basic Information', 'Specs', 'Photo & Location'];
 const VEHICLE_WIZARD_STEP_ICONS = ['clipboard', 'wrench', 'pin'];
 
@@ -8137,6 +8169,7 @@ function NewVehiclePage({ onBack, lookups, allHubs, onSubmit, onDirty }) {
       { label: 'Acquisition Cost (optional)', name: 'acquisition_cost', type: 'number', placeholder: 'e.g. 850000' },
       { label: 'Vehicle Color', name: 'vehicle_color', required: true, type: 'text' },
       ...vehicleDomainFields(domain),
+      ...customFieldInputs(lookups.categories.find((c) => String(c.category_id) === String(wizardData.category_id))),
     ],
     3: [
       { label: 'Vehicle Photo', name: 'photo', accept: 'image/*', type: 'file', compactFile: true },
@@ -8535,7 +8568,7 @@ function FormPage({ description, onBack, fields, initialValues, onSubmit, submit
   );
 }
 
-function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPhotoUrl = null) {
+function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPhotoUrl = null, category = null) {
   const hubOptions = allHubs.map((hub) => ({ value: hub.name, label: hub.name }));
 
   return [
@@ -8555,6 +8588,7 @@ function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPhotoUrl 
     { label: 'Acquisition Cost (optional)', name: 'acquisition_cost', type: 'number', placeholder: 'e.g. 850000', group: 'Technical details' },
     { label: 'Vehicle Color', name: 'vehicle_color', required: true, type: 'text', group: 'Technical details' },
     ...vehicleDomainFields(domain).map((field) => ({ ...field, group: 'Technical details' })),
+    ...customFieldInputs(category, 'Technical details'),
     {
       label: 'Current Location', name: 'current_location', options: hubOptions, required: true, type: 'select', group: 'Location & service availability',
       // Full-width (not inline in the select's own half-column) — this map
@@ -15429,9 +15463,10 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                 lookups.categories?.find((c) => String(c.category_id) === String(editCategoryId))?.domain
                   ?? vehicle.category?.domain
                   ?? 'Land',
-                vehicle.photo_url
+                vehicle.photo_url,
+                lookups.categories?.find((c) => String(c.category_id) === String(editCategoryId))
               )}
-              initialValues={vehicle}
+              initialValues={vehicleWithCustomInitials(vehicle)}
               key={vehicle.vehicle_id}
               onValuesChange={(vals) => setEditCategoryId(vals.category_id)}
               onCancel={() => setEditing(false)}
@@ -15468,6 +15503,7 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                   </>
                 )}
                 <div><dt>Fuel Type</dt><dd>{vehicle.fuel_type ?? '-'}</dd></div>
+                {customValueRows(vehicle, lookups)}
               </dl>
             </div>
             {vehicle.remarks && (
@@ -15578,6 +15614,7 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                     <div><dt>Engine Type</dt><dd>{vehicle.engine_type ?? '-'}</dd></div>
                   </>
                 )}
+                {customValueRows(vehicle, lookups)}
                 <div><dt>Acquisition Cost</dt><dd>{vehicle.acquisition_cost != null ? `₱${Number(vehicle.acquisition_cost).toLocaleString()}` : '-'}</dd></div>
                 <div><dt>Status</dt><dd>{vehicle.status}</dd></div>
                 <div><dt>Condition</dt><dd>{vehicle.condition}</dd></div>
@@ -17727,6 +17764,116 @@ function VehicleImportModal({ open, onClose, onImported }) {
     </FormModal>
   );
 }
+// Admin-defined custom fields for one Vehicle Type. Fields are archived, not
+// deleted, so vehicles keep the values they already hold.
+const CUSTOM_FIELD_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'dropdown', label: 'Dropdown' },
+  { value: 'date', label: 'Date' },
+  { value: 'yes_no', label: 'Yes / No' },
+];
+const BLANK_FIELD_DRAFT = { label: '', field_type: 'text', is_required: false, unit: '', options: '' };
+
+function CategoryFieldsManager({ categoryId, onChanged }) {
+  const [fields, setFields] = useState([]);
+  const [draft, setDraft] = useState(BLANK_FIELD_DRAFT);
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await api.get(`/categories/${categoryId}/fields`);
+    setFields(res.data);
+  }, [categoryId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get(`/categories/${categoryId}/fields`).then((res) => { if (!cancelled) setFields(res.data); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [categoryId]);
+
+  const run = async (fn) => {
+    setBusy(true); setError('');
+    try { await fn(); await load(); await onChanged?.(); } catch (err) {
+      setError(err.response?.data?.message || 'Could not save the field.');
+    } finally { setBusy(false); }
+  };
+
+  const toPayload = (d) => ({
+    label: d.label.trim(),
+    field_type: d.field_type,
+    is_required: d.is_required,
+    unit: d.unit?.trim() || null,
+    options: d.field_type === 'dropdown' ? String(d.options).split(',').map((o) => o.trim()).filter(Boolean) : null,
+  });
+
+  const save = () => run(async () => {
+    if (editingId) await api.put(`/category-fields/${editingId}`, toPayload(draft));
+    else await api.post(`/categories/${categoryId}/fields`, toPayload(draft));
+    setDraft(BLANK_FIELD_DRAFT); setEditingId(null);
+  });
+
+  const move = (index, delta) => run(async () => {
+    const a = fields[index]; const b = fields[index + delta];
+    if (!b) return;
+    // Renumber both neighbours so equal sort_orders can't leave them stuck.
+    await api.put(`/category-fields/${a.field_id}`, { label: a.label, sort_order: index + delta });
+    await api.put(`/category-fields/${b.field_id}`, { label: b.label, sort_order: index });
+  });
+
+  const startEdit = (f) => {
+    setEditingId(f.field_id);
+    setDraft({ label: f.label, field_type: f.field_type, is_required: f.is_required, unit: f.unit ?? '', options: (f.options ?? []).join(', ') });
+  };
+
+  return (
+    <section className="veh-card" style={{ marginTop: 16 }}>
+      <div className="veh-card-head"><Icon name="list" size={16} /><h4>Custom Fields</h4></div>
+      <div style={{ padding: '0 20px 20px', display: 'grid', gap: 12 }}>
+        <p style={{ margin: 0, fontSize: 13 }}>Extra details asked for whenever a vehicle of this type is added or edited. Archived fields stop being asked, but existing values are kept.</p>
+        {error && <div className="notice error">{error}</div>}
+        {fields.length === 0 && <p style={{ margin: 0, opacity: 0.7 }}>No custom fields yet.</p>}
+        {fields.map((f, i) => (
+          <div key={f.field_id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', opacity: f.is_active ? 1 : 0.55 }}>
+            <strong style={{ flex: '1 1 200px' }}>{f.label}{f.is_required ? ' *' : ''}</strong>
+            <span style={{ fontSize: 13 }}>{CUSTOM_FIELD_TYPES.find((t) => t.value === f.field_type)?.label}{f.unit ? ` · ${f.unit}` : ''}{f.options?.length ? ` · ${f.options.join(', ')}` : ''}{f.is_active ? '' : ' · archived'}</span>
+            <button type="button" className="ghost-button" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label="Move up">▲</button>
+            <button type="button" className="ghost-button" disabled={busy || i === fields.length - 1} onClick={() => move(i, 1)} aria-label="Move down">▼</button>
+            <button type="button" className="ghost-button" disabled={busy} onClick={() => startEdit(f)}>Edit</button>
+            <button type="button" className="ghost-button" disabled={busy} onClick={() => run(() => api.put(`/category-fields/${f.field_id}`, { label: f.label, is_active: !f.is_active }))}>{f.is_active ? 'Archive' : 'Restore'}</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', borderTop: '1px solid var(--border, #d0d7e2)', paddingTop: 12 }}>
+          <label style={{ flex: '1 1 180px' }}>Field name
+            <input type="text" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} placeholder="e.g. Tank Capacity" />
+          </label>
+          <label>Type
+            <select value={draft.field_type} disabled={!!editingId} onChange={(e) => setDraft({ ...draft, field_type: e.target.value })}>
+              {CUSTOM_FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </label>
+          {(draft.field_type === 'number' || draft.field_type === 'text') && (
+            <label style={{ width: 90 }}>Unit
+              <input type="text" value={draft.unit} onChange={(e) => setDraft({ ...draft, unit: e.target.value })} placeholder="L, kg…" />
+            </label>
+          )}
+          {draft.field_type === 'dropdown' && (
+            <label style={{ flex: '1 1 220px' }}>Options (comma-separated)
+              <input type="text" value={draft.options} onChange={(e) => setDraft({ ...draft, options: e.target.value })} placeholder="Front, Rear" />
+            </label>
+          )}
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={draft.is_required} onChange={(e) => setDraft({ ...draft, is_required: e.target.checked })} /> Required
+          </label>
+          <button type="button" className="primary-button" disabled={busy || !draft.label.trim()} onClick={save}>{editingId ? 'Update Field' : 'Add Field'}</button>
+          {editingId && <button type="button" className="ghost-button" onClick={() => { setEditingId(null); setDraft(BLANK_FIELD_DRAFT); }}>Cancel</button>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add", onImport, columnChooser }) {
   return (
     <div className="local-search-bar">

@@ -25,6 +25,7 @@ use App\Models\VehicleLocation;
 use App\Models\VehicleMaintenanceRecord;
 use App\Models\VehicleMaintenanceSchedule;
 use App\Models\VehicleReadinessCheck;
+use App\Models\VehicleTypeField;
 use App\Rules\NumberOnly;
 use App\Rules\TextOnly;
 use Illuminate\Http\Request;
@@ -53,7 +54,7 @@ class FleetController extends Controller
         // barangay onto their own ticket.
         $barangayId = $request->user()->barangay_id;
         return response()->json([
-            'categories' => VehicleCategory::orderBy('category_name')->get(),
+            'categories' => VehicleCategory::with('fields')->orderBy('category_name')->get(),
             'vehicles' => Vehicle::with('category')->orderBy('vehicle_name')->get(),
             'issue_reports' => VehicleIssueReport::with('vehicle')
                 ->whereNot('status', 'Resolved')
@@ -701,7 +702,7 @@ class FleetController extends Controller
 
     public function categories()
     {
-        return VehicleCategory::withCount('vehicles')->orderBy('category_name')->get();
+        return VehicleCategory::with('fields')->withCount('vehicles')->orderBy('category_name')->get();
     }
 
     public function storeCategory(Request $request)
@@ -2899,9 +2900,9 @@ class FleetController extends Controller
      * row is held to exactly what the form enforces. $domain is the chosen
      * Vehicle Type's domain (Land/Water).
      */
-    public function vehicleRules(string $domain, ?Vehicle $vehicle = null): array
+    public function vehicleRules(string $domain, ?Vehicle $vehicle = null, ?VehicleCategory $category = null): array
     {
-        return [
+        return VehicleTypeField::rulesFor($category?->fields ?? []) + [
             'vehicle_name' => ['required', 'string', 'max:255'],
             'plate_number' => [
                 'required',
@@ -2941,9 +2942,26 @@ class FleetController extends Controller
 
     private function validateVehicle(Request $request, ?Vehicle $vehicle = null): array
     {
-        $domain = VehicleCategory::find($request->input('category_id'))?->domain ?? 'Land';
+        $category = VehicleCategory::with('fields')->find($request->input('category_id'));
 
-        return $request->validate($this->vehicleRules($domain, $vehicle), $this->vehicleRuleMessages());
+        // Multipart forms post each custom field flat as cf_<key>; fold them
+        // into custom_fields so JSON and multipart callers validate alike.
+        $custom = (array) $request->input('custom_fields', []);
+        foreach ($request->all() as $name => $value) {
+            if (str_starts_with($name, 'cf_') && !is_array($value)) {
+                $custom[substr($name, 3)] = $value === '' ? null : $value;
+            }
+        }
+        $request->merge(['custom_fields' => $custom]);
+
+        $data = $request->validate($this->vehicleRules($category?->domain ?? 'Land', $vehicle, $category), $this->vehicleRuleMessages());
+
+        // On edit, keep values for archived fields the form no longer shows.
+        $values = array_merge($vehicle?->custom_values ?? [], $data['custom_fields'] ?? []);
+        unset($data['custom_fields']);
+        $data['custom_values'] = $values ?: null;
+
+        return $data;
     }
 
     private function storeVehiclePhoto($file): string

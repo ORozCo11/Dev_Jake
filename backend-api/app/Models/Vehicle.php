@@ -12,6 +12,7 @@ class Vehicle extends Model
     protected $primaryKey = 'vehicle_id';
 
     protected $fillable = [
+        'custom_values',
         'vehicle_name',
         'plate_number',
         'category_id',
@@ -40,6 +41,7 @@ class Vehicle extends Model
     ];
 
     protected $casts = [
+        'custom_values' => 'array',
         'archived_at' => 'datetime',
         'decommissioned_at' => 'datetime',
         // Serialize as a plain Y-m-d string so it binds directly to a

@@ -68,6 +68,19 @@ class VehicleImportController extends Controller
             $data->setCellValue([$col, 1], $label . (in_array($key, self::REQUIRED_COLUMNS, true) ? ' *' : ''));
             $col++;
         }
+        // One column per distinct active custom-field label; a row only uses
+        // the ones belonging to its own Vehicle Type.
+        $customNotes = [];
+        foreach (VehicleCategory::with('fields')->orderBy('category_name')->get() as $category) {
+            foreach ($category->fields->where('is_active', true) as $fld) {
+                $norm = strtolower($fld->label);
+                if (!isset($customNotes[$norm])) {
+                    $data->setCellValue([$col++, 1], $fld->label);
+                    $customNotes[$norm] = [];
+                }
+                $customNotes[$norm][] = $category->category_name;
+            }
+        }
         $example = ['Rescue Boat 1', 'ABC 1234', VehicleCategory::orderBy('category_name')->value('category_name') ?? 'Ambulance', 'Toyota', 'HiAce', 2022, '10 persons', 'Diesel', 'White', VehicleHub::orderBy('name')->value('name') ?? 'Main Depot', 1500000, '', '', 'Sample row - delete me'];
         foreach ($example as $i => $value) {
             $data->setCellValueExplicit([$i + 1, 2], (string) $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
@@ -86,6 +99,9 @@ class VehicleImportController extends Controller
             [''],
             ['Valid Hull Materials'],
             ...array_map(fn ($n) => [$n], self::HULL_MATERIAL_OPTIONS),
+            [''],
+            ['Custom field columns (fill in only for the Vehicle Types listed)'],
+            ...array_map(fn ($norm, $types) => [$norm . ' — ' . implode(', ', $types)], array_keys($customNotes), array_values($customNotes)),
         ]);
         $guide->getColumnDimension('A')->setWidth(70);
 
@@ -291,6 +307,15 @@ class VehicleImportController extends Controller
         $originalHeaders = $rows[0];
         $headers = array_map(fn ($h) => preg_replace('/[^a-z0-9]/', '', strtolower((string) preg_replace('/\*$/', '', trim((string) $h)))), array_shift($rows));
 
+        $categories = VehicleCategory::with('fields')->get()->keyBy(fn ($c) => mb_strtolower(trim($c->category_name)));
+        $customLabels = [];
+        foreach ($categories as $c) {
+            foreach ($c->fields->where('is_active', true) as $fld) {
+                $customLabels[preg_replace('/[^a-z0-9]/', '', strtolower($fld->label))] = true;
+            }
+        }
+        $customCols = [];
+
         $map = [];
         $ignored = [];
         foreach ($headers as $i => $h) {
@@ -303,13 +328,14 @@ class VehicleImportController extends Controller
             }
             if ($key) {
                 $map[$key] = $i;
+            } elseif (isset($customLabels[$h])) {
+                $customCols[$h] = $i;
             } elseif ($h !== '') {
                 $ignored[] = trim((string) $originalHeaders[$i]);
             }
         }
         $missing = array_map(fn ($k) => self::COLUMNS[$k][0], array_values(array_diff(self::REQUIRED_COLUMNS, array_keys($map))));
 
-        $categories = VehicleCategory::all()->keyBy(fn ($c) => mb_strtolower(trim($c->category_name)));
         $hubs = VehicleHub::pluck('name')->keyBy(fn ($n) => mb_strtolower(trim($n)));
         $fleet = app(FleetController::class);
 
@@ -359,8 +385,35 @@ class VehicleImportController extends Controller
             unset($data['vehicle_type']);
             $data['category_id'] = $category?->category_id;
 
-            $validator = Validator::make($data, $fleet->vehicleRules($category?->domain ?? 'Land'), $fleet->vehicleRuleMessages());
+            // Custom columns belong to the row's own Vehicle Type, matched by label.
+            $labelOf = [];
+            $custom = [];
+            foreach ($category?->fields->where('is_active', true) ?? [] as $fld) {
+                $labelOf["custom_fields.{$fld->key}"] = $fld->label;
+                $col = $customCols[preg_replace('/[^a-z0-9]/', '', strtolower($fld->label))] ?? null;
+                $v = $col === null ? null : $this->cell($raw[$col] ?? null);
+                if ($v !== null && $v[0] === '=') {
+                    $rowErrors[] = [$fld->label, 'Formulas are not allowed — enter the plain value.'];
+                    $v = null;
+                } elseif ($v !== null && $fld->field_type === 'yes_no') {
+                    $v = in_array(strtolower($v), ['yes', 'y', 'true', '1'], true) ? 'Yes' : (in_array(strtolower($v), ['no', 'n', 'false', '0'], true) ? 'No' : $v);
+                } elseif ($v !== null && $fld->field_type === 'dropdown') {
+                    foreach ($fld->options ?? [] as $opt) {
+                        if (strcasecmp($opt, $v) === 0) {
+                            $v = $opt;
+                        }
+                    }
+                }
+                $custom[$fld->key] = $v;
+            }
+            $data['custom_fields'] = $custom;
+
+            $validator = Validator::make($data, $fleet->vehicleRules($category?->domain ?? 'Land', null, $category), $fleet->vehicleRuleMessages());
             foreach ($validator->errors()->messages() as $field => $messages) {
+                if (str_starts_with($field, 'custom_fields.')) {
+                    $rowErrors[] = [$labelOf[$field] ?? $field, str_replace($field, $labelOf[$field] ?? $field, $messages[0])];
+                    continue;
+                }
                 if ($field === 'category_id') {
                     if ($category) {
                         $rowErrors[] = ['vehicle_type', $messages[0]];
@@ -398,7 +451,11 @@ class VehicleImportController extends Controller
             if ($rowErrors) {
                 $errorRows++;
             } else {
-                $validData[$rowNo] = $validator->validated();
+                $validated = $validator->validated();
+                $custom = array_filter($validated['custom_fields'] ?? [], fn ($v) => $v !== null);
+                unset($validated['custom_fields']);
+                $validated['custom_values'] = $custom ?: null;
+                $validData[$rowNo] = $validated;
                 if ($rowWarnings) {
                     $warningRows++;
                 }
