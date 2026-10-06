@@ -2972,7 +2972,7 @@ class FleetController extends Controller
             'photo' => ['nullable', 'image', 'max:4096'],
             'remarks' => ['nullable', 'string'],
             // Admin-only override of the Vehicle Type's default (stripped for anyone else).
-            'criticality' => ['nullable', Rule::in(self::CRITICALITY_LEVELS)],
+            'criticality' => ['nullable', Rule::in([...self::CRITICALITY_LEVELS, 'Inherit'])],
         ];
     }
 
@@ -2990,7 +2990,8 @@ class FleetController extends Controller
         $custom = (array) $request->input('custom_fields', []);
         foreach ($request->all() as $name => $value) {
             if (str_starts_with($name, 'cf_') && !is_array($value)) {
-                $custom[substr($name, 3)] = $value === '' ? null : $value;
+                // '__clear__' is how the edit form says "remove this value" (empty inputs are never sent).
+                $custom[substr($name, 3)] = ($value === '' || $value === '__clear__') ? null : $value;
             }
         }
         $request->merge(['custom_fields' => $custom]);
@@ -3000,9 +3001,12 @@ class FleetController extends Controller
         // On edit, keep values for archived fields the form no longer shows.
         if (!$request->user()->hasRole('Admin')) {
             unset($data['criticality']);
+        } elseif (($data['criticality'] ?? null) === 'Inherit') {
+            $data['criticality'] = null; // back to the Vehicle Type default
         }
 
-        $values = array_merge($vehicle?->custom_values ?? [], $data['custom_fields'] ?? []);
+        // Merge over existing values, then drop cleared (null) entries.
+        $values = array_filter(array_merge($vehicle?->custom_values ?? [], $data['custom_fields'] ?? []), fn ($v) => $v !== null);
         unset($data['custom_fields']);
         $data['custom_values'] = $values ?: null;
 

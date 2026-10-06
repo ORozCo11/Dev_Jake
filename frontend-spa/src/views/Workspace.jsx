@@ -8613,7 +8613,7 @@ function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPhotoUrl 
       newItemLabel: 'vehicle type', catalogEndpoint: '/categories', idField: 'category_id', nameField: 'category_name', valueIsId: true,
       extraFields: [{ name: 'domain', label: 'Domain', options: ['Land', 'Water'], required: true, default: domain }],
     },
-    { label: 'Operational Criticality (override)', name: 'criticality', options: CRITICALITY_LEVELS, type: 'select', group: 'Vehicle identity', hint: 'Leave as is to inherit the Vehicle Type default.' },
+    { label: 'Operational Criticality (override)', name: 'criticality', options: [...CRITICALITY_LEVELS, 'Inherit'], type: 'select', group: 'Vehicle identity', hint: 'Choose Inherit to use the Vehicle Type default.' },
     { label: 'Vehicle Photo', name: 'photo', accept: 'image/*', type: 'file', existingUrl: existingPhotoUrl, group: 'Vehicle photo' },
     { label: 'Brand', name: 'brand', required: true, type: 'text', group: 'Technical details' },
     { label: 'Model', name: 'model', required: true, type: 'text', group: 'Technical details' },
@@ -15462,7 +15462,10 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
     setNotice(null);
     try {
       const request = moduleRequest('vehicles', vehicle, payload);
-      await sendPayload(request.method, request.path, payload);
+      // Empty inputs are never sent, so a blanked custom field would silently
+      // keep its old value — say "clear it" explicitly instead.
+      const outgoing = Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, k.startsWith('cf_') && (v === '' || v == null) ? '__clear__' : v]));
+      await sendPayload(request.method, request.path, outgoing);
       await onSaved();
       setNotice({ type: 'success', text: 'Vehicle updated.' });
       setEditing(false);

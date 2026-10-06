@@ -107,6 +107,19 @@ class VehicleTypeFieldsTest extends TestCase
     }
 
     #[Test]
+    public function an_optional_value_and_the_criticality_override_can_be_cleared_on_edit(): void
+    {
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->addField(['label' => 'Ladder', 'field_type' => 'yes_no', 'is_required' => false, 'unit' => null]);
+        $created = $this->postJson('/api/vehicles', $this->vehiclePayload(['cf_ladder' => 'Yes', 'criticality' => 'Critical']))->assertCreated()->json();
+        $this->assertSame('Critical', Vehicle::first()->criticality);
+
+        $this->putJson("/api/vehicles/{$created['vehicle_id']}", $this->vehiclePayload(['cf_ladder' => '__clear__', 'criticality' => 'Inherit']))->assertOk();
+        $this->assertNull(Vehicle::first()->custom_values);
+        $this->assertNull(Vehicle::first()->criticality);
+    }
+
+    #[Test]
     public function import_reads_custom_columns_for_the_rows_own_type_and_flags_bad_values(): void
     {
         Sanctum::actingAs($this->admin, ['*']);
