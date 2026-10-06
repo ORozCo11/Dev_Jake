@@ -84,23 +84,14 @@ const roleRoutes = {
 const modulesByRole = {
   Admin: [
     { section: null, items: [['dashboard', 'Dashboard']] },
-    { section: 'Operations', icon: 'clipboard', items: [
-      ['issues', 'Issue Reports'],
-      ['tickets', 'Maintenance Tickets'],
-      ['schedules', 'Maintenance Schedule'],
-      ['maintenance', 'Maintenance Records'],
-      ['conditions', 'Condition Monitoring'],
-    ] },
-    // The old cross-vehicle "Vehicle Documents" picker page (VehicleDocumentsPage)
-    // was removed (2026-10-10) — unlinked everywhere and reachable only by
-    // forcing its module key. Documents now live solely on the vehicle
-    // profile's own Files card. Ticket Archives moved into the Maintenance
-    // Tickets module itself (a toolbar link there) instead of its own
-    // top-level row.
-    { section: 'Fleet & Assets', icon: 'vehicle', items: [
-      ['vehicles', 'Vehicle Management'],
+    { section: 'Fleet', icon: 'vehicle', items: [
+      ['vehicles', 'Vehicles'],
       ['categories', 'Vehicle Types'],
       ['locations', 'Vehicle Location'],
+    ] },
+    { section: 'Maintenance', icon: 'clipboard', items: [
+      ['tickets', 'Maintenance Tickets'],
+      ['schedules', 'Maintenance Schedule'],
     ] },
     { section: 'Administration', icon: 'key', items: [
       ['users', 'Users'],
@@ -108,59 +99,25 @@ const modulesByRole = {
       ['logs', 'Activity Log'],
     ] },
   ],
+  // The simple flow: a Custodian proposes a ticket (from a vehicle, a due
+  // schedule or a check), then verifies the finished repair. Checks, history,
+  // documents and usage all live on the vehicle itself.
   Custodian: [
     { section: null, items: [['dashboard', 'Dashboard']] },
-    // 'vehicles' already carries both "View Vehicles" and, for whoever
-    // holds vehicle.create, the "+ Add Vehicle" (register) action inline —
-    // no separate "Register Vehicle" row for the same page.
-    { section: 'Vehicles', icon: 'vehicle', items: [
-      ['vehicles', 'View Vehicles'],
-      ['histories', 'Vehicle History'],
-    ] },
-    // 'reportOrPropose' ('issues' module under the hood) is the Issue
-    // Reports list, with a "Report Vehicle Issue" action and a "Propose
-    // Ticket" action both inline in its header — not a separate chooser
-    // screen. 'myTasks' stays a tabbed container (Assigned Inspections /
-    // Repair Verification / Work Tracker — see renderModule's tab bar).
-    // Neither key has its own moduleEndpoints entry — both are pure
-    // navigation/presentation wrappers around shared components/data.
-    { section: 'Vehicle Operations', icon: 'checkCircle', items: [
-      ['reportOrPropose', 'Report Vehicle Issue'],
-      ['myTasks', 'My Tasks'],
-      ['conditions', 'Condition Monitoring'],
-    ] },
-    { section: 'Maintenance', icon: 'calendar', items: [
-      ['schedules', 'Maintenance Schedule'],
-      // Merged "Maintenance Status" + "Maintenance Records" — same
-      // underlying data (see maintenanceLedgerLastTab above), tabbed.
-      ['maintenanceLedger', 'Maintenance Records'],
+    { section: null, items: [
+      ['vehicles', 'Vehicles'],
+      ['myTasks', 'My Work'],
     ] },
   ],
   'Maintenance Personnel': [
     { section: null, items: [['dashboard', 'Dashboard']] },
-    { section: 'Maintenance', icon: 'wrench', items: [
-      ['ticketWorkOrders', 'My Work Orders'],
-      ['workTracker', 'Work Tracker'],
-      ['maintenanceLedger', 'Maintenance Records'],
-      ['schedules', 'Maintenance Schedule'],
-    ] },
-    // Same Issue Reports list Admin/Custodian use, scoped server-side to
-    // reports this account personally filed — the "Report Technical Issue"
-    // action lives inline in its header (issue.create), gated the same way
-    // for every role that holds it.
-    { section: 'Issues', icon: 'issues', items: [
-      ['issues', 'Vehicle Issues'],
-    ] },
-    // No standalone "Vehicle Documents" sidebar item for any role — the
-    // module lives only on the vehicle profile's own Files card now
-    // (document.view/.create abilities). Maintenance Personnel reaches it
-    // the same way: open a vehicle from View Vehicles below.
-    { section: 'Vehicles', icon: 'vehicle', items: [
-      ['vehicles', 'View Vehicles'],
+    { section: null, items: [
+      ['ticketWorkOrders', 'My Work'],
+      ['schedules', 'Scheduled Work'],
+      ['vehicles', 'Vehicles'],
     ] },
   ],
 };
-
 // Multi-role helpers. `role` is the primary (portal/routing); `roles` is
 // every hat the account may wear. Permission checks use hasRole so a person
 // holding several roles is allowed to act under any of them.
@@ -567,7 +524,7 @@ function Workspace() {
   // existing fetch/filter/stat/render keyed off those strings keeps working
   // completely unchanged), this just remembers which of the three tabs was
   // last open so re-clicking the "My Tasks" sidebar row returns you to it.
-  const [myTasksLastTab, setMyTasksLastTab] = useState('ticketInspections');
+  const [myTasksLastTab, setMyTasksLastTab] = useState('ticketVerifications');
   // 'workTracker' is the one key shared between Custodian's My Tasks
   // ("History" tab) and Maintenance Personnel's own separate, untouched
   // "Work Tracker" sidebar entry — this disambiguates which context set it,
@@ -3310,24 +3267,11 @@ function Workspace() {
     // component, reusing the same segmented tab-bar pattern already used for
     // Vehicle Location's Map/Records toggle (see .locations-tab-bar below).
     const showMyTasksContainer = hasMyTasksNav && (
-      activeModule === 'ticketInspections'
-      || activeModule === 'ticketVerifications'
+      activeModule === 'ticketVerifications'
       || (activeModule === 'workTracker' && workTrackerViaMyTasks)
     );
     const myTasksTabBar = showMyTasksContainer && (
       <div className="locations-tab-bar" role="tablist" aria-label="My Tasks">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeModule === 'ticketInspections'}
-          className={`locations-tab-button ${activeModule === 'ticketInspections' ? 'active' : ''}`}
-          onClick={() => setMyTasksTab('ticketInspections')}
-        >
-          To Inspect
-          {(dashboard?.badge_counts?.ticketInspections ?? 0) > 0 && (
-            <span className="count-badge">{dashboard.badge_counts.ticketInspections}</span>
-          )}
-        </button>
         <button
           type="button"
           role="tab"
@@ -3347,8 +3291,18 @@ function Workspace() {
           className={`locations-tab-button ${activeModule === 'workTracker' ? 'active' : ''}`}
           onClick={() => setMyTasksTab('workTracker')}
         >
-          History
+          My Tickets
         </button>
+        {canDo(user, 'ticket.propose') && (
+          <button
+            type="button"
+            className="primary-button"
+            style={{ marginLeft: 'auto' }}
+            onClick={() => { setPrefilledTicketData(null); navigate(`${roleRoutes[user.role]}/tickets/new`); }}
+          >
+            <Icon name="plus" size={14} /> Propose Ticket
+          </button>
+        )}
       </div>
     );
 
@@ -4618,30 +4572,6 @@ function Workspace() {
       );
     }
 
-    // Phase 2: Custodian — submit inspection results
-    if (activeModule === 'ticketInspections') {
-      return (
-          <CustodianInspectionModule
-            tabBar={myTasksTabBar}
-            tickets={visibleRows}
-            onOpenInspect={(ticket) => navigate(`${roleRoutes[user.role]}/inspections/${ticket.ticket_id}/inspect`)}
-            categories={lookups.categories}
-            vehicles={lookups.vehicles}
-            filterCategory={filterCategory}
-            setFilterCategory={setFilterCategory}
-            filterCapacity={filterCapacity}
-            setFilterCapacity={setFilterCapacity}
-            filterPriority={filterPriority}
-            setFilterPriority={setFilterPriority}
-            priorityOptions={ticketLookups.priorities}
-            onViewVehicle={openVehicleProfile}
-            stats={inspectionStats}
-            activeFilter={filterStatus}
-            onFilterChange={setFilterStatus}
-          />
-      );
-    }
-
     // Phase 4 Tier 1: Custodian — verify completed repairs
     if (activeModule === 'ticketVerifications') {
       return (
@@ -4730,17 +4660,14 @@ function Workspace() {
 // Maps an Action Queue item's type to where clicking it should go, and what
 // it should look like — one place to keep type/icon/route in sync.
 const ACTION_QUEUE_META = {
-  issue_pending:           { icon: 'alert',       color: '#b45309', route: (basePath, id) => `${basePath}/issues/${id}` },
+  ticket_proposal:         { icon: 'clipboard',   color: '#2563eb', route: (basePath, id) => `${basePath}/tickets/${id}` },
   subissue_needs_mechanic: { icon: 'wrench',      color: '#7c3aed', route: (basePath, id) => `${basePath}/tickets/${id}` },
-  ticket_confirm:          { icon: 'checkCircle', color: '#9d174d', route: (basePath, id) => `${basePath}/tickets/${id}` },
-  ticket_close:            { icon: 'checkCircle', color: '#16a34a', route: (basePath, id) => `${basePath}/tickets/${id}` },
   recurring_fault_review:  { icon: 'undo',        color: '#c2410c', route: (basePath, id) => `${basePath}/tickets/${id}` },
   readiness_check:         { icon: 'search',      color: '#0369a1', route: (basePath, id) => `${basePath}/vehicles/${id}` },
   schedule_overdue:        { icon: 'wrench',      color: '#b91c1c', route: null },
 };
-
 function ActionQueueRow({ item, basePath, onNavigate, onGoToSchedules }) {
-  const meta = ACTION_QUEUE_META[item.type] ?? ACTION_QUEUE_META.issue_pending;
+  const meta = ACTION_QUEUE_META[item.type] ?? ACTION_QUEUE_META.ticket_proposal;
   const goTo = () => (meta.route ? onNavigate(meta.route(basePath, item.id)) : onGoToSchedules());
   return (
     <button
@@ -5000,7 +4927,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
   const availableVehicles = metricValue('Available Vehicles');
   const underMaintenanceVehicles = metricValue('Vehicles Under Maintenance');
   const inactiveVehicles = metricValue('Inactive Vehicles');
-  const reportedIssues = metricValue('Reported Issues');
+  const reportedIssues = data.badge_counts?.ticketProposals ?? 0; // proposals waiting for review
   const upcomingMaintenance = metricValue('Upcoming Maintenance');
   const overdueMaintenanceCount = metricValue('Overdue Maintenance');
   const maintenanceExpenses = data.metrics.find((metric) => metric.label === 'Total Maintenance Expenses')?.value ?? '0';
@@ -5066,7 +4993,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
     { label: 'Inactive', value: inactiveVehicles, color: '#64748b' },
   ];
   const operationsQueue = [
-    { label: 'Issues', value: reportedIssues, color: '#ef4444' },
+    { label: 'Proposals', value: reportedIssues, color: '#ef4444' },
     { label: 'Upcoming', value: upcomingMaintenance, color: '#f59e0b' },
     { label: 'Overdue', value: overdueMaintenanceCount, color: '#dc2626' },
     { label: 'Ready', value: availableVehicles, color: '#22c55e' },
@@ -5091,8 +5018,8 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
     ? (actionQueue[0]?.label ?? 'No urgent action')
     : isMaintenanceDashboard
       ? (myScheduledWork[0]?.maintenance_type ?? 'Nothing assigned')
-      : (reportedIssues > 0 ? 'Open reports need follow-up' : 'No open reported issues');
-  const primaryActionTitle = isAdminDashboard ? 'Action Queue' : isMaintenanceDashboard ? 'My Work' : 'My Reports';
+      : 'Nothing waiting on you';
+  const primaryActionTitle = isAdminDashboard ? 'Action Queue' : isMaintenanceDashboard ? 'My Work' : 'My Tasks';
   const primaryActionIcon = isMaintenanceDashboard ? 'wrench' : reportedIssues > 0 ? 'alert' : 'checkCircle';
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -5110,9 +5037,8 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
     const quick = [];
     if (isCustodianView) {
       quick.push(
-        { icon: 'search', label: 'To Inspect', value: badges.ticketInspections ?? 0, go: () => onGoToModule('ticketInspections', []) },
         { icon: 'checkCircle', label: 'To Verify', value: badges.ticketVerifications ?? 0, go: () => onGoToModule('ticketVerifications', []) },
-        { icon: 'alert', label: 'My Open Reports', value: badges.issues ?? 0, go: () => onGoToModule('issues', []) },
+        { icon: 'alert', label: 'Needs Attention', value: metricValue('Vehicles Needing Attention'), go: () => onGoToModule('vehicles', []) },
       );
     }
     if (isMaintenanceDashboard) {
@@ -5311,7 +5237,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           <div className="dashboard-command-mini-grid">
             <DashboardMicroMetric icon="vehicle" label="Available" value={availableVehicles} tone="ok" onClick={() => onGoToModule('vehicles', ['Available'])} />
             <DashboardMicroMetric icon="wrench" label="In Shop" value={underMaintenanceVehicles} tone="warn" onClick={() => onGoToModule('vehicles', ['Under Maintenance'])} />
-            <DashboardMicroMetric icon="alert" label="Issues" value={reportedIssues} tone={reportedIssues > 0 ? 'alert' : 'ok'} onClick={() => onGoToModule('issues', [])} />
+            <DashboardMicroMetric icon="alert" label="Proposals" value={reportedIssues} tone={reportedIssues > 0 ? 'alert' : 'ok'} onClick={() => onGoToModule('tickets', [])} />
             <DashboardMicroMetric icon="calendar" label="Overdue" value={overdueMaintenanceCount} tone={overdueMaintenanceCount > 0 ? 'alert' : 'neutral'} onClick={onGoToSchedules} />
           </div>
         </div>
@@ -12379,21 +12305,19 @@ function RepairContextDetails({ si }) {
 }
 
 function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
+  // One ticket = one maintenance job. The Admin reviews the problem, picks the
+  // mechanic and approves — assignment happens in the same click.
+  const job = (ticket.sub_issues ?? [])[0] ?? null;
   const [fields, setFields] = useState({
     ticket_description: ticket.ticket_description ?? '',
     priority: ticket.priority ?? '',
+    maintenance_type: job?.maintenance_type ?? '',
+    assigned_mechanic_id: job?.suggested_mechanic_id ?? '',
   });
-  const [subRows, setSubRows] = useState(() => (ticket.sub_issues ?? []).map((si) => ({
-    sub_issue_id: si.sub_issue_id,
-    title: si.title ?? '',
-    maintenance_type: si.maintenance_type ?? '',
-    suggested_mechanic_id: si.suggested_mechanic_id ?? '',
-  })));
   const [declining, setDeclining] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const setField = (name, value) => setFields((f) => ({ ...f, [name]: value }));
-  const updateSubRow = (index, patch) => setSubRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
 
   const submitApprove = async () => {
     setSubmitting(true);
@@ -12401,12 +12325,8 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
       await onApprove({
         ticket_description: fields.ticket_description,
         priority: fields.priority,
-        sub_issues: subRows.map((r) => ({
-          sub_issue_id: r.sub_issue_id,
-          title: r.title,
-          maintenance_type: r.maintenance_type || null,
-          suggested_mechanic_id: r.suggested_mechanic_id || null,
-        })),
+        assigned_mechanic_id: fields.assigned_mechanic_id,
+        sub_issues: job ? [{ sub_issue_id: job.sub_issue_id, title: job.title, maintenance_type: fields.maintenance_type || null }] : [],
       });
     } finally {
       setSubmitting(false);
@@ -12414,14 +12334,13 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
   };
 
   const custodianName = ticket.assigned_custodian?.name ?? 'the Custodian';
-  const repairTypeLabel = { in_house: 'In-House', cannibalized: 'Cannibalized Part', external: 'External Shop' };
 
   return (
     <section className="ticket-section smart-form proposal-review">
       <div className="proposal-review-head">
         <span className="proposal-review-head-icon"><Icon name="checkCircle" size={18} /></span>
         <div className="proposal-review-head-text">
-          <h4>Review Proposal</h4>
+          <h4>Review &amp; Assign</h4>
           <p>Proposed by <strong>{custodianName}</strong></p>
         </div>
         <span className="proposal-review-pill">Pending Approval</span>
@@ -12429,11 +12348,18 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
 
       <div className="proposal-review-body">
         <div className="proposal-review-group">
-          <div className="proposal-review-group-title"><Icon name="clipboard" size={14} /> Ticket Details</div>
+          <div className="proposal-review-group-title"><Icon name="wrench" size={14} /> The Problem</div>
+          <p style={{ margin: '0 0 12px', fontWeight: 600 }}>{job?.title ?? ticket.ticket_title}</p>
           <div className="ticket-form-grid-2" style={{ padding: 0, marginBottom: 12 }}>
             <label>
-              <span>Ticket</span>
-              <input type="text" value={ticket.ticket_title ?? ''} readOnly title="Generated by the system" />
+              <span>Maintenance Type</span>
+              <CreatableSelect
+                value={fields.maintenance_type}
+                onChange={(v) => setField('maintenance_type', v)}
+                options={lookups.maintenance_types ?? []}
+                newItemLabel="maintenance type"
+                catalogEndpoint="/maintenance-types"
+              />
             </label>
             <label>
               <span>Priority</span>
@@ -12443,52 +12369,21 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
             </label>
           </div>
           <label>
-            <span>Description / Details</span>
+            <span>Details</span>
             <textarea rows={3} value={fields.ticket_description} onChange={(e) => setField('ticket_description', e.target.value)} />
           </label>
+          <RepairContextDetails si={job} />
         </div>
 
         <div className="proposal-review-group">
-          <div className="proposal-review-group-title">
-            <Icon name="wrench" size={14} /> Sub-Issues
-            {subRows.length > 0 && <span className="proposal-review-count">{subRows.length}</span>}
-          </div>
-      {subRows.map((row, index) => {
-        const original = (ticket.sub_issues ?? []).find((s) => s.sub_issue_id === row.sub_issue_id);
-        const repairType = original?.repair_type;
-        return (
-        <div key={row.sub_issue_id} className={`proposal-subissue is-${repairType ?? 'none'}`}>
-          <div className="proposal-subissue-head">
-            <span className="proposal-subissue-num">{index + 1}</span>
-            <input className="proposal-subissue-title" type="text" aria-label="Sub-issue title" value={row.title} onChange={(e) => updateSubRow(index, { title: e.target.value })} />
-            {repairType && <span className={`proposal-subissue-type is-${repairType}`}>{repairTypeLabel[repairType] ?? repairType}</span>}
-          </div>
-          {/* An external-shop repair has no in-house mechanic to pick. */}
-          <div className="ticket-form-grid-2" style={{ padding: 0 }}>
-            <label>
-              <span>Maintenance Type</span>
-              <CreatableSelect
-                value={row.maintenance_type}
-                onChange={(v) => updateSubRow(index, { maintenance_type: v })}
-                options={lookups.maintenance_types ?? []}
-                newItemLabel="maintenance type"
-                catalogEndpoint="/maintenance-types"
-              />
-            </label>
-            {repairType !== 'external' && (
-            <label>
-              <span>Suggested Mechanic</span>
-              <select value={row.suggested_mechanic_id ?? ''} onChange={(e) => updateSubRow(index, { suggested_mechanic_id: e.target.value })}>
-                <option value="">Unassigned</option>
-                {(lookups.maintenance_personnel ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </label>
-            )}
-          </div>
-          <RepairContextDetails si={original} />
-        </div>
-        );
-      })}
+          <div className="proposal-review-group-title"><Icon name="key" size={14} /> Assign the Work</div>
+          <label>
+            <span>Maintenance Personnel <span className="required-asterisk">*</span></span>
+            <select value={fields.assigned_mechanic_id ?? ''} onChange={(e) => setField('assigned_mechanic_id', e.target.value)}>
+              <option value="">Select who will do the work</option>
+              {(lookups.maintenance_personnel ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </label>
         </div>
       </div>
 
@@ -12505,13 +12400,13 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
         </div>
       ) : (
         <div className="proposal-review-actions">
-          <p className="proposal-review-hint">Edit anything above before approving. Declining permanently deletes this proposal.</p>
+          <p className="proposal-review-hint">Approving sends the work order straight to the mechanic. Declining permanently deletes this proposal.</p>
           <div className="proposal-review-buttons">
             <button className="btn-sm danger-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
               <Icon name="close" size={14} /> Decline
             </button>
-            <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
-              <Icon name="checkCircle" size={14} /> Approve & Activate
+            <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting || !fields.assigned_mechanic_id}>
+              <Icon name="checkCircle" size={14} /> Approve &amp; Assign
             </button>
           </div>
         </div>
@@ -12524,9 +12419,8 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
 // TICKET DETAIL PANEL — shown when admin clicks a ticket row
 // =========================================================================
 
-function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEditSubIssue, onDeleteSubIssue, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onDeferSubIssue, onCloseTicket, onLogRepairs, onViewIssue, onCancel, onUncancel, onDelete, onRequestConfirmation, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
+function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onDeferSubIssue, onCloseTicket, onLogRepairs, onViewIssue, onCancel, onUncancel, onDelete, onRequestConfirmation, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
   const [assigningAll, setAssigningAll] = useState(false);
-  const [subDraft, setSubDraft] = useState(null); // { id|null, title, maintenance_type }
   // Which sub-issue's Reassign/Defer inline form is open, if any — replaces
   // the old bulk Reassign/Defer modals with a per-card icon + inline panel
   // (only one sub-issue can have its form open at a time).
@@ -12903,51 +12797,6 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 </div>
               )}
 
-              {onAddSubIssue && ticket.status === 'Active' && canDo(user, 'subissue.manage') && (hasRole(user, 'Admin') || String(ticket.assigned_custodian_id) === String(userId)) && (
-                <div className="ticket-inline-form" style={{ marginBottom: 10, padding: '10px 12px' }}>
-                  {!subDraft ? (
-                    <button type="button" className="primary-button" onClick={() => setSubDraft({ id: null, title: '', maintenance_type: '' })}>
-                      <Icon name="plus" size={12} /> Add Sub-issue
-                    </button>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="What else is wrong?"
-                        value={subDraft.title}
-                        onChange={(e) => setSubDraft({ ...subDraft, title: e.target.value })}
-                        style={{ flex: '2 1 240px' }}
-                      />
-                      <input
-                        type="text"
-                        list="subissue-maintenance-types"
-                        placeholder="Maintenance type (optional)"
-                        value={subDraft.maintenance_type}
-                        onChange={(e) => setSubDraft({ ...subDraft, maintenance_type: e.target.value })}
-                        style={{ flex: '1 1 180px' }}
-                      />
-                      <datalist id="subissue-maintenance-types">
-                        {(lookups.maintenance_types ?? []).map((t) => <option key={t.name ?? t} value={t.name ?? t} />)}
-                      </datalist>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        disabled={!subDraft.title.trim()}
-                        onClick={async () => {
-                          const payload = { title: subDraft.title.trim(), maintenance_type: subDraft.maintenance_type.trim() || null };
-                          const ok = subDraft.id ? await onEditSubIssue(ticket, subDraft.id, payload) : await onAddSubIssue(ticket, payload);
-                          if (ok !== false) setSubDraft(null);
-                        }}
-                      >
-                        {subDraft.id ? 'Save' : 'Add'}
-                      </button>
-                      <button type="button" className="ghost-button" onClick={() => setSubDraft(null)}>Cancel</button>
-                    </div>
-                  )}
-                </div>
-              )}
-
               {subIssues.map((si, index) => {
                 const stageBanner = {
                   'Pending Approval': { color: '#d97706', bg: '#fffbeb', text: '#92400e', icon: 'alert', label: 'Cannibalized repair — awaiting Admin approval' },
@@ -12964,14 +12813,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                     <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, flexShrink: 0 }}>{index + 1}</span>
                     <strong style={{ fontSize: '0.9rem' }}>{si.title}</strong>
                     <TicketStatusBadge value={si.status} />
-                    {onEditSubIssue && ticket.status === 'Active' && si.status === 'Open' && !si.assigned_mechanic_id && canDo(user, 'subissue.manage') && (hasRole(user, 'Admin') || String(ticket.assigned_custodian_id) === String(userId)) && (
-                      <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4 }}>
-                        <button type="button" className="btn-edit-action icon-btn" title="Edit sub-issue" aria-label="Edit sub-issue" onClick={() => setSubDraft({ id: si.sub_issue_id, title: si.title, maintenance_type: si.maintenance_type ?? '' })}><Icon name="edit" size={13} /></button>
-                        {subIssues.length > 1 && (
-                          <button type="button" className="btn-delete-action icon-btn" title="Remove sub-issue" aria-label="Remove sub-issue" onClick={() => onDeleteSubIssue(ticket, si)}><Icon name="trash" size={13} /></button>
-                        )}
-                      </span>
-                    )}                  </div>
+                  </div>
 
                   <div className="subissue-body-grid">
                   <div className="subissue-body-main">
@@ -13421,24 +13263,15 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
       userId={userId}
       ticket={ticket}
       lookups={ticketLookups}
-      onAddSubIssue={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues`, payload, 'Sub-issue added.', 'post').then(afterAction)}
-      onEditSubIssue={(t, id, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${id}`, payload, 'Sub-issue updated.').then(afterAction)}
-      onDeleteSubIssue={(t, si) => onRequestConfirmation({ title: 'Remove sub-issue?', message: `"${si.title}" will be removed from this ticket.`, confirmLabel: 'Remove', onConfirm: () => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${si.sub_issue_id}`, {}, 'Sub-issue removed.', 'delete').then(afterAction) })}
       onAssignMechanic={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/assign-mechanic`, payload, 'Mechanic assigned — work order dispatched.').then(afterAction)}
       onReassignMechanic={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reassign-mechanic`, payload, 'Work order reassigned.').then(afterAction)}
       onReassignCustodian={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/reassign-custodian`, payload, 'Custodian reassigned.').then(afterAction)}
-      onConfirm={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/confirm`, payload, 'Confirmation verdict submitted.').then(afterAction)}
-      onReopenDone={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reopen-confirmed`, payload, 'Sub-issue reopened for re-verification.').then(afterAction)}
       onVerify={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/verify`, payload, 'Repair verification submitted.').then(afterAction)}
       onApproveCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/approve-cannibalization`, payload, 'Cannibalized repair approved — a donor-vehicle issue report was opened.').then(afterAction)}
       onRejectCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reject-cannibalization`, payload, 'Cannibalized repair rejected.').then(afterAction)}
-      onDeferSubIssue={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/defer`, payload, 'Sub-issue deferred — a follow-up issue report was opened.').then(afterAction)}
       onViewIssue={(id) => navigate(`${roleRoutes[user.role]}/issues/${id}`)}
       onLogRepairs={(t, si) => navigate(`${roleRoutes[user.role]}/work-orders/${t.ticket_id}/${si.sub_issue_id}/log-repairs`)}
-      onCloseTicket={(t, payload = {}) => sendTicketAction(`/tickets/${t.ticket_id}/close`, payload, payload.deferral_reason ? 'Ticket closed as a decision.' : 'Ticket closed.').then(afterAction)}
       onCancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/cancel`, {}, 'Ticket cancelled.').then(afterAction)}
-      onUncancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/uncancel`, {}, 'Ticket restored.').then(afterAction)}
-      onDelete={(t) => onDeleteTicket(t).then(onBack)}
       onApproveProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/approve`, payload, 'Ticket proposal approved.').then(afterAction)}
       // Declining deletes the ticket server-side — nothing left to reload,
       // so this navigates away instead, same as onDelete just above.
@@ -13926,198 +13759,69 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
 // mechanic instead. Keeping it fully separate means Admin's existing form is
 // untouched by this addition.
 function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, prefilledTicketData }) {
-  // Opened from a flagged Issue Report / Condition Check the form arrives
-  // pre-filled and linked; from the chooser's "full repair details" card it
-  // starts blank. Separate draft keys so the two never overwrite each other.
-  const linkedIssueId = prefilledTicketData?.issue_report_id ?? null;
+  // One problem -> one ticket. Everything the Custodian needs to say is on this
+  // page: which vehicle, what is wrong, how urgent, and (optionally) who they
+  // would suggest. The Admin approves it and assigns the mechanic in one step.
+  // Opened from a due schedule or a condition check the form arrives pre-filled
+  // and linked; otherwise it starts blank.
+  const linkedScheduleId = prefilledTicketData?.schedule_id ?? null;
   const linkedConditionId = prefilledTicketData?.condition_check_id ?? null;
-  const fromFlag = Boolean(linkedIssueId || linkedConditionId);
-  const draftSuffix = linkedIssueId ? 'issue-' + linkedIssueId : linkedConditionId ? 'condition-' + linkedConditionId : 'blank';
-  const draftKeyBase = 'draft:propose-ticket:' + draftSuffix;
-  const [liveValues, setLiveValues] = useDraftState(draftKeyBase + ':values', () => (prefilledTicketData ? {
-    vehicle_id: prefilledTicketData.vehicle_id ?? '',
-    ticket_title: prefilledTicketData.ticket_title ?? '',
-    ticket_description: prefilledTicketData.ticket_description ?? '',
-    priority: prefilledTicketData.priority ?? '',
-    entry_mode: prefilledTicketData.entry_mode ?? null,
-  } : {}));
-  const [subIssueRows, setSubIssueRows] = useDraftState(draftKeyBase + ':sub-issues', () => {
-    const seeded = (prefilledTicketData?.sub_issues_text ?? '').split('\n').map((t) => t.trim()).filter(Boolean);
-    return seeded.length
-      ? seeded.map((title) => ({ title, maintenance_type: '', suggested_mechanic_id: '' }))
-      : [{ title: '', maintenance_type: '', suggested_mechanic_id: '' }];
-  });
-  const emptyPartRow = { part_missing: '', part_needed: '', maintenance_type: '', suggested_mechanic_id: '' };
-  const [partRows, setPartRows] = useDraftState(draftKeyBase + ':part-rows', () => [emptyPartRow]);
+  const draftKey = `draft:propose-ticket:${linkedScheduleId ? `schedule-${linkedScheduleId}` : linkedConditionId ? `condition-${linkedConditionId}` : prefilledTicketData?.vehicle_id ? `vehicle-${prefilledTicketData.vehicle_id}` : 'blank'}`;
+  const [values, setValues] = useDraftState(draftKey, () => ({
+    vehicle_id: prefilledTicketData?.vehicle_id ?? '',
+    problem: prefilledTicketData?.problem ?? '',
+    maintenance_type: prefilledTicketData?.maintenance_type ?? '',
+    details: prefilledTicketData?.details ?? '',
+    priority: prefilledTicketData?.priority ?? 'Medium',
+    suggested_mechanic_id: prefilledTicketData?.suggested_mechanic_id ?? '',
+  }));
   const [submitting, setSubmitting] = useState(false);
   const [validationLines, setValidationLines] = useState(null);
 
-  const clearProposeDraft = () => {
-    clearDraftState(`${draftKeyBase}:values`);
-    clearDraftState(`${draftKeyBase}:sub-issues`);
-    clearDraftState(`${draftKeyBase}:part-rows`);
-  };
-  const updatePartRow = (index, patch) => {
-    setPartRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-    onDirty?.();
-  };
-  const addPartRow = () => setPartRows((rows) => [...rows, emptyPartRow]);
-  const removePartRow = (index) => setPartRows((rows) => rows.filter((_, i) => i !== index));
+  const setField = (name, value) => { setValues((v) => ({ ...v, [name]: value })); onDirty?.(); };
 
-  const setField = (name, value) => { setLiveValues((v) => ({ ...v, [name]: value })); onDirty?.(); };
-  const updateSubIssue = (index, patch) => {
-    setSubIssueRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-    onDirty?.();
-  };
-  const addSubIssueRow = () => setSubIssueRows((rows) => [...rows, { title: '', maintenance_type: '', suggested_mechanic_id: '' }]);
-  const removeSubIssueRow = (index) => setSubIssueRows((rows) => rows.filter((_, i) => i !== index));
-
-  // A proposal always states the repair: in-house, a part taken from another
-  // vehicle, or sent to an outside shop. (There is no "needs inspection" —
-  // a Custodian only proposes once they know what is wrong; flagging a
-  // concern without a plan is what Report Issue is for.)
-  // Two choices: In-House Repair, or Sent to External Shop. A part taken from
-  // another vehicle ("cannibalized") is still an in-house repair, so it's a
-  // checkbox under In-House — it keeps its own mode behind the scenes, which is
-  // what triggers the Admin approval and the donor-vehicle report.
-  const modeOptions = ENTRY_MODE_OPTIONS.filter((o) => o.value === 'in_house' || o.value === 'external');
-  const entryMode = ['in_house', 'cannibalized', 'external'].includes(liveValues.entry_mode) ? liveValues.entry_mode : null;
-  const pickerValue = entryMode === 'cannibalized' ? 'in_house' : entryMode;
-  const isInHouse = entryMode === 'in_house';
-  const isCannibalized = entryMode === 'cannibalized';
-  const isExternal = entryMode === 'external';
-  const toggleDonorPart = (checked) => {
-    setLiveValues((v) => ({ ...v, entry_mode: checked ? 'cannibalized' : 'in_house', source_vehicle_id: '' }));
-    onDirty?.();
-  };
-  const selectEntryMode = (value) => {
-    if (value === pickerValue) return;
-    setLiveValues((v) => ({
-      ...v,
-      entry_mode: value,
-      source_vehicle_id: '',
-      external_vendor: '', external_reason: '', external_work_scope: '', external_shop_contact: '',
-      external_sent_by: '', external_contact_person: '', external_estimated_cost: '', external_maintenance_type: '',
-    }));
-    setPartRows([emptyPartRow]);
-    onDirty?.();
-  };
+  const vehicleOptions = (ticketLookups.vehicles ?? []).filter((v) => v.status !== 'Inactive' && v.status !== 'Decommissioned');
+  const priorityOptions = ticketLookups.priorities ?? [];
+  const mechanicOptions = ticketLookups.maintenance_personnel ?? [];
+  const selectedVehicle = vehicleOptions.find((v) => String(v.vehicle_id) === String(values.vehicle_id)) ?? null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const errors = [];
-    if (!liveValues.vehicle_id) errors.push('Vehicle is required.');
-    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Description / Details is required.');
-    if (!liveValues.priority) errors.push('Priority is required.');
-    if (!entryMode) errors.push('Pick how this is being reported, above.');
-    const cleanedRows = subIssueRows.filter((row) => (row.title ?? '').trim());
-    if (isInHouse && !cleanedRows.length) errors.push('At least one sub-issue is required.');
-    // A part row counts once either field is filled; then both are required.
-    const filledPartRows = partRows.filter((r) => (r.part_missing ?? '').trim() || (r.part_needed ?? '').trim());
-    if (isCannibalized) {
-      if (!liveValues.source_vehicle_id) errors.push('Donor Vehicle is required.');
-      if (!filledPartRows.length) errors.push('Add at least one part.');
-      filledPartRows.forEach((r, i) => {
-        if (!(r.part_missing ?? '').trim()) errors.push(`Part ${i + 1}: Missing / Faulty Part is required.`);
-        if (!(r.part_needed ?? '').trim()) errors.push(`Part ${i + 1}: Part to Take From Donor is required.`);
-      });
-    }
-    if (isExternal) {
-      if (!liveValues.external_reason) errors.push('Reason for Sending Out is required.');
-      if (!(liveValues.external_work_scope ?? '').trim()) errors.push('Work to Be Done at the Shop is required.');
-    }
-    if (errors.length) {
-      setValidationLines(errors);
-      return;
-    }
+    if (!values.vehicle_id) errors.push('Vehicle is required.');
+    if (!(values.problem ?? '').trim()) errors.push('What is the problem? is required.');
+    if (!values.priority) errors.push('Priority is required.');
+    if (errors.length) { setValidationLines(errors); return; }
 
     setSubmitting(true);
     try {
       // No title is sent: the server builds "MT-0010 — Vehicle — Issue".
-      const out = {
-        vehicle_id: liveValues.vehicle_id,
-        ticket_description: liveValues.ticket_description,
-        priority: liveValues.priority,
-        entry_mode: entryMode,
-        issue_report_id: linkedIssueId || liveValues.link_issue_id || undefined,
+      const created = await onProposeTicket({
+        vehicle_id: values.vehicle_id,
+        ticket_description: (values.details ?? '').trim() || values.problem.trim(),
+        priority: values.priority,
+        entry_mode: 'in_house',
+        schedule_id: linkedScheduleId || undefined,
         condition_check_id: linkedConditionId || undefined,
-        sub_issues: [],
-      };
-      if (isInHouse) {
-        out.sub_issues = cleanedRows.map((row) => ({
-          title: row.title.trim(),
-          maintenance_type: row.maintenance_type || null,
-          suggested_mechanic_id: row.suggested_mechanic_id || null,
-        }));
-      }
-      // Cannibalized/External are one repair each — their single work item
-      // is described by the dedicated fields below, not a free-form row.
-      if (isCannibalized) {
-        const donor = sourceVehicleOptions.find((v) => String(v.vehicle_id) === String(liveValues.source_vehicle_id));
-        out.source_vehicle_id = liveValues.source_vehicle_id;
-        out.sub_issues = filledPartRows.map((r) => ({
-          title: `Replace ${r.part_missing.trim()} using ${r.part_needed.trim()} from ${donor?.vehicle_name ?? 'donor vehicle'}`.slice(0, 255),
-          maintenance_type: r.maintenance_type || null,
-          part_missing: r.part_missing.trim(),
-          part_needed: r.part_needed.trim(),
-          suggested_mechanic_id: r.suggested_mechanic_id || null,
-        }));
-      }
-      if (isExternal) {
-        Object.assign(out, {
-          external_vendor: liveValues.external_vendor?.trim() || undefined,
-          external_reason: liveValues.external_reason,
-          external_work_scope: liveValues.external_work_scope.trim(),
-          external_shop_contact: liveValues.external_shop_contact?.trim() || undefined,
-          external_sent_by: liveValues.external_sent_by?.trim() || undefined,
-          external_contact_person: liveValues.external_contact_person?.trim() || undefined,
-          external_estimated_cost: liveValues.external_estimated_cost || undefined,
-        });
-        out.sub_issues = [{
-          title: `External shop: ${liveValues.external_work_scope.trim().split('\n')[0]}`.slice(0, 255),
-          maintenance_type: liveValues.external_maintenance_type || null,
-          suggested_mechanic_id: null,
-        }];
-      }
-      const created = await onProposeTicket(out);
-      if (created) { clearProposeDraft(); onBack(); }
+        sub_issues: [{
+          title: values.problem.trim(),
+          maintenance_type: values.maintenance_type || null,
+          suggested_mechanic_id: values.suggested_mechanic_id || null,
+        }],
+      });
+      if (created) { clearDraftState(draftKey); onBack(); }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const vehicleOptions = (ticketLookups.vehicles ?? []).filter((v) => v.status !== 'Inactive' && v.status !== 'Decommissioned');
-  const priorityOptions = ticketLookups.priorities ?? [];
-  const mechanicOptions = ticketLookups.maintenance_personnel ?? [];
-  const selectedVehicle = vehicleOptions.find((v) => String(v.vehicle_id) === String(liveValues.vehicle_id)) ?? null;
-
-  // A proposal started from the generic form isn't tied to any report. If the
-  // vehicle has open reports, offer them so the ticket can be linked to the one
-  // it's for (that's what makes the report's Ticket column and eye icon work).
-  const [openReports, setOpenReports] = useState([]);
-  useEffect(() => {
-    if (fromFlag || !liveValues.vehicle_id) { setOpenReports([]); return undefined; }
-    let cancelled = false;
-    api.get(`/vehicles/${liveValues.vehicle_id}/open-issues`)
-      .then((response) => {
-        if (cancelled) return;
-        const open = (response.data ?? []).filter((r) => ['Pending', 'Under Review'].includes(r.status));
-        setOpenReports(open);
-        setLiveValues((v) => (v.link_issue_id && !open.some((r) => String(r.issue_report_id) === String(v.link_issue_id)) ? { ...v, link_issue_id: '' } : v));
-      })
-      .catch(() => { if (!cancelled) setOpenReports([]); });
-    return () => { cancelled = true; };
-  }, [liveValues.vehicle_id, fromFlag]);
-  const sourceVehicleOptions = vehicleOptions.filter((v) => String(v.vehicle_id) !== String(liveValues.vehicle_id));
-
-
   return (
-    <ModulePanel description="Propose a maintenance ticket for Admin review. Pick how it's being reported first — it stays Pending Approval until an Admin approves or declines it.">
-      {fromFlag && (
+    <ModulePanel description="Describe the problem. An Admin reviews it, approves it and assigns a mechanic — nothing else to fill in.">
+      {(linkedScheduleId || linkedConditionId) && (
         <div className="info-callout" style={{ marginBottom: '16px', background: 'rgba(59, 130, 246, 0.1)', borderColor: '#3b82f6' }}>
           <span style={{ marginRight: '8px', color: '#3b82f6', display: 'inline-flex' }}><Icon name="link" size={16} /></span>
           <p className="module-description" style={{ color: '#3b82f6', margin: 0 }}>
-            Linking this proposal to <strong>{linkedIssueId ? 'Issue Report #' + linkedIssueId : 'Condition Check #' + linkedConditionId}</strong>.
+            Pre-filled from {linkedScheduleId ? <strong>a due maintenance schedule</strong> : <strong>a condition check</strong>} — review it and submit.
           </p>
         </div>
       )}
@@ -14136,63 +13840,12 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
           </div>
         )}
 
-        <section className="veh-card">
-          <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>How Is This Being Reported?</h4></div>
-          <div style={{ padding: 18 }}>
-            <div className="entry-mode-toggle" role="radiogroup" aria-label="Entry mode">
-              {modeOptions.map((opt) => {
-                const checked = pickerValue === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={checked}
-                    className={`entry-mode-btn entry-mode-btn--${opt.value} ${checked ? 'primary-button' : 'ghost-button'}`}
-                    onClick={() => selectEntryMode(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            {pickerValue === 'in_house' && (
-              // A div, not a <label>: the form's label styles (small caps,
-              // stacked layout) fight a checkbox row.
-              <div
-                role="checkbox"
-                aria-checked={isCannibalized}
-                tabIndex={0}
-                onClick={() => toggleDonorPart(!isCannibalized)}
-                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleDonorPart(!isCannibalized); } }}
-                style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 18, padding: '12px 14px', background: isCannibalized ? '#f0fdf4' : '#f8fafc', border: `1px solid ${isCannibalized ? '#86efac' : '#e2e8f0'}`, borderRadius: 8, cursor: 'pointer' }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{ flexShrink: 0, width: 20, height: 20, marginTop: 1, borderRadius: 5, border: `2px solid ${isCannibalized ? '#16a34a' : '#94a3b8'}`, background: isCannibalized ? '#16a34a' : '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
-                >
-                  {isCannibalized && <Icon name="checkCircle" size={13} />}
-                </span>
-                <div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>This repair uses a part taken from another vehicle</div>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>An Admin approves it before any part is removed from the other (donor) vehicle.</div>
-                </div>
-              </div>
-            )}
-            <p className="muted" style={{ margin: '10px 0 0', fontSize: '0.82rem' }}>
-              {entryMode == null
-                ? 'Pick how this repair will be done.'
-                : 'Once an Admin approves, it goes straight to repair — a mechanic gets assigned to each sub-issue.'}
-            </p>
-          </div>
-        </section>
-
-        <section className="veh-card">
+        <section className="veh-card veh-card-form">
           <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Vehicle</h4></div>
           <div className="ticket-form-grid-2">
             <label>
               <span>Vehicle <span className="required-asterisk">*</span></span>
-              <select required value={liveValues.vehicle_id ?? ''} onChange={(e) => setField('vehicle_id', e.target.value)}>
+              <select required value={values.vehicle_id ?? ''} onChange={(e) => setField('vehicle_id', e.target.value)}>
                 <option value="">{' '}</option>
                 {vehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
               </select>
@@ -14214,251 +13867,54 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
               </div>
             </div>
           )}
-          {!fromFlag && openReports.length > 0 && (
-            <div style={{ margin: '0 18px 18px', padding: '12px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8 }}>
-              <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 2 }}>This vehicle has open reports — is this repair for one of them?</div>
-              <div className="muted" style={{ fontSize: '0.8rem', marginBottom: 8 }}>Linking it lets the report show its ticket, and the report is closed out when the ticket is.</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {openReports.map((r) => (
-                  <div
-                    key={r.issue_report_id}
-                    role="radio"
-                    aria-checked={String(liveValues.link_issue_id) === String(r.issue_report_id)}
-                    tabIndex={0}
-                    onClick={() => setField('link_issue_id', r.issue_report_id)}
-                    onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setField('link_issue_id', r.issue_report_id); } }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: '#fff', border: `1px solid ${String(liveValues.link_issue_id) === String(r.issue_report_id) ? '#2563eb' : '#e2e8f0'}`, borderRadius: 6, cursor: 'pointer', fontSize: '0.86rem' }}
-                  >
-                    <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: `2px solid ${String(liveValues.link_issue_id) === String(r.issue_report_id) ? '#2563eb' : '#94a3b8'}`, background: String(liveValues.link_issue_id) === String(r.issue_report_id) ? '#2563eb' : '#fff', boxShadow: String(liveValues.link_issue_id) === String(r.issue_report_id) ? 'inset 0 0 0 3px #fff' : 'none' }} />
-                    <span><strong>#{r.issue_report_id} {r.issue_type}</strong> <span className="muted">({r.severity_level} · {r.status}{r.reported_by?.name ? ` · reported by ${r.reported_by.name}` : ''})</span></span>
-                  </div>
-                ))}
-                <div
-                  role="radio"
-                  aria-checked={!liveValues.link_issue_id}
-                  tabIndex={0}
-                  onClick={() => setField('link_issue_id', '')}
-                  onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setField('link_issue_id', ''); } }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: '#fff', border: `1px solid ${!liveValues.link_issue_id ? '#2563eb' : '#e2e8f0'}`, borderRadius: 6, cursor: 'pointer', fontSize: '0.86rem' }}
-                >
-                  <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: `2px solid ${!liveValues.link_issue_id ? '#2563eb' : '#94a3b8'}`, background: !liveValues.link_issue_id ? '#2563eb' : '#fff', boxShadow: !liveValues.link_issue_id ? 'inset 0 0 0 3px #fff' : 'none' }} />
-                  <span>None of these — this is something new</span>
-                </div>
-              </div>
-            </div>
-          )}
         </section>
 
         <section className="veh-card veh-card-form">
-          <div className="veh-card-head"><Icon name="alert" size={16} /><h4>Issue Details</h4></div>
+          <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>The Problem</h4></div>
           <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* No Ticket Title field — it's automatic (vehicle + repair type),
-                and the Admin folds the ticket's own # into it on approval. */}
             <label>
-              <span>Description / Details <span className="required-asterisk">*</span></span>
-              <textarea required rows={3} value={liveValues.ticket_description ?? ''} onChange={(e) => setField('ticket_description', e.target.value)} />
+              <span>What is the problem? <span className="required-asterisk">*</span></span>
+              <input type="text" placeholder="e.g. Brake pedal feels soft" value={values.problem ?? ''} onChange={(e) => setField('problem', e.target.value)} />
             </label>
-            <label style={{ maxWidth: 260 }}>
-              <span>Priority <span className="required-asterisk">*</span></span>
-              <select required value={liveValues.priority ?? ''} onChange={(e) => setField('priority', e.target.value)}>
-                <option value="">{' '}</option>
-                {priorityOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+            <label>
+              <span>Maintenance Type</span>
+              <CreatableSelect
+                value={values.maintenance_type ?? ''}
+                onChange={(v) => setField('maintenance_type', v)}
+                options={ticketLookups?.maintenance_types ?? []}
+                placeholder="Select a category or type to add new"
+                newItemLabel="maintenance type"
+                catalogEndpoint="/maintenance-types"
+              />
             </label>
-          </div>
-        </section>
-
-        {isCannibalized && (
-        <section className="veh-card veh-card-form">
-          <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Cannibalization Details</h4></div>
-          <div style={{ padding: 18 }}>
-            <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
-              Identify what this vehicle is missing and which part will be taken off the donor to fix it — add a row per part. The Admin reviews this before any part is removed.
-            </p>
-            <label style={{ maxWidth: 420, marginBottom: 14 }}>
-              <span>Donor Vehicle <span className="required-asterisk">*</span></span>
-              <select required value={liveValues.source_vehicle_id ?? ''} onChange={(e) => setField('source_vehicle_id', e.target.value)}>
-                <option value="">{' '}</option>
-                {sourceVehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
-              </select>
+            <label>
+              <span>Details (optional)</span>
+              <textarea rows={3} value={values.details ?? ''} onChange={(e) => setField('details', e.target.value)} />
             </label>
-            <div className="sub-issue-rows sub-issue-rows-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 10, alignItems: 'start' }}>
-              {partRows.map((row, index) => (
-                <div key={index} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <span className="sub-issue-row-index" style={{ marginTop: 12 }}>{index + 1}</span>
-                  <div className="ticket-form-grid-2" style={{ padding: 0, flex: 1 }}>
-                    <label>
-                      <span>Missing / Faulty Part (on this vehicle) <span className="required-asterisk">*</span></span>
-                      <input type="text" placeholder="e.g. Alternator" value={row.part_missing} onChange={(e) => updatePartRow(index, { part_missing: e.target.value })} />
-                    </label>
-                    <label>
-                      <span>Part to Take From Donor <span className="required-asterisk">*</span></span>
-                      <input type="text" placeholder="e.g. Alternator (12V, 90A)" value={row.part_needed} onChange={(e) => updatePartRow(index, { part_needed: e.target.value })} />
-                    </label>
-                    <label>
-                      <span>Maintenance Type</span>
-                      <CreatableSelect
-                        value={row.maintenance_type ?? ''}
-                        onChange={(v) => updatePartRow(index, { maintenance_type: v })}
-                        options={ticketLookups?.maintenance_types ?? []}
-                        placeholder="Select a category or type to add new"
-                        newItemLabel="maintenance type"
-                        catalogEndpoint="/maintenance-types"
-                      />
-                    </label>
-                    <label>
-                      <span>Suggested Mechanic (does the swap)</span>
-                      <select value={row.suggested_mechanic_id ?? ''} onChange={(e) => updatePartRow(index, { suggested_mechanic_id: e.target.value })}>
-                        <option value="">Unassigned — Admin will decide</option>
-                        {mechanicOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-delete-action icon-btn"
-                    style={{ marginTop: 10 }}
-                    onClick={() => removePartRow(index)}
-                    disabled={partRows.length === 1}
-                    title="Remove part"
-                    aria-label="Remove part"
-                  >
-                    <Icon name="close" size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button type="button" className="primary-button" style={{ marginTop: 10 }} onClick={addPartRow}><Icon name="plus" size={14} /> Add another part</button>
-          </div>
-        </section>
-        )}
-
-        {isExternal && (
-        <section className="veh-card veh-card-form">
-          <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>External Shop Details</h4></div>
-          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <p className="muted" style={{ margin: 0 }}>
-              Give the Admin a verifiable reason for sending this out and exactly what the shop is asked to do.
-            </p>
             <div className="ticket-form-grid-2" style={{ padding: 0 }}>
               <label>
-                <span>Reason for Sending Out <span className="required-asterisk">*</span></span>
-                <select required value={liveValues.external_reason ?? ''} onChange={(e) => setField('external_reason', e.target.value)}>
+                <span>Priority <span className="required-asterisk">*</span></span>
+                <select required value={values.priority ?? ''} onChange={(e) => setField('priority', e.target.value)}>
                   <option value="">{' '}</option>
-                  {(ticketLookups.external_reasons ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
+                  {priorityOptions.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </label>
               <label>
-                <span>Maintenance Type</span>
-                <CreatableSelect
-                  value={liveValues.external_maintenance_type ?? ''}
-                  onChange={(v) => setField('external_maintenance_type', v)}
-                  options={ticketLookups?.maintenance_types ?? []}
-                  placeholder="Select a category or type to add new"
-                  newItemLabel="maintenance type"
-                  catalogEndpoint="/maintenance-types"
-                />
-              </label>
-              <label>
-                <span>External Shop Name</span>
-                <input type="text" placeholder="e.g. Dela Cruz Auto Repair" value={liveValues.external_vendor ?? ''} onChange={(e) => setField('external_vendor', e.target.value)} />
-              </label>
-              <label>
-                <span>Contact Person (at the shop)</span>
-                <input type="text" placeholder="e.g. Mang Jun Dela Cruz" value={liveValues.external_contact_person ?? ''} onChange={(e) => setField('external_contact_person', e.target.value)} />
-              </label>
-              <label>
-                <span>Contact Number</span>
-                <input type="text" placeholder="e.g. 0917 123 4567" value={liveValues.external_shop_contact ?? ''} onChange={(e) => setField('external_shop_contact', e.target.value)} />
-              </label>
-              <label>
-                <span>Sent By (who takes the vehicle)</span>
-                <CreatableSelect
-                  value={liveValues.external_sent_by ?? ''}
-                  onChange={(v) => setField('external_sent_by', v)}
-                  options={[]}
-                  newItemLabel="person"
-                  catalogEndpoint="/reported-persons"
-                />
-              </label>
-              <label>
-                <span>Estimated Cost (PHP)</span>
-                <input type="number" min="0" placeholder="e.g. 5000" value={liveValues.external_estimated_cost ?? ''} onChange={(e) => setField('external_estimated_cost', e.target.value)} />
+                <span>Suggested mechanic (optional)</span>
+                <select value={values.suggested_mechanic_id ?? ''} onChange={(e) => setField('suggested_mechanic_id', e.target.value)}>
+                  <option value="">Admin will decide</option>
+                  {mechanicOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
               </label>
             </div>
-            <label>
-              <span>Work to Be Done at the Shop <span className="required-asterisk">*</span></span>
-              <textarea rows={3} placeholder="e.g. Diagnose and recharge A/C system, replace compressor if needed" value={liveValues.external_work_scope ?? ''} onChange={(e) => setField('external_work_scope', e.target.value)} />
-            </label>
           </div>
         </section>
-        )}
-
-        {isInHouse && (
-        <section className="veh-card veh-card-form">
-          <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Sub-Issues</h4></div>
-          <div style={{ padding: 18 }}>
-            <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
-              List each specific problem you found, with its own maintenance type — different problems on the same ticket can need different kinds of repair. A suggested mechanic is optional; the Admin can change it, or leave it unassigned, while reviewing.
-            </p>
-
-            <div className="sub-issue-rows sub-issue-rows-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 10, alignItems: 'start' }}>
-              {subIssueRows.map((row, index) => (
-                <div key={index} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span className="sub-issue-row-index">{index + 1}</span>
-                    <input
-                      type="text"
-                      style={{ flex: 1 }}
-                      placeholder="e.g. Low coolant level"
-                      value={row.title}
-                      onChange={(e) => updateSubIssue(index, { title: e.target.value })}
-                    />
-                    <button
-                      type="button"
-                      className="btn-delete-action icon-btn"
-                      onClick={() => removeSubIssueRow(index)}
-                      disabled={subIssueRows.length === 1}
-                      title="Remove sub-issue"
-                      aria-label="Remove sub-issue"
-                    >
-                      <Icon name="close" size={14} />
-                    </button>
-                  </div>
-                  <div className="ticket-form-grid-2" style={{ padding: 0 }}>
-                    <label>
-                      <span>Maintenance Type</span>
-                      <CreatableSelect
-                        value={row.maintenance_type ?? ''}
-                        onChange={(v) => updateSubIssue(index, { maintenance_type: v })}
-                        options={ticketLookups?.maintenance_types ?? []}
-                        placeholder="Select a category or type to add new"
-                        newItemLabel="maintenance type"
-                        catalogEndpoint="/maintenance-types"
-                      />
-                    </label>
-                    <label>
-                      <span>Suggested Mechanic</span>
-                      <select value={row.suggested_mechanic_id ?? ''} onChange={(e) => updateSubIssue(index, { suggested_mechanic_id: e.target.value })}>
-                        <option value="">Unassigned — Admin will decide</option>
-                        {mechanicOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button type="button" className="primary-button" style={{ marginTop: 10 }} onClick={addSubIssueRow}><Icon name="plus" size={14} /> Add another sub-issue</button>
-          </div>
-        </section>
-        )}
 
         <div className="form-actions">
-          <button className="ghost-button" onClick={() => { clearProposeDraft(); onBack(); }} type="button" disabled={submitting}>Cancel</button>
-          <button className="primary-button" type="submit" disabled={submitting}>Submit for Admin Review</button>
+          <button type="button" className="ghost-button" onClick={onBack}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Submitting…' : 'Propose Ticket'}</button>
         </div>
       </form>
-      {submitting && <SubmitLoadingOverlay label="Submitting proposal…" />}
     </ModulePanel>
   );
 }
