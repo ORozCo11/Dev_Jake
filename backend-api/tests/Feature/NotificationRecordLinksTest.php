@@ -38,26 +38,6 @@ class NotificationRecordLinksTest extends TestCase
     }
 
     #[Test]
-    public function filing_an_issue_report_notifies_admins_with_a_link_to_it(): void
-    {
-        $vehicle = $this->vehicle();
-        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin'], 'barangay_id' => $vehicle->barangay_id]);
-        $custodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian'], 'barangay_id' => $vehicle->barangay_id]);
-
-        Sanctum::actingAs($custodian, ['*']);
-        $issue = $this->postJson('/api/issues', [
-            'vehicle_id' => $vehicle->vehicle_id,
-            'issue_type' => 'Flat tire',
-            'issue_description' => 'Front-left tire flat.',
-            'severity_level' => 'Low',
-        ])->assertCreated()->json();
-
-        $notification = Notification::where('user_id', $admin->id)->where('type', 'issue_reported')->firstOrFail();
-        $this->assertSame($issue['issue_report_id'], $notification->issue_report_id);
-        $this->assertNull($notification->ticket_id);
-    }
-
-    #[Test]
     public function assigning_a_schedule_notifies_the_mechanic_with_a_link_to_it(): void
     {
         $vehicle = $this->vehicle();

@@ -147,8 +147,8 @@ class CatalogController extends Controller
     {
         // Custodians are the ones naming drivers (Reported On Behalf Of,
         // Sent By) while filling forms — adding a name is harmless, so it
-        // follows issue.create; renaming/deleting stay catalog.* (Admin).
-        $this->requireAbility($request, 'issue.create');
+        // follows ticket.propose; renaming/deleting stay catalog.* (Admin).
+        $this->requireAbility($request, 'ticket.propose');
         $data = $request->validate(['name' => ['required', 'string', 'max:150']]);
 
         return response()->json(ReportedPerson::findOrCreateByName($data['name']), 201);

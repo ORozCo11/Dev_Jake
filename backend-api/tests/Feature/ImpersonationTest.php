@@ -140,7 +140,7 @@ class ImpersonationTest extends TestCase
             ->assertJsonPath('id', $custodian->id);
 
         $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson('/api/issues', ['vehicle_id' => 999, 'issue_type' => 'x', 'issue_description' => 'x', 'severity_level' => 'Low'])
+            ->postJson('/api/tickets/propose', ['vehicle_id' => 999])
             ->assertStatus(403);
     }
 

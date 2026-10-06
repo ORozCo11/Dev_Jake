@@ -49,7 +49,6 @@ class FleetController extends Controller
 
     public function lookups(Request $request)
     {
-        $this->syncVehicleStatuses();
         // User carries no global scope (see BelongsToBarangay's docblock),
         // so every person-lookup below has to filter by barangay by hand —
         // otherwise a Custodian could assign a mechanic from a different
@@ -58,10 +57,6 @@ class FleetController extends Controller
         return response()->json([
             'categories' => VehicleCategory::with('fields')->orderBy('category_name')->get(),
             'vehicles' => Vehicle::with('category')->orderBy('vehicle_name')->get(),
-            'issue_reports' => VehicleIssueReport::with('vehicle')
-                ->whereNot('status', 'Resolved')
-                ->latest('issue_report_id')
-                ->get(),
             'maintenance_personnel' => User::where('barangay_id', $barangayId)
                 ->havingRole('Maintenance Personnel')
                 ->orderBy('name')
@@ -74,14 +69,11 @@ class FleetController extends Controller
             'maintenance_performers' => User::where('barangay_id', $barangayId)
                 ->orderBy('name')
                 ->get(['id', 'name', 'email', 'role']),
-            'issue_types' => FaultCategory::orderBy('name')->pluck('name'),
             'maintenance_types' => MaintenanceType::orderBy('name')->pluck('name'),
-            'severity_levels' => ['Low', 'Medium', 'High'],
             // 'In Use' exists in the DB enum but is intentionally not offered —
             // this system tracks availability only; nothing ever sets In Use.
             'vehicle_statuses' => ['Available', 'Under Maintenance', 'Inactive', 'Decommissioned'],
             'condition_results' => ['Good', 'Needs Inspection', 'Needs Repair'],
-            'issue_statuses' => ['Pending', 'Under Review', 'In Maintenance', 'Resolved'],
             'maintenance_statuses' => ['Assigned', 'Under Repair', 'On Hold - Awaiting Parts', 'For Verification', 'Completed'],
             'schedule_statuses' => ['Scheduled', 'Completed', 'Cancelled'],
         ]);
@@ -89,12 +81,8 @@ class FleetController extends Controller
 
     public function dashboard(Request $request)
     {
-        $this->syncVehicleStatuses();
         $user = $request->user();
         $latestChecks = $this->latestReadinessChecks();
-        $activeIssues = VehicleIssueReport::whereNot('status', 'Resolved')
-            ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
-            ->count();
         $upcomingMaintenance = VehicleMaintenanceSchedule::where('status', 'Scheduled')
             ->whereDate('scheduled_date', '>=', now()->toDateString())
             ->count();
@@ -111,7 +99,6 @@ class FleetController extends Controller
 
         if ($user->hasRole('Admin')) {
             $metrics[] = ['label' => 'Inactive Vehicles', 'value' => Vehicle::where('status', 'Inactive')->count()];
-            $metrics[] = ['label' => 'Reported Issues', 'value' => $activeIssues];
             $metrics[] = ['label' => 'Upcoming Maintenance', 'value' => $upcomingMaintenance];
             $metrics[] = ['label' => 'Overdue Maintenance', 'value' => $overdueMaintenance];
 
@@ -127,11 +114,6 @@ class FleetController extends Controller
         }
 
         if ($user->hasRole('Custodian')) {
-            $metrics[] = ['label' => 'Reported Issues', 'value' => $activeIssues];
-            $metrics[] = [
-                'label' => 'My Reported Issues',
-                'value' => VehicleIssueReport::where('reported_by', $request->user()->id)->count(),
-            ];
         }
 
         if ($user->hasRole('Maintenance Personnel')) {
@@ -139,7 +121,6 @@ class FleetController extends Controller
             // Total/Available/Under Maintenance vehicle counts, which the Fleet
             // Status donut and Operations Queue panels below rely on regardless
             // of role. Replacing the array here was zeroing those panels out.
-            $metrics[] = ['label' => 'Reported Issues', 'value' => $activeIssues];
             $metrics[] = ['label' => 'Maintenance Records', 'value' => VehicleMaintenanceRecord::count()];
             $metrics[] = ['label' => 'Upcoming Maintenance', 'value' => $upcomingMaintenance];
             $metrics[] = ['label' => 'Overdue Maintenance', 'value' => $overdueMaintenance];
@@ -175,12 +156,6 @@ class FleetController extends Controller
                 // Custodian's issue list is scoped to their OWN reports, so
                 // the badge counts their own unresolved issues (not fleet-wide
                 // — that would count other people's reports and breadcrumbs).
-                'issues' => ($user->hasRole('Custodian') && !$user->hasRole('Admin'))
-                    ? VehicleIssueReport::where('reported_by', $user->id)
-                        ->whereNot('status', 'Resolved')
-                        ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
-                        ->count()
-                    : $activeIssues,
                 'tickets' => MaintenanceTicket::whereNotIn('status', ['Closed', 'Cancelled'])->count(),
                 'conditions' => VehicleConditionCheck::whereIn('condition_result', ['Needs Inspection', 'Needs Repair'])
                     ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
@@ -338,26 +313,17 @@ class FleetController extends Controller
     {
         $items = [];
 
-        foreach (VehicleIssueReport::where('status', 'Pending')->with('vehicle')->latest('issue_report_id')->get() as $issue) {
+        // The one thing waiting on an Admin in the simplified flow: a
+        // Custodian's proposal to review, approve and assign.
+        foreach (MaintenanceTicket::where('status', 'Pending Approval')->with('vehicle')->latest('ticket_id')->get() as $proposal) {
             $items[] = [
-                'type'         => 'issue_pending',
-                'id'           => $issue->issue_report_id,
-                'label'        => "Review reported issue: {$issue->issue_type}",
-                'vehicle_name' => $issue->vehicle->vehicle_name ?? null,
-                'severity'     => $issue->severity_level,
-            ];
-        }
-
-        foreach (TicketSubIssue::where('status', 'For Confirmation')->with(['ticket.vehicle'])->get() as $subIssue) {
-            $items[] = [
-                'type'         => 'ticket_confirm',
-                'id'           => $subIssue->ticket_id,
-                'label'        => "Confirm repair: {$subIssue->title}",
-                'vehicle_name' => $subIssue->ticket->vehicle->vehicle_name ?? null,
+                'type'         => 'ticket_proposal',
+                'id'           => $proposal->ticket_id,
+                'label'        => "Review proposal: {$proposal->ticket_title}",
+                'vehicle_name' => $proposal->vehicle->vehicle_name ?? null,
                 'severity'     => null,
             ];
         }
-
         // A sub-issue lands here the moment it's created — either a
         // Custodian's inspection findings or a Pre-Diagnosed ticket — and
         // stays invisible to the Admin otherwise: the one-time "Inspection
@@ -373,19 +339,6 @@ class FleetController extends Controller
                 'vehicle_name' => $subIssue->ticket->vehicle->vehicle_name ?? null,
                 'severity'     => null,
             ];
-        }
-
-        $activeTickets = MaintenanceTicket::where('status', 'Active')->with(['subIssues', 'vehicle'])->get();
-        foreach ($activeTickets as $ticket) {
-            if ($ticket->isEligibleToClose()) {
-                $items[] = [
-                    'type'         => 'ticket_close',
-                    'id'           => $ticket->ticket_id,
-                    'label'        => "Ready to close: {$ticket->ticket_title}",
-                    'vehicle_name' => $ticket->vehicle->vehicle_name ?? null,
-                    'severity'     => null,
-                ];
-            }
         }
 
         foreach ($this->readinessWatch($latestChecks) as $r) {
@@ -433,15 +386,13 @@ class FleetController extends Controller
                 return 0;
             }
             return match ($item['type']) {
-                'ticket_close'             => 1,
+                'ticket_proposal'          => 1,
                 // A vehicle sitting with a diagnosed problem and no mechanic
                 // working on it yet is more urgent than paperwork on repairs
                 // already underway or done — nothing progresses on it until
                 // an Admin acts.
                 'subissue_needs_mechanic'  => 2,
-                'ticket_confirm'           => 3,
                 'recurring_fault_review'   => 4,
-                'issue_pending'            => 5,
                 'readiness_check'          => 6,
                 'schedule_overdue'         => 7,
                 default                    => 7,
@@ -909,7 +860,6 @@ class FleetController extends Controller
 
     public function vehicles(Request $request)
     {
-        $this->syncVehicleStatuses();
         $user = $request->user();
         $query = Vehicle::with(['category', 'archivedBy']);
 
@@ -1283,46 +1233,6 @@ class FleetController extends Controller
         ]);
     }
 
-    public function locations(Request $request)
-    {
-        $query = VehicleLocation::with(['vehicle.category', 'updatedBy']);
-
-        if ($request->filled('q')) {
-            $search = $request->string('q');
-            $query->where(function ($nested) use ($search) {
-                $nested->where('current_location', 'like', "%{$search}%")
-                    ->orWhere('address_area', 'like', "%{$search}%");
-            });
-        }
-
-        return $query->latest('location_record_id')->get();
-    }
-
-    public function storeLocation(Request $request)
-    {
-        $this->requireAbility($request, 'vehicle.update_location');
-
-        $data = $request->validate([
-            'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
-            'current_location' => ['required', 'string', 'max:255', Rule::in(VehicleHub::pluck('name'))],
-            'address_area' => ['nullable', 'string', 'max:255'],
-            'remarks' => ['nullable', 'string'],
-        ]);
-
-        $location = DB::transaction(function () use ($data, $request) {
-            $vehicle = Vehicle::findOrFail($data['vehicle_id']);
-            $location = VehicleLocation::create($data + ['updated_by' => $request->user()->id]);
-            $vehicle->update(['current_location' => $data['current_location']]);
-
-            $this->history($vehicle, 'Location Updated', "{$vehicle->vehicle_name} current location was updated to {$data['current_location']}.", 'vehicle_locations', $location->location_record_id, $request);
-            $this->log($request, 'Edit', 'Vehicle Location', $location->location_record_id, "Updated location for {$vehicle->vehicle_name}");
-
-            return $location;
-        });
-
-        return response()->json($location->load(['vehicle.category', 'updatedBy']), 201);
-    }
-
     public function conditions(Request $request)
     {
         // Condition checks are an Admin/Custodian tool; Maintenance Personnel
@@ -1456,19 +1366,6 @@ class FleetController extends Controller
     }
 
     /**
-     * Single-issue fetch — deliberately not scoped to "mine" the way the list
-     * endpoint can be. A Custodian following a "View" link from the
-     * duplicate-issue warning needs to see a report FILED BY SOMEONE ELSE on
-     * the same vehicle; that's the whole point of the warning.
-     */
-    public function showIssue(Request $request, VehicleIssueReport $issue)
-    {
-        $this->requireAbility($request, 'issue.view');
-
-        return $issue->load(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments.uploadedBy']);
-    }
-
-    /**
      * On-demand recurrence check — the same detection createTicket() runs,
      * but callable BEFORE a ticket exists. Recurrence used to only surface
      * in a notification sent right after the ticket was already created,
@@ -1490,315 +1387,6 @@ class FleetController extends Controller
         return response()->json(
             $this->checkRecurrence($vehicle->vehicle_id, $data['maintenance_types'] ?? [], $data['issue_type'] ?? null, $data['title'])
         );
-    }
-
-    public function issues(Request $request)
-    {
-        $user = $request->user();
-
-        // Maintenance Personnel can file a technical issue report (see
-        // storeIssue()) and track it from their own "Vehicle Issues" sidebar
-        // entry, but still have no reason to browse the whole barangay's
-        // queue of everyone else's reports — that stays a Custodian/Admin
-        // concern, so this scopes to reports THEY filed.
-        if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
-            return VehicleIssueReport::with(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments'])
-                ->where('reported_by', $user->id)
-                ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
-                ->latest('issue_report_id')
-                ->get();
-        }
-
-        // Issues on retired (Inactive/Decommissioned) vehicles are excluded —
-        // a retired vehicle is out of the fleet, so its reports shouldn't
-        // clutter the list.
-        $query = VehicleIssueReport::with(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments'])
-            ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']));
-
-        if ($request->boolean('mine')) {
-            $query->where('reported_by', $request->user()->id);
-        }
-
-        $query->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
-            ->when($request->filled('severity_level'), fn ($q) => $q->where('severity_level', $request->severity_level))
-            ->when($request->filled('issue_type'), fn ($q) => $q->where('issue_type', $request->issue_type));
-
-        if ($request->filled('q')) {
-            $search = $request->string('q');
-            $query->where(function ($nested) use ($search) {
-                $nested->where('issue_type', 'like', "%{$search}%")
-                    ->orWhere('issue_description', 'like', "%{$search}%")
-                    ->orWhereHas('vehicle', function ($vehicleQuery) use ($search) {
-                        $vehicleQuery->where('vehicle_name', 'like', "%{$search}%")
-                            ->orWhere('plate_number', 'like', "%{$search}%");
-                    });
-            });
-        }
-
-        return $query->latest('issue_report_id')->get();
-    }
-
-    public function storeIssue(Request $request)
-    {
-        // Maintenance Personnel included so a mechanic can document the issue
-        // they found themselves while self-filing a standalone maintenance
-        // record (the emergency/field-repair path) — not a general-purpose
-        // reporting permission for them elsewhere.
-        $this->requireAbility($request, 'issue.create');
-
-        $data = $request->validate([
-            'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
-            'issue_type' => ['required', 'string', 'max:150'],
-            'issue_description' => ['required', 'string'],
-            'severity_level' => ['required', Rule::in(['Low', 'Medium', 'High'])],
-            // Was a single 'photo' (image only) — now any number of files of
-            // any common type, matching VehicleDocument's "file cabinet".
-            'attachments' => ['nullable', 'array'],
-            'attachments.*' => ['file', 'mimes:jpg,jpeg,png,pdf,doc,docx', 'max:10240'],
-            'remarks' => ['nullable', 'string'],
-        ]);
-
-        $data['issue_type'] = FaultCategory::resolve($data['issue_type']);
-
-        // A retired/archived vehicle is out of the fleet — no new reports on it.
-        $reportedVehicle = Vehicle::findOrFail($data['vehicle_id']);
-        abort_if(
-            in_array($reportedVehicle->status, ['Inactive', 'Decommissioned'], true),
-            422,
-            'Cannot report an issue on an archived or decommissioned vehicle.'
-        );
-
-        $uploadedFiles = $request->file('attachments', []);
-        unset($data['attachments']);
-
-        $issue = DB::transaction(function () use ($data, $request, $uploadedFiles) {
-            $vehicle = Vehicle::findOrFail($data['vehicle_id']);
-            $issue = VehicleIssueReport::create($data + [
-                'reported_by' => $request->user()->id,
-                'status' => 'Pending',
-            ]);
-
-            foreach ($uploadedFiles as $file) {
-                IssueReportAttachment::create([
-                    'issue_report_id' => $issue->issue_report_id,
-                    'file_url' => $this->storeUploadedImage($file, 'issue-attachments'),
-                    'original_name' => $file->getClientOriginalName(),
-                    'uploaded_by' => $request->user()->id,
-                ]);
-            }
-
-            $vehicle->update([
-                'condition' => 'Needs Inspection',
-            ]);
-
-            $this->history($vehicle, 'Issue Reported', "{$data['issue_type']} was reported for {$vehicle->vehicle_name}.", 'vehicle_issue_reports', $issue->issue_report_id, $request);
-            $this->log($request, 'Add', 'Vehicle Issue Reports', $issue->issue_report_id, "Reported {$data['issue_type']} for {$vehicle->vehicle_name}");
-
-            $this->notifyAdmins(
-                'New Vehicle Issue Reported',
-                "{$request->user()->name} reported {$data['issue_type']} for {$vehicle->vehicle_name}.",
-                'issue_reported',
-                $vehicle->barangay_id,
-                ['issue_report_id' => $issue->issue_report_id]
-            );
-
-            // A mechanic's technical finding isn't a ticket by itself — it
-            // has to go through a Custodian's propose-ticket workflow, so the
-            // Custodian needs to actually hear about it to act on it.
-            if ($request->user()->hasRole('Maintenance Personnel') && !$request->user()->hasAnyRole(['Admin', 'Custodian'])) {
-                $this->notifyCustodians(
-                    'Technical Issue Reported by Maintenance',
-                    "{$request->user()->name} reported {$data['issue_type']} for {$vehicle->vehicle_name} — review it and propose a ticket if it needs one.",
-                    'issue_reported',
-                    $vehicle->barangay_id,
-                    ['issue_report_id' => $issue->issue_report_id]
-                );
-            }
-
-            return $issue;
-        });
-
-        return response()->json($issue->load(['vehicle.category', 'reportedBy', 'attachments']), 201);
-    }
-
-    public function updateIssue(Request $request, VehicleIssueReport $issue)
-    {
-        $this->requireAbility($request, 'issue.edit');
-
-        if ($request->user()->hasRole('Custodian') && !$request->user()->hasAnyRole(['Admin', 'Maintenance Personnel'])) {
-            abort_unless($issue->reported_by === $request->user()->id, 403, 'You can only edit your own issue reports.');
-            abort_unless($issue->status === 'Pending', 422, 'This issue has already been reviewed and can no longer be edited.');
-
-            $data = $request->validate([
-                'issue_type' => ['sometimes', 'string', 'max:150'],
-                'issue_description' => ['sometimes', 'string'],
-                'severity_level' => ['sometimes', Rule::in(['Low', 'Medium', 'High'])],
-                'attachments' => ['nullable', 'array'],
-                'attachments.*' => ['file', 'mimes:jpg,jpeg,png,pdf,doc,docx', 'max:10240'],
-                'remarks' => ['nullable', 'string'],
-            ]);
-
-            if (isset($data['issue_type'])) {
-                $data['issue_type'] = FaultCategory::resolve($data['issue_type']);
-            }
-
-            $uploadedFiles = $request->file('attachments', []);
-            unset($data['attachments']);
-
-            $issue->update($data);
-            foreach ($uploadedFiles as $file) {
-                IssueReportAttachment::create([
-                    'issue_report_id' => $issue->issue_report_id,
-                    'file_url' => $this->storeUploadedImage($file, 'issue-attachments'),
-                    'original_name' => $file->getClientOriginalName(),
-                    'uploaded_by' => $request->user()->id,
-                ]);
-            }
-            $this->log($request, 'Edit', 'Vehicle Issue Reports', $issue->issue_report_id, "Updated issue report #{$issue->issue_report_id}");
-
-            return $issue->fresh(['vehicle.category', 'reportedBy', 'attachments']);
-        }
-
-        $data = $request->validate([
-            'status' => ['sometimes', Rule::in(['Pending', 'Under Review', 'In Maintenance', 'Resolved'])],
-            'remarks' => ['nullable', 'string'],
-            'issue_type' => ['sometimes', 'string', 'max:150'],
-            'issue_description' => ['sometimes', 'string'],
-            'severity_level' => ['sometimes', Rule::in(['Low', 'Medium', 'High'])],
-        ]);
-
-        if (isset($data['issue_type'])) {
-            $data['issue_type'] = FaultCategory::resolve($data['issue_type']);
-        }
-
-        DB::transaction(function () use ($issue, $data, $request) {
-            $issue->update($data);
-
-            // A vehicle already retired (Inactive/Decommissioned) must stay
-            // that way — resolving/updating an old issue report against it
-            // should never silently un-retire it back to Available/Under
-            // Maintenance.
-            if (isset($data['status']) && !in_array($issue->vehicle->status, ['Inactive', 'Decommissioned'], true)) {
-                $status = $data['status'];
-                $vehicleUpdates = [];
-
-                if ($status === 'In Maintenance') {
-                    $vehicleUpdates['status'] = 'Under Maintenance';
-                    $vehicleUpdates['condition'] = 'Needs Repair';
-                } elseif ($status === 'Resolved') {
-                    $vehicleUpdates['status'] = 'Available';
-                    $vehicleUpdates['condition'] = 'Good';
-                } elseif ($status === 'Pending' || $status === 'Under Review') {
-                    $vehicleUpdates['status'] = 'Available';
-                    $vehicleUpdates['condition'] = 'Needs Inspection';
-                }
-
-                if (!empty($vehicleUpdates)) {
-                    $issue->vehicle->update($vehicleUpdates);
-                }
-            }
-
-            $this->history($issue->vehicle, 'Issue Updated', "Issue #{$issue->issue_report_id} was updated to {$issue->status}.", 'vehicle_issue_reports', $issue->issue_report_id, $request);
-            $this->log($request, 'Edit', 'Vehicle Issue Reports', $issue->issue_report_id, "Updated issue #{$issue->issue_report_id}");
-        });
-
-        return $issue->fresh(['vehicle.category', 'reportedBy']);
-    }
-
-    /**
-     * Admin closes an open issue report that doesn't need a ticket — not a
-     * real problem, or already handled. A reason is required and goes to the
-     * reporter. Deliberately does NOT touch the vehicle's status (unlike the
-     * generic status edit), since nothing about the vehicle changed.
-     */
-    public function dismissIssue(Request $request, VehicleIssueReport $issue)
-    {
-        $this->requireAbility($request, 'issue.dismiss');
-
-        abort_unless(in_array($issue->status, ['Pending', 'Under Review'], true), 422, "This issue is already {$issue->status} and can't be dismissed.");
-        abort_if($issue->maintenanceTicket()->exists(), 422, 'A ticket exists for this issue — close or cancel the ticket instead.');
-
-        $data = $request->validate([
-            'dismiss_reason' => ['required', 'string', 'max:1000'],
-        ]);
-
-        DB::transaction(function () use ($issue, $data, $request) {
-            $issue->update([
-                'status'  => 'Resolved',
-                'remarks' => "Dismissed by {$request->user()->name}: {$data['dismiss_reason']}",
-            ]);
-
-            if ($issue->reported_by && (int) $issue->reported_by !== (int) $request->user()->id) {
-                $this->notifyUser(
-                    $issue->reported_by,
-                    'Issue Report Dismissed',
-                    "Your report \"{$issue->issue_type}\" on {$issue->vehicle->vehicle_name} was dismissed. Reason: {$data['dismiss_reason']}",
-                    'issue_dismissed',
-                    ['issue_report_id' => $issue->issue_report_id]
-                );
-            }
-
-            $this->log($request, 'Edit', 'Vehicle Issue Reports', $issue->issue_report_id, "Dismissed issue report #{$issue->issue_report_id}: {$data['dismiss_reason']}");
-        });
-
-        return $issue->fresh(['vehicle.category', 'reportedBy', 'maintenanceTicket', 'attachments']);
-    }
-
-    public function destroyIssue(Request $request, VehicleIssueReport $issue)
-    {
-        $user = $request->user();
-
-        if ($user->hasRole('Custodian') && !$user->hasAnyRole(['Admin', 'Maintenance Personnel'])) {
-            abort_unless($issue->reported_by === $user->id, 403, 'You can only delete your own issue reports.');
-            abort_unless($issue->status === 'Pending', 422, 'This issue has already been reviewed and can no longer be deleted.');
-        } else {
-            $this->requireAbility($request, 'issue.delete');
-        }
-
-        $this->log($request, 'Delete', 'Vehicle Issue Reports', $issue->issue_report_id, "Deleted issue report #{$issue->issue_report_id}");
-        $issue->delete();
-
-        return response()->json(['message' => 'Issue report deleted.']);
-    }
-
-    /**
-     * Remove one file from an issue report's attachment list — same
-     * ownership rule as editing the report itself (own, still Pending,
-     * unless Admin/Maintenance Personnel).
-     */
-    public function destroyIssueAttachment(Request $request, IssueReportAttachment $attachment)
-    {
-        $user = $request->user();
-        $issue = $attachment->issueReport;
-
-        if ($user->hasRole('Custodian') && !$user->hasAnyRole(['Admin', 'Maintenance Personnel'])) {
-            abort_unless($issue->reported_by === $user->id, 403, 'You can only edit your own issue reports.');
-            abort_unless($issue->status === 'Pending', 422, 'This issue has already been reviewed and can no longer be edited.');
-        } else {
-            $this->requireAbility($request, 'issue.edit');
-        }
-
-        $this->log($request, 'Delete', 'Vehicle Issue Reports', $issue->issue_report_id, "Removed attachment \"{$attachment->original_name}\" from issue report #{$issue->issue_report_id}");
-        $attachment->delete();
-
-        return response()->json(['message' => 'Attachment removed.']);
-    }
-
-    /**
-     * #7 — duplicate-report aid: every currently-open (non-Resolved) issue
-     * report already on a vehicle. The Report Issue form calls this once a
-     * vehicle is picked and shows a non-blocking warning, so two people
-     * reporting the same fault don't silently open two reports.
-     */
-    public function openIssuesForVehicle(Request $request, Vehicle $vehicle)
-    {
-        $this->requireAbility($request, 'issue.view');
-
-        return VehicleIssueReport::where('vehicle_id', $vehicle->vehicle_id)
-            ->whereNot('status', 'Resolved')
-            ->with('reportedBy:id,name')
-            ->orderByDesc('issue_report_id')
-            ->get(['issue_report_id', 'issue_type', 'severity_level', 'status', 'reported_by', 'created_at']);
     }
 
     // File cabinet on a vehicle's profile page — deliberately separate from
@@ -1934,479 +1522,6 @@ class FleetController extends Controller
         return $record->load(['vehicle.category', 'sourceVehicle', 'issueReport', 'maintenancePersonnel', 'verifiedBy', 'confirmedBy', 'originatingSchedule']);
     }
 
-    public function storeMaintenanceRecord(Request $request)
-    {
-        $this->requireAbility($request, 'record.create');
-
-        $data = $request->validate([
-            'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
-            // Vehicle cannibalization: a part removed from another vehicle
-            // rather than newly acquired. Optional — only set when that's
-            // actually what happened.
-            'source_vehicle_id' => ['nullable', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
-            'part_name' => ['nullable', 'string', 'max:255'],
-            'issue_report_id' => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
-            'maintenance_type' => ['required', 'string', 'max:150'],
-            'problem_reason' => ['required', 'string'],
-            'date_started' => ['nullable', 'date'],
-            'date_completed' => ['nullable', 'date'],
-            'maintenance_personnel_id' => ['nullable', 'exists:users,id'],
-            // Free-text fallback for someone outside the system entirely
-            // (a volunteer, an outside helper) — mutually exclusive with
-            // maintenance_personnel_id, never both set at once.
-            'performed_by_other' => ['nullable', 'string', 'max:255'],
-            'is_external' => ['nullable', 'boolean'],
-            'external_vendor' => ['nullable', 'string', 'max:255'],
-            'warranty_until' => ['nullable', 'date'],
-            'receipt' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:8192'],
-            'action_taken' => ['nullable', 'string'],
-            'parts_used' => ['nullable', 'string'],
-            'maintenance_cost' => ['nullable', 'numeric', 'min:0'],
-            'progress_status' => ['nullable', Rule::in(['Assigned', 'Under Repair', 'On Hold - Awaiting Parts', 'For Verification', 'Completed'])],
-            'remarks' => ['nullable', 'string'],
-        ], [
-            'source_vehicle_id.different' => 'A vehicle cannot be the source of its own part.',
-        ]);
-
-        $data['maintenance_type'] = MaintenanceType::resolve($data['maintenance_type']);
-
-        if ($request->hasFile('receipt')) {
-            $data['receipt_url'] = $this->storeUploadedImage($request->file('receipt'), 'maintenance-receipts');
-        }
-        unset($data['receipt']);
-
-        // A pure mechanic (or now, a Custodian logging their own field fix)
-        // logs work as themselves; only Admin keeps the ability to assign
-        // someone else — a registered user or, via performed_by_other,
-        // someone outside the system — as the one who actually performed it.
-        if (!$request->user()->hasRole('Admin')) {
-            $data['maintenance_personnel_id'] = $request->user()->id;
-            $data['performed_by_other'] = null;
-        }
-
-        abort_if(
-            empty($data['maintenance_personnel_id']) && empty($data['performed_by_other']),
-            422,
-            'Please select who performed the repair.'
-        );
-
-        // Production-readiness audit (2026-10-05, P0) — a receipt or photo is
-        // supporting evidence, never a substitute for independent Custodian
-        // verification. Removed the old "Admin + proof attached = instantly
-        // Completed, self-certified" shortcut; a record claimed as already
-        // done now always lands at For Verification for a Custodian to
-        // actually check, exactly like every other maintenance path. The
-        // receipt/photo itself can still be attached — it just doesn't skip
-        // the check anymore.
-        if (($data['progress_status'] ?? null) === 'Completed') {
-            $data['progress_status'] = 'For Verification';
-        }
-
-        $record = DB::transaction(function () use ($data, $request) {
-            $vehicle = Vehicle::findOrFail($data['vehicle_id']);
-
-            $createPayload = $data;
-            $createPayload['progress_status'] = $data['progress_status'] ?? 'Assigned';
-
-            $record = VehicleMaintenanceRecord::create($createPayload);
-
-            $vehicle->update([
-                'status' => 'Under Maintenance',
-                'condition' => 'Needs Repair',
-            ]);
-
-            if (! empty($data['issue_report_id'])) {
-                VehicleIssueReport::where('issue_report_id', $data['issue_report_id'])->update([
-                    'status' => 'In Maintenance',
-                ]);
-            }
-
-            $recordedNote = "{$data['maintenance_type']} was recorded for {$vehicle->vehicle_name}.";
-            $this->history($vehicle, 'Maintenance Recorded', $recordedNote, 'vehicle_maintenance_records', $record->maintenance_id, $request);
-            $this->log($request, 'Add', 'Vehicle Maintenance Records', $record->maintenance_id, "Added maintenance record for {$vehicle->vehicle_name}");
-
-            // Cannibalization: log the loss on the DONOR vehicle's own
-            // history so it's visible from that vehicle's side too, instead
-            // of only existing as a mention buried in this record. Deliberately
-            // does NOT touch the donor's status/condition — whether a missing
-            // part actually makes it undeployable is a human judgment call,
-            // not something this action should silently decide on its own.
-            if (! empty($data['source_vehicle_id'])) {
-                $sourceVehicle = Vehicle::find($data['source_vehicle_id']);
-                if ($sourceVehicle) {
-                    $partDescription = $data['parts_used'] ?: 'A part';
-                    $this->history(
-                        $sourceVehicle,
-                        'Part Removed (Cannibalized)',
-                        "{$partDescription} was removed from {$sourceVehicle->vehicle_name} for use on {$vehicle->vehicle_name} — see Maintenance Record #{$record->maintenance_id}.",
-                        'vehicle_maintenance_records',
-                        $record->maintenance_id,
-                        $request
-                    );
-                }
-            }
-
-            // A mechanic self-filing a standalone record (no ticket, no Admin
-            // gate first) is exactly the emergency/field-repair path — Admin
-            // wasn't in the loop when this started, so make sure they're not
-            // left finding out about it by accident.
-            if (! $request->user()->hasRole('Admin')) {
-                $this->notifyAdmins(
-                    'Maintenance Record Filed',
-                    "{$request->user()->name} logged a {$data['maintenance_type']} record for {$vehicle->vehicle_name}: {$data['problem_reason']}",
-                    'maintenance_recorded',
-                    $vehicle->barangay_id
-                );
-            }
-
-            return $record;
-        });
-
-        return response()->json($record->load(['vehicle.category', 'sourceVehicle', 'issueReport', 'maintenancePersonnel']), 201);
-    }
-
-    public function updateMaintenanceRecord(Request $request, VehicleMaintenanceRecord $record)
-    {
-        $this->requireAbility($request, 'record.edit');
-
-        $data = $request->validate([
-            'source_vehicle_id' => ['nullable', 'exists:vehicles,vehicle_id', 'different:vehicle_id'],
-            'part_name' => ['nullable', 'string', 'max:255'],
-            'issue_report_id' => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
-            'maintenance_type' => ['sometimes', 'string', 'max:150'],
-            'problem_reason' => ['sometimes', 'string'],
-            'date_started' => ['nullable', 'date'],
-            'date_completed' => ['nullable', 'date'],
-            'maintenance_personnel_id' => ['nullable', 'exists:users,id'],
-            'performed_by_other' => ['nullable', 'string', 'max:255'],
-            'is_external' => ['nullable', 'boolean'],
-            'external_vendor' => ['nullable', 'string', 'max:255'],
-            'warranty_until' => ['nullable', 'date'],
-            'receipt' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:8192'],
-            'action_taken' => ['nullable', 'string'],
-            'parts_used' => ['nullable', 'string'],
-            'maintenance_cost' => ['nullable', 'numeric', 'min:0'],
-            'progress_status' => ['nullable', Rule::in(['Assigned', 'Under Repair', 'On Hold - Awaiting Parts', 'For Verification', 'Completed'])],
-            'remarks' => ['nullable', 'string'],
-        ], [
-            'source_vehicle_id.different' => 'A vehicle cannot be the source of its own part.',
-        ]);
-
-        if (isset($data['maintenance_type'])) {
-            $data['maintenance_type'] = MaintenanceType::resolve($data['maintenance_type']);
-        }
-
-        if ($request->hasFile('receipt')) {
-            $data['receipt_url'] = $this->storeUploadedImage($request->file('receipt'), 'maintenance-receipts');
-        }
-        unset($data['receipt']);
-
-        // Only log the donor-vehicle history the moment source_vehicle_id is
-        // newly set or changed to a different vehicle — not on every
-        // unrelated edit to this record, which would spam that vehicle's
-        // history with duplicate entries.
-        $previousSourceVehicleId = $record->source_vehicle_id;
-
-        if (($data['progress_status'] ?? null) === 'Completed' && $request->user()->hasRole('Maintenance Personnel') && !$request->user()->hasRole('Admin')) {
-            $data['progress_status'] = 'For Verification';
-            $data['date_completed'] = null;
-            $data['verification_result'] = null;
-            $data['verification_notes'] = null;
-            $data['verified_by'] = null;
-            $data['verified_at'] = null;
-        }
-
-        // Production-readiness audit (2026-10-05, P0) — removed the
-        // "receipt/photo attached = instantly Completed, no Custodian check"
-        // shortcut entirely. Completing a record is confirmMaintenance()'s
-        // job (record.confirm), which already correctly requires a passed
-        // Custodian verification and stamps confirmed_by/confirmed_at/vehicle
-        // status — this generic edit endpoint no longer sets 'Completed'
-        // directly, so it can't produce a "Completed" record with none of
-        // that bookkeeping. A receipt/photo can still be attached here as
-        // evidence; it just doesn't finalize anything by itself anymore.
-        if (($data['progress_status'] ?? null) === 'Completed') {
-            abort(422, 'Use the Confirm action to complete a maintenance record, not a direct edit — it needs to have passed Custodian verification first.');
-        }
-
-        // #13 — edit-trail: capture a field-level before/after diff on the
-        // sensitive fields (dates, cost, status, external vendor/warranty).
-        // Backdating and cost edits are now allowed, so "who changed what from
-        // what to what" must be on the record, not just "it was edited".
-        $tracked = ['date_started', 'date_completed', 'maintenance_cost', 'progress_status', 'is_external', 'external_vendor', 'warranty_until'];
-        $changes = [];
-        foreach ($tracked as $field) {
-            if (array_key_exists($field, $data)) {
-                $before = $record->getOriginal($field);
-                $after = $data[$field];
-                if ((string) $before !== (string) $after) {
-                    $changes[] = "{$field}: '" . ($before ?? '—') . "' -> '" . ($after ?? '—') . "'";
-                }
-            }
-        }
-
-        $record->update($data);
-
-        if ($record->issue_report_id) {
-            $record->issueReport()->update([
-                'status' => $record->progress_status === 'Completed' ? 'Resolved' : 'In Maintenance',
-            ]);
-        }
-
-        $this->history($record->vehicle, 'Maintenance Updated', "Maintenance #{$record->maintenance_id} was updated to {$record->progress_status}.", 'vehicle_maintenance_records', $record->maintenance_id, $request);
-        $detail = "Updated maintenance #{$record->maintenance_id}" . (count($changes) ? ' — ' . implode('; ', $changes) : '');
-        $this->log($request, 'Edit', 'Vehicle Maintenance Records', $record->maintenance_id, $detail);
-
-        // Same cannibalization history as on create — only fires when
-        // source_vehicle_id is newly set or changed, not on unrelated edits.
-        if (array_key_exists('source_vehicle_id', $data) && $data['source_vehicle_id'] && (int) $data['source_vehicle_id'] !== (int) $previousSourceVehicleId) {
-            $sourceVehicle = Vehicle::find($data['source_vehicle_id']);
-            if ($sourceVehicle) {
-                $partDescription = $record->parts_used ?: 'A part';
-                $this->history(
-                    $sourceVehicle,
-                    'Part Removed (Cannibalized)',
-                    "{$partDescription} was removed from {$sourceVehicle->vehicle_name} for use on {$record->vehicle->vehicle_name} — see Maintenance Record #{$record->maintenance_id}.",
-                    'vehicle_maintenance_records',
-                    $record->maintenance_id,
-                    $request
-                );
-            }
-        }
-
-        return $record->fresh(['vehicle.category', 'sourceVehicle', 'issueReport', 'maintenancePersonnel', 'verifiedBy', 'confirmedBy']);
-    }
-
-    public function verifyMaintenance(Request $request, VehicleMaintenanceRecord $record)
-    {
-        $this->requireAbility($request, 'record.verify');
-
-        abort_unless(
-            $record->progress_status === 'For Verification',
-            422,
-            'This maintenance record is not awaiting verification.'
-        );
-
-        // A Pass leaves progress_status at 'For Verification' (Admin still
-        // has to Confirm) — without this guard, a second Custodian (or the
-        // same one again) could submit another verdict in that window and
-        // silently overwrite the first one, with no trace it ever happened.
-        // Only one verdict counts; if it genuinely needs redoing, Admin
-        // must Reopen it first, which clears this back to null.
-        abort_unless(
-            $record->verification_result === null,
-            409,
-            'This record has already been verified. An Admin needs to Reopen it before it can be re-verified.'
-        );
-
-        // Independent check is the entire point of this step — a Custodian
-        // who also performed the repair (dual-role accounts can) can't be
-        // the one who signs off on their own work. Someone else with the
-        // Custodian hat, or Admin via the fast-close path, has to instead.
-        abort_if(
-            $record->maintenance_personnel_id === $request->user()->id,
-            403,
-            'You performed this repair — another Custodian needs to verify it.'
-        );
-
-        $data = $request->validate([
-            'verification_result' => ['required', Rule::in(['Passed', 'Failed'])],
-            'verification_notes' => ['nullable', 'string'],
-        ]);
-
-        DB::transaction(function () use ($record, $data, $request) {
-            $passed = $data['verification_result'] === 'Passed';
-
-            $record->update([
-                'progress_status' => $passed ? 'For Verification' : 'Under Repair',
-                'verification_result' => $data['verification_result'],
-                'verification_notes' => $data['verification_notes'] ?? null,
-                'verified_by' => $request->user()->id,
-                'verified_at' => now(),
-            ]);
-
-            if ($record->issueReport) {
-                $record->issueReport->update([
-                    'status' => $passed ? 'In Maintenance' : 'Under Review',
-                ]);
-            }
-
-            $record->vehicle->update([
-                'status' => 'Under Maintenance',
-                'condition' => $passed ? 'Needs Inspection' : 'Needs Repair',
-            ]);
-
-            $activity = $passed ? 'Repair Verification Passed' : 'Repair Verification Failed';
-            $this->history($record->vehicle, $activity, "Custodian marked maintenance #{$record->maintenance_id} as {$data['verification_result']}.", 'vehicle_maintenance_records', $record->maintenance_id, $request);
-            $this->log($request, 'Edit', 'Vehicle Maintenance Records', $record->maintenance_id, "{$activity} for maintenance #{$record->maintenance_id}");
-        });
-
-        return $record->fresh(['vehicle.category', 'issueReport', 'maintenancePersonnel', 'verifiedBy', 'confirmedBy']);
-    }
-
-    public function confirmMaintenance(Request $request, VehicleMaintenanceRecord $record)
-    {
-        $this->requireAbility($request, 'record.confirm');
-
-        abort_unless(
-            $record->progress_status === 'For Verification' && $record->verification_result === 'Passed',
-            422,
-            'This maintenance record has not passed Custodian verification yet.'
-        );
-
-        $data = $request->validate([
-            'confirmed' => ['required', 'boolean'],
-            'remarks' => ['nullable', 'string'],
-        ]);
-
-        DB::transaction(function () use ($record, $data, $request) {
-            if ($data['confirmed']) {
-                $record->update([
-                    'progress_status' => 'Completed',
-                    'date_completed' => $record->date_completed ?? now()->toDateString(),
-                    'confirmed_by' => $request->user()->id,
-                    'confirmed_at' => now(),
-                    'remarks' => $data['remarks'] ?? $record->remarks,
-                ]);
-
-                $record->vehicle->update([
-                    'status' => 'Available',
-                    'condition' => 'Good',
-                    'estimated_return_date' => null, // back in service — clear the forecast estimate
-                ]);
-
-                if ($record->issueReport) {
-                    $record->issueReport->update(['status' => 'Resolved']);
-                }
-
-                $this->history($record->vehicle, 'Ticket Closed', "Maintenance #{$record->maintenance_id} was confirmed and closed.", 'vehicle_maintenance_records', $record->maintenance_id, $request);
-                $this->log($request, 'Edit', 'Vehicle Maintenance Records', $record->maintenance_id, "Confirmed maintenance #{$record->maintenance_id}");
-
-                return;
-            }
-
-            $record->update([
-                'progress_status' => 'Under Repair',
-                // Clear the old verdict — otherwise it lingers as "Passed"
-                // forever and verifyMaintenance()'s re-verification guard
-                // would permanently block a fresh check once the rework is
-                // actually done and this comes back to 'For Verification'.
-                'verification_result' => null,
-                'verification_notes' => null,
-                'verified_by' => null,
-                'verified_at' => null,
-                'remarks' => $data['remarks'] ?? $record->remarks,
-            ]);
-
-            $record->vehicle->update([
-                'status' => 'Under Maintenance',
-                'condition' => 'Needs Repair',
-            ]);
-
-            if ($record->issueReport) {
-                $record->issueReport->update(['status' => 'Under Review']);
-            }
-
-            $this->history($record->vehicle, 'Ticket Reopened', "Maintenance #{$record->maintenance_id} was reopened for more work.", 'vehicle_maintenance_records', $record->maintenance_id, $request);
-            $this->log($request, 'Edit', 'Vehicle Maintenance Records', $record->maintenance_id, "Reopened maintenance #{$record->maintenance_id}");
-        });
-
-        return $record->fresh(['vehicle.category', 'issueReport', 'maintenancePersonnel', 'verifiedBy', 'confirmedBy']);
-    }
-
-    /**
-     * Decision-close — the Maintenance Record counterpart to the ticket
-     * workflow's decision-close (TicketController::closeTicket). Admin ends
-     * the record NOW without waiting for Custodian verification, but on the
-     * same two conditions tickets already impose:
-     *
-     *   1. a mandatory reason — the record must say WHY it skipped verification
-     *   2. an explicit fit-for-service call — Admin decides whether the
-     *      vehicle actually goes back into rotation, rather than it being
-     *      assumed just because the paperwork closed
-     *
-     * verification_result is deliberately left NULL. A decision-close must
-     * never masquerade as a passed verification — "Completed with no
-     * verification result" is exactly how the UI spots and flags one.
-     */
-    public function decisionCloseMaintenance(Request $request, VehicleMaintenanceRecord $record)
-    {
-        $this->requireAbility($request, 'record.decision_close');
-
-        abort_if(
-            $record->progress_status === 'Completed',
-            422,
-            'This maintenance record is already completed.'
-        );
-
-        // A record that already PASSED verification has nothing to skip — it
-        // should go through the normal confirm path so the pass is honoured
-        // instead of being overwritten by an "unverified" close.
-        abort_if(
-            $record->verification_result === 'Passed',
-            422,
-            'This record already passed Custodian verification — use Confirm instead.'
-        );
-
-        $data = $request->validate([
-            'closure_reason'      => ['required', 'string'],
-            'returned_to_service' => ['required', 'boolean'],
-        ], [
-            'closure_reason.required' => 'A reason is required to close this without Custodian verification.',
-            'returned_to_service.required' => 'State whether the vehicle is fit to return to service before closing.',
-        ]);
-
-        DB::transaction(function () use ($record, $data, $request) {
-            $returnToService = (bool) $data['returned_to_service'];
-
-            $record->update([
-                'progress_status' => 'Completed',
-                'date_completed'  => $record->date_completed ?? now()->toDateString(),
-                'closure_reason'  => $data['closure_reason'],
-                // Admin confirmed the DECISION, not the workmanship — stamping
-                // this keeps "who ended this and when" answerable, while
-                // verification_result staying null keeps it honest about the
-                // fact nobody independently checked the work.
-                'confirmed_by'    => $request->user()->id,
-                'confirmed_at'    => now(),
-            ]);
-
-            $record->vehicle->update($returnToService
-                ? ['status' => 'Available', 'condition' => 'Good', 'estimated_return_date' => null]
-                : ['status' => 'Under Maintenance', 'condition' => 'Needs Repair']);
-
-            // Only resolve the originating report if the vehicle was actually
-            // judged fit — otherwise the problem still stands and the report
-            // must stay visible instead of quietly closing with the record.
-            if ($record->issueReport) {
-                $record->issueReport->update(['status' => $returnToService ? 'Resolved' : 'Under Review']);
-            }
-
-            // The Custodians had this in their Pending Verifications queue.
-            // Setting progress_status to Completed drops it out of that list
-            // on its own, but they'd never know why it vanished.
-            $this->notifyCustodians(
-                'Verification No Longer Needed',
-                "Admin closed maintenance #{$record->maintenance_id} ({$record->vehicle->vehicle_name}) without verification. Reason: {$data['closure_reason']}",
-                'maintenance_verification_withdrawn',
-                $record->vehicle->barangay_id
-            );
-
-            $serviceNote = $returnToService ? 'Vehicle returned to service.' : 'Vehicle kept out of service.';
-            $this->history(
-                $record->vehicle,
-                'Maintenance Closed Without Verification',
-                "Maintenance #{$record->maintenance_id} was closed by Admin without Custodian verification. Reason: {$data['closure_reason']} {$serviceNote}",
-                'vehicle_maintenance_records',
-                $record->maintenance_id,
-                $request
-            );
-            $this->log($request, 'Edit', 'Vehicle Maintenance Records', $record->maintenance_id, "Decision-closed maintenance #{$record->maintenance_id} without verification — {$data['closure_reason']}");
-        });
-
-        return $record->fresh(['vehicle.category', 'sourceVehicle', 'issueReport', 'maintenancePersonnel', 'verifiedBy', 'confirmedBy']);
-    }
-
     public function schedules(Request $request)
     {
         $user = $request->user();
@@ -2442,89 +1557,6 @@ class FleetController extends Controller
         }
 
         return $query->orderBy('scheduled_date')->orderBy('scheduled_time')->get();
-    }
-
-    // A Custodian's nudge that a vehicle is due for preventive maintenance.
-    // Books nothing — Admin owns the calendar and decides whether to schedule it.
-    public function suggestSchedule(Request $request)
-    {
-        $this->requireAbility($request, 'schedule.suggest');
-
-        $data = $request->validate([
-            'vehicle_id' => ['required', 'integer'],
-            'maintenance_type' => ['required', 'string', 'max:150'],
-            'scheduled_date' => ['nullable', 'date'],
-            'notes' => ['nullable', 'string', 'max:1000'],
-        ]);
-
-        // Vehicle carries the barangay scope, so another barangay's id 404s.
-        $vehicle = Vehicle::findOrFail($data['vehicle_id']);
-        $who = $request->user()->name;
-        $when = !empty($data['scheduled_date']) ? ' around ' . \Illuminate\Support\Carbon::parse($data['scheduled_date'])->format('M j, Y') : '';
-        $notes = !empty($data['notes']) ? " Note: {$data['notes']}" : '';
-
-        $this->notifyAdmins(
-            'Maintenance Schedule Suggested',
-            "{$who} suggests scheduling {$data['maintenance_type']} for {$vehicle->vehicle_name}{$when}.{$notes}",
-            'schedule_suggested',
-            $vehicle->barangay_id,
-            ['vehicle_id' => $vehicle->vehicle_id]
-        );
-        $this->log($request, 'Suggest Schedule', 'Maintenance Schedule', $vehicle->vehicle_id, "Suggested {$data['maintenance_type']} for {$vehicle->vehicle_name}.");
-
-        return response()->json(['message' => 'Suggestion sent to Admin.'], 201);
-    }
-
-    // Admin suspects a problem but may not report or ticket it themselves —
-    // this asks the Custodians to go look, and opens the vehicle for them.
-    public function requestInspection(Request $request, Vehicle $vehicle)
-    {
-        $this->requireAbility($request, 'vehicle.request_inspection');
-
-        $data = $request->validate(['note' => ['nullable', 'string', 'max:1000']]);
-
-        $hasCustodian = User::where('barangay_id', $vehicle->barangay_id)->havingRole('Custodian')->where('is_active', true)->exists();
-        abort_unless($hasCustodian, 422, 'There is no active Custodian in this barangay to notify.');
-
-        $note = !empty($data['note']) ? " Note: {$data['note']}" : '';
-        $this->notifyCustodians(
-            'Inspection Requested',
-            "{$request->user()->name} asks you to physically inspect {$vehicle->vehicle_name} ({$vehicle->plate_number}).{$note}",
-            'inspection_requested',
-            $vehicle->barangay_id,
-            ['vehicle_id' => $vehicle->vehicle_id]
-        );
-        $this->log($request, 'Request Inspection', 'Vehicles', $vehicle->vehicle_id, "Requested a Custodian inspection of {$vehicle->vehicle_name}.");
-
-        return response()->json(['message' => 'Custodians notified.'], 201);
-    }
-
-    // Maintenance Personnel can't open a ticket, but a technical finding often
-    // warrants one — this points the Custodians at the exact issue to do it.
-    public function recommendTicket(Request $request, VehicleIssueReport $issue)
-    {
-        $this->requireAbility($request, 'issue.recommend_ticket');
-
-        abort_unless(
-            in_array($issue->status, ['Pending', 'Under Review'], true) && !$issue->maintenanceTicket,
-            422,
-            'This issue already has a ticket or is no longer open.'
-        );
-
-        $data = $request->validate(['note' => ['nullable', 'string', 'max:1000']]);
-        $vehicle = $issue->vehicle;
-        $note = !empty($data['note']) ? " Note: {$data['note']}" : '';
-
-        $this->notifyCustodians(
-            'Maintenance Ticket Recommended',
-            "{$request->user()->name} recommends a maintenance ticket for {$vehicle->vehicle_name} — {$issue->issue_type}.{$note}",
-            'ticket_recommended',
-            $vehicle->barangay_id,
-            ['issue_report_id' => $issue->issue_report_id]
-        );
-        $this->log($request, 'Recommend Ticket', 'Issue Reports', $issue->issue_report_id, "Recommended a maintenance ticket for issue #{$issue->issue_report_id}.");
-
-        return response()->json(['message' => 'Custodians notified.'], 201);
     }
 
     public function storeSchedule(Request $request)
@@ -3006,13 +2038,6 @@ class FleetController extends Controller
                 ->with('category')
                 ->when($request->filled('location'), fn ($q) => $q->where('current_location', $data['location']))
                 ->get(),
-            'Vehicle Issue Report' => VehicleIssueReport::query()
-                ->with(['vehicle.category', 'reportedBy'])
-                ->when($request->filled('issue_type'), fn ($q) => $q->where('issue_type', $data['issue_type']))
-                ->when($request->filled('severity_level'), fn ($q) => $q->where('severity_level', $data['severity_level']))
-                ->when($request->filled('from'), fn ($q) => $q->whereDate('created_at', '>=', $data['from']))
-                ->when($request->filled('to'), fn ($q) => $q->whereDate('created_at', '<=', $data['to']))
-                ->get(),
             // Filtered by when the work actually happened, not when the row
             // was created — those diverge (e.g. a record created at
             // schedule-completion time can reflect older work). Falls back
@@ -3201,72 +2226,4 @@ class FleetController extends Controller
         ], $links));
     }
 
-    private function syncVehicleStatuses()
-    {
-        $vehicles = Vehicle::whereNotIn('status', ['Inactive', 'Decommissioned'])->get();
-        if ($vehicles->isEmpty()) {
-            return;
-        }
-
-        // Batch everything up front (3 queries total) instead of 3 queries per
-        // vehicle — this runs on every dashboard/vehicle-list request.
-        $vehicleIds = $vehicles->pluck('vehicle_id');
-        $maintenanceTicketVehicleIds = \App\Models\MaintenanceTicket::whereIn('vehicle_id', $vehicleIds)
-            ->whereNotIn('status', ['Closed', 'Cancelled'])
-            ->pluck('vehicle_id')
-            ->flip();
-        $activeRecordVehicleIds = VehicleMaintenanceRecord::whereIn('vehicle_id', $vehicleIds)
-            ->whereNotIn('progress_status', ['Completed'])
-            ->pluck('vehicle_id')
-            ->flip();
-        $latestIssues = VehicleIssueReport::whereIn('vehicle_id', $vehicleIds)
-            ->orderByDesc('issue_report_id')
-            ->get()
-            ->unique('vehicle_id')
-            ->keyBy('vehicle_id');
-        $unresolvedIssueVehicleIds = VehicleIssueReport::whereIn('vehicle_id', $vehicleIds)
-            ->whereNot('status', 'Resolved')
-            ->pluck('vehicle_id')
-            ->flip();
-
-        foreach ($vehicles as $vehicle) {
-            $hasActiveMaintenance = $activeRecordVehicleIds->has($vehicle->vehicle_id)
-                || $maintenanceTicketVehicleIds->has($vehicle->vehicle_id);
-
-            $latestIssue = $latestIssues->get($vehicle->vehicle_id);
-
-            if ($latestIssue) {
-                if ($latestIssue->status === 'In Maintenance') {
-                    if ($vehicle->status !== 'Under Maintenance' || $vehicle->condition !== 'Needs Repair') {
-                        $vehicle->update([
-                            'status' => 'Under Maintenance',
-                            'condition' => 'Needs Repair',
-                        ]);
-                    }
-                } elseif (in_array($latestIssue->status, ['Pending', 'Under Review'], true)) {
-                    if (!$hasActiveMaintenance) {
-                        if ($vehicle->status === 'Under Maintenance' || $vehicle->condition !== 'Needs Inspection') {
-                            $vehicle->update([
-                                'status' => 'Available',
-                                'condition' => 'Needs Inspection',
-                                'estimated_return_date' => null,
-                            ]);
-                        }
-                    }
-                } elseif ($latestIssue->status === 'Resolved') {
-                    $hasOtherActiveIssues = $unresolvedIssueVehicleIds->has($vehicle->vehicle_id);
-
-                    if (!$hasOtherActiveIssues && !$hasActiveMaintenance) {
-                        if ($vehicle->status === 'Under Maintenance' || $vehicle->condition !== 'Good') {
-                            $vehicle->update([
-                                'status' => 'Available',
-                                'condition' => 'Good',
-                                'estimated_return_date' => null,
-                            ]);
-                        }
-                    }
-                }
-            }
-        }
-    }
 }

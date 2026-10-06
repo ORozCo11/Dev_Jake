@@ -41,7 +41,6 @@ return [
     'vehicle.decommission' => ['Admin'],
     'vehicle.readiness_check' => ['Custodian'],
     'vehicle.mark_available' => ['Admin', 'Custodian'],
-    'vehicle.update_location' => ['Admin'],
     // Custodian gets a "Vehicle History" sidebar entry (role-realignment
     // decision 13) — they're the ones day-to-day with the vehicle, so
     // reading its timeline isn't a management-only concern the way editing
@@ -49,7 +48,6 @@ return [
     'vehicle.view_history' => ['Admin', 'Custodian'],
     // Admin who suspects a problem can't report an issue or open a ticket
     // themselves — they ask the Custodian to physically inspect instead.
-    'vehicle.request_inspection' => ['Admin'],
 
     // Hubs
     'hub.create' => ['Admin'],
@@ -67,22 +65,16 @@ return [
     'condition.delete' => ['Admin'],
 
     // Issue reports
-    'issue.view' => ['Admin', 'Custodian', 'Maintenance Personnel'],
     // Admin does not originate reports (spec: Admin can view/manage them, and
     // asks a Custodian to inspect via vehicle.request_inspection instead).
-    'issue.create' => ['Custodian', 'Maintenance Personnel'],
     // Maintenance Personnel can't create a ticket, but can ask the Custodian
     // to open one from a technical finding.
-    'issue.recommend_ticket' => ['Maintenance Personnel'],
     // Phase B4 — Maintenance Personnel no longer edits issue reports (their
     // Status+Remarks form and the whole module are removed); Custodian's
     // existing own-report-while-Pending narrowing is unaffected.
-    'issue.edit' => ['Admin', 'Custodian'],
-    'issue.delete' => ['Admin'],
     // Admin's one next step on an open report that doesn't need a ticket.
     // (Turning a report into a ticket is a Custodian's proposal; Admin asking a
     // Custodian to propose would just be Admin asking themselves — circular.)
-    'issue.dismiss' => ['Admin'],
 
     // Vehicle documents — production-readiness final stabilization pass
     // (2026-10-05, P0): Maintenance Personnel has NO Vehicle Documents
@@ -106,11 +98,6 @@ return [
     // manual/historical entries now; Custodian is read-only and Maintenance
     // Personnel has no involvement at all outside the auto-generated ledger
     // line a confirmed ticket sub-issue creates.
-    'record.create' => ['Admin'],
-    'record.edit' => ['Admin'],
-    'record.verify' => ['Custodian'],
-    'record.confirm' => ['Admin'],
-    'record.decision_close' => ['Admin'],
 
     // Maintenance schedules — Spec §19 (2026-10-06, current): Admin controls
     // create/update/reschedule/cancel; a Custodian only suggests one
@@ -118,7 +105,6 @@ return [
     // FleetController::suggestSchedule()). This reverses an earlier,
     // now-superseded Custodian-owned-creation model.
     'schedule.create' => ['Admin'],
-    'schedule.suggest' => ['Custodian'],
     // Admin-only, per the same 2026-10-06 reversal above — a Custodian no
     // longer edits schedules directly, only suggests one.
     'schedule.edit' => ['Admin'],

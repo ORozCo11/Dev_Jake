@@ -101,28 +101,6 @@ class TicketProposalWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function proposing_a_ticket_from_an_issue_report_links_it_without_re_entering_its_data(): void
-    {
-        $vehicle = $this->vehicle();
-
-        Sanctum::actingAs($this->custodian, ['*']);
-        $issue = $this->postJson('/api/issues', [
-            'vehicle_id' => $vehicle->vehicle_id,
-            'issue_type' => 'Overheating',
-            'issue_description' => 'Runs hot after 10 minutes.',
-            'severity_level' => 'High',
-        ])->assertCreated()->json();
-
-        $ticket = $this->propose($vehicle, ['issue_report_id' => $issue['issue_report_id']]);
-
-        $this->assertSame($issue['issue_report_id'], $ticket->issue_report_id);
-        $this->assertDatabaseHas('vehicle_issue_reports', [
-            'issue_report_id' => $issue['issue_report_id'],
-            'status' => 'In Maintenance',
-        ]);
-    }
-
-    #[Test]
     public function admin_and_maintenance_personnel_cannot_propose_a_ticket(): void
     {
         $vehicle = $this->vehicle();

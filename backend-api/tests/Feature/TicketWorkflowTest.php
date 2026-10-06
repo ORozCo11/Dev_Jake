@@ -289,41 +289,6 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function proposing_a_ticket_from_an_issue_report_links_them_both_ways(): void
-    {
-        $vehicle = $this->vehicle();
-        $issue = VehicleIssueReport::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'issue_type' => 'Engine Problem',
-            'issue_description' => 'Overheating on long drives.',
-            'severity_level' => 'High',
-            'reported_by' => $this->custodian->id,
-            'status' => 'Pending',
-        ]);
-
-        Sanctum::actingAs($this->custodian, ['*']);
-        $ticketId = $this->postJson('/api/tickets/propose', [
-            'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'Engine Problem',
-            'ticket_description' => $issue->issue_description,
-            'priority' => 'High',
-            'issue_report_id' => $issue->issue_report_id,
-            'sub_issues' => [['title' => 'Overheating on long drives']],
-        ])->assertCreated()->json('ticket_id');
-
-        // The issue moves out of Pending as soon as it's proposed, not only
-        // once an Admin approves — same timing createTicket() used to have.
-        $this->assertSame('In Maintenance', $issue->fresh()->status);
-
-        // ...and the /issues listing exposes the link back to that ticket, so
-        // the Issue Report detail page can show "Linked Ticket".
-        $listed = collect($this->getJson('/api/issues')->assertOk()->json())
-            ->firstWhere('issue_report_id', $issue->issue_report_id);
-        $this->assertNotNull($listed['maintenance_ticket'] ?? null);
-        $this->assertSame($ticketId, $listed['maintenance_ticket']['ticket_id']);
-    }
-
-    #[Test]
     public function sub_issues_can_go_to_different_mechanics_and_progress_counts_correctly(): void
     {
         $vehicle = $this->vehicle();
@@ -602,29 +567,6 @@ class TicketWorkflowTest extends TestCase
 
         Sanctum::actingAs($this->custodian, ['*']);
         $this->getJson('/api/dashboard')->assertOk()->assertJsonPath('badge_counts.ticketVerifications', 1);
-    }
-
-    #[Test]
-    public function a_mechanic_cannot_create_a_standalone_maintenance_record_at_all(): void
-    {
-        // Phase B4 — standalone Maintenance Records are now an Admin-only
-        // manual/historical ledger; a Maintenance Personnel account has no
-        // create/edit access to them whatsoever (they log real repairs
-        // through a ticket sub-issue instead). This supersedes the older
-        // version of this test, which exercised the "non-Admin marking
-        // their own repair Completed gets silently downgraded to For
-        // Verification" downgrade inside updateMaintenanceRecord() — that
-        // path is now unreachable by anyone but Admin, since Admin is the
-        // only role able to reach the endpoint in the first place.
-        $vehicle = $this->vehicle();
-
-        Sanctum::actingAs($this->mechanic, ['*']);
-        $this->postJson('/api/maintenance-records', [
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'problem_reason' => 'Routine oil change',
-            'progress_status' => 'Under Repair',
-        ])->assertForbidden();
     }
 
     #[Test]
@@ -1024,7 +966,7 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function approving_a_cannibalized_repair_releases_it_to_inspection_and_opens_an_issue_report_on_the_donor(): void
+    public function approving_a_cannibalized_repair_releases_it_to_inspection_and_flags_the_donor(): void
     {
         $vehicle = $this->vehicle();
         $donor = $this->vehicle(['vehicle_name' => 'Donor Vehicle']);
@@ -1042,19 +984,13 @@ class TicketWorkflowTest extends TestCase
         $this->assertSame('Approved', $subIssue->cannibalization_status);
         $this->assertSame($this->admin->id, $subIssue->cannibalization_reviewed_by);
         $this->assertNotNull($subIssue->cannibalization_reviewed_at);
-        $this->assertNotNull($subIssue->cannibalization_issue_report_id);
 
         $donor->refresh();
         $this->assertSame('Needs Inspection', $donor->condition);
-        $this->assertDatabaseHas('vehicle_issue_reports', [
-            'issue_report_id' => $subIssue->cannibalization_issue_report_id,
-            'vehicle_id' => $donor->vehicle_id,
-            'status' => 'Pending',
-        ]);
         $this->assertDatabaseHas('vehicle_histories', [
             'vehicle_id' => $donor->vehicle_id,
-            'activity_type' => 'Issue Reported',
-            'related_record_id' => (string) $subIssue->cannibalization_issue_report_id,
+            'activity_type' => 'Part Removed',
+            'related_record_id' => (string) $ticket->ticket_id,
         ]);
 
         // Now released to the normal pipeline — Custodian can verify it.
@@ -1185,20 +1121,6 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function declining_a_proposal_puts_its_linked_issue_report_back_to_pending(): void
-    {
-        $vehicle = $this->vehicle();
-        $issue = $this->pendingIssue($vehicle);
-        $ticketId = $this->propose($vehicle, ['issue_report_id' => $issue->issue_report_id])->assertCreated()->json('ticket_id');
-        $this->assertSame('In Maintenance', $issue->fresh()->status);
-
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticketId}/decline", ['decline_reason' => 'Not needed.'])->assertOk();
-
-        $this->assertSame('Pending', $issue->fresh()->status);
-    }
-
-    #[Test]
     public function a_proposal_awaiting_approval_cannot_be_cancelled(): void
     {
         $ticketId = $this->propose($this->vehicle())->assertCreated()->json('ticket_id');
@@ -1206,16 +1128,6 @@ class TicketWorkflowTest extends TestCase
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$ticketId}/cancel", [])->assertStatus(422);
         $this->assertSame('Pending Approval', MaintenanceTicket::find($ticketId)->status);
-    }
-
-    #[Test]
-    public function a_proposal_cannot_link_another_vehicles_issue_or_an_already_handled_one(): void
-    {
-        $vehicle = $this->vehicle();
-        $other = $this->vehicle();
-
-        $this->propose($vehicle, ['issue_report_id' => $this->pendingIssue($other)->issue_report_id])->assertStatus(422);
-        $this->propose($vehicle, ['issue_report_id' => $this->pendingIssue($vehicle, 'In Maintenance')->issue_report_id])->assertStatus(422);
     }
 
     #[Test]

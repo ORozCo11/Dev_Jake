@@ -123,7 +123,6 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::put('/vehicles/{vehicle}/decommission', [FleetController::class, 'decommissionVehicle']);
     Route::get('/vehicles/{vehicle}/reliability', [FleetController::class, 'vehicleReliability']);
     Route::get('/vehicles/{vehicle}/readiness', [FleetController::class, 'vehicleReadiness']);
-    Route::post('/vehicles/{vehicle}/request-inspection', [FleetController::class, 'requestInspection']);
     Route::get('/vehicles/{vehicle}/usage', [VehicleUsageController::class, 'index']);
     Route::post('/vehicles/{vehicle}/usage', [VehicleUsageController::class, 'start']);
     Route::put('/usage-logs/{log}/end', [VehicleUsageController::class, 'end']);
@@ -136,8 +135,6 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::put('/documents/{document}', [FleetController::class, 'updateVehicleDocument']);
     Route::delete('/documents/{document}', [FleetController::class, 'destroyVehicleDocument']);
 
-    Route::get('/locations', [FleetController::class, 'locations']);
-    Route::post('/locations', [FleetController::class, 'storeLocation']);
 
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
@@ -184,27 +181,12 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::put('/conditions/{condition}', [FleetController::class, 'updateCondition']);
     Route::delete('/conditions/{condition}', [FleetController::class, 'deleteCondition']);
 
-    Route::get('/issues', [FleetController::class, 'issues']);
-    Route::get('/vehicles/{vehicle}/open-issues', [FleetController::class, 'openIssuesForVehicle']);
-    Route::get('/issues/{issue}', [FleetController::class, 'showIssue']);
-    Route::post('/issues/{issue}/recommend-ticket', [FleetController::class, 'recommendTicket']);
-    Route::post('/issues', [FleetController::class, 'storeIssue']);
-    Route::put('/issues/{issue}', [FleetController::class, 'updateIssue']);
-    Route::delete('/issues/{issue}', [FleetController::class, 'destroyIssue']);
-    Route::put('/issues/{issue}/dismiss', [FleetController::class, 'dismissIssue']);
-    Route::delete('/issue-attachments/{attachment}', [FleetController::class, 'destroyIssueAttachment']);
 
     Route::get('/maintenance-records', [FleetController::class, 'maintenanceRecords']);
     Route::get('/maintenance-records/{record}', [FleetController::class, 'showMaintenanceRecord']);
-    Route::post('/maintenance-records', [FleetController::class, 'storeMaintenanceRecord']);
-    Route::put('/maintenance-records/{record}', [FleetController::class, 'updateMaintenanceRecord']);
-    Route::put('/maintenance-records/{record}/verify', [FleetController::class, 'verifyMaintenance']);
-    Route::put('/maintenance-records/{record}/confirm', [FleetController::class, 'confirmMaintenance']);
-    Route::put('/maintenance-records/{record}/decision-close', [FleetController::class, 'decisionCloseMaintenance']);
 
     Route::get('/maintenance-schedules', [FleetController::class, 'schedules']);
     Route::post('/maintenance-schedules', [FleetController::class, 'storeSchedule']);
-    Route::post('/maintenance-schedules/suggest', [FleetController::class, 'suggestSchedule']);
     Route::put('/maintenance-schedules/{schedule}', [FleetController::class, 'updateSchedule']);
     Route::put('/maintenance-schedules/{schedule}/reassign', [FleetController::class, 'reassignSchedule']);
     Route::put('/maintenance-schedules/{schedule}/complete', [FleetController::class, 'completeSchedule']);

@@ -491,58 +491,6 @@ class FleetIntelligenceTest extends TestCase
 
     // ---- Regression: resolving an issue report must not un-retire a vehicle -
 
-    #[Test]
-    public function resolving_an_issue_report_does_not_reactivate_a_decommissioned_vehicle(): void
-    {
-        $vehicle = $this->vehicle();
-        $vehicle->update([
-            'status' => 'Decommissioned',
-            'condition' => 'Needs Repair',
-            'decommission_reason' => 'retired',
-            'decommissioned_by' => $this->admin->id,
-            'decommissioned_at' => now(),
-        ]);
-
-        // An old issue report filed before the vehicle was retired.
-        $issue = VehicleIssueReport::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'issue_type' => 'Engine Problem',
-            'issue_description' => 'x',
-            'severity_level' => 'Low',
-            'reported_by' => $this->custodian->id,
-            'status' => 'Pending',
-        ]);
-
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/issues/{$issue->issue_report_id}", ['status' => 'Resolved'])->assertOk();
-
-        $vehicle->refresh();
-        $this->assertSame('Decommissioned', $vehicle->status, 'A retired vehicle must stay retired.');
-        $this->assertSame('Needs Repair', $vehicle->condition);
-    }
-
-    #[Test]
-    public function resolving_an_issue_report_still_updates_an_active_vehicle(): void
-    {
-        $vehicle = $this->vehicle(overrides: ['status' => 'Under Maintenance', 'condition' => 'Needs Repair']);
-
-        $issue = VehicleIssueReport::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'issue_type' => 'Engine Problem',
-            'issue_description' => 'x',
-            'severity_level' => 'Low',
-            'reported_by' => $this->custodian->id,
-            'status' => 'In Maintenance',
-        ]);
-
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/issues/{$issue->issue_report_id}", ['status' => 'Resolved'])->assertOk();
-
-        $vehicle->refresh();
-        $this->assertSame('Available', $vehicle->status);
-        $this->assertSame('Good', $vehicle->condition);
-    }
-
     // ---- Regression: mark-available needs server-side proof ---------------
 
     #[Test]

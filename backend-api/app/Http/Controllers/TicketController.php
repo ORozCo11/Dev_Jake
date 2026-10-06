@@ -204,7 +204,6 @@ class TicketController extends Controller
 
         $data = $request->validate([
             'vehicle_id'          => ['required', 'exists:vehicles,vehicle_id'],
-            'issue_report_id'     => ['nullable', 'exists:vehicle_issue_reports,issue_report_id'],
             'condition_check_id'  => ['nullable', 'exists:vehicle_condition_checks,condition_check_id'],
             // Ignored if sent — the server composes the "MT-0010 — Vehicle — Issue" title.
             'ticket_title'        => ['nullable', 'string', 'max:255'],
@@ -273,11 +272,6 @@ class TicketController extends Controller
         // Linked records must really belong to this vehicle and not already be
         // in someone's hands — otherwise a proposal could flip another
         // vehicle's report or steal a condition check's ticket link.
-        if (!empty($data['issue_report_id'])) {
-            $linkedIssue = VehicleIssueReport::findOrFail($data['issue_report_id']);
-            abort_unless((int) $linkedIssue->vehicle_id === (int) $data['vehicle_id'], 422, 'That issue report belongs to a different vehicle.');
-            abort_unless(in_array($linkedIssue->status, ['Pending', 'Under Review'], true), 422, 'That issue report is already being handled or resolved.');
-        }
         if (!empty($data['condition_check_id'])) {
             $linkedCheck = VehicleConditionCheck::findOrFail($data['condition_check_id']);
             abort_unless((int) $linkedCheck->vehicle_id === (int) $data['vehicle_id'], 422, 'That condition check belongs to a different vehicle.');
@@ -290,7 +284,7 @@ class TicketController extends Controller
         }
 
         $maintenanceTypes = array_column($data['sub_issues'], 'maintenance_type');
-        $issueType = !empty($data['issue_report_id']) ? optional(VehicleIssueReport::find($data['issue_report_id']))->issue_type : null;
+        $issueType = null;
         $issueSummary = collect($maintenanceTypes)->filter()->first() ?: ($issueType ?: ($data['sub_issues'][0]['title'] ?? 'Maintenance'));
         // Provisional (no number yet) — gets its MT-#### prefix once the row has an id.
         $data['ticket_title'] = "{$vehicle->vehicle_name} — {$issueSummary}";
@@ -334,7 +328,6 @@ class TicketController extends Controller
 
             $ticket = MaintenanceTicket::create([
                 'vehicle_id'              => $data['vehicle_id'],
-                'issue_report_id'         => $data['issue_report_id'] ?? null,
                 'created_by'              => $request->user()->id,
                 'ticket_title'            => $data['ticket_title'],
                 'ticket_description'      => $data['ticket_description'],
@@ -370,12 +363,6 @@ class TicketController extends Controller
                     'external_contact_person' => $repairType === 'external' ? ($data['external_contact_person'] ?? null) : null,
                     'external_estimated_cost' => $repairType === 'external' ? ($data['external_estimated_cost'] ?? null) : null,
                     'status'                 => 'Open',
-                ]);
-            }
-
-            if (!empty($data['issue_report_id'])) {
-                VehicleIssueReport::where('issue_report_id', $data['issue_report_id'])->update([
-                    'status' => 'In Maintenance',
                 ]);
             }
 
@@ -582,9 +569,6 @@ class TicketController extends Controller
         $vehicleName = $ticket->vehicle->vehicle_name;
 
         DB::transaction(function () use ($ticket) {
-            // The proposal flipped its linked Issue Report to In Maintenance;
-            // put it back so the report doesn't look handled with no ticket.
-            $this->resetLinkedIssueReports($ticket, 'Pending');
             $ticket->delete();
         });
 
@@ -1087,33 +1071,23 @@ class TicketController extends Controller
                 'This sub-issue is not awaiting cannibalization approval.'
             );
 
-            // A rejected-then-resubmitted repair to the SAME donor already has
-            // its donor report from the earlier approval — don't add another.
-            $existing = $subIssue->cannibalization_issue_report_id
-                ? VehicleIssueReport::where('issue_report_id', $subIssue->cannibalization_issue_report_id)
-                    ->where('vehicle_id', $donorVehicle->vehicle_id)->first()
-                : null;
-
-            $issue = $existing ?? VehicleIssueReport::create([
-                'vehicle_id'        => $donorVehicle->vehicle_id,
-                'issue_type'        => 'Other',
-                'issue_description' => "Part removed for use on {$vehicleName} (Ticket #{$ticket->ticket_id}: \"{$subIssue->title}\").",
-                'severity_level'    => 'Medium',
-                'reported_by'       => $request->user()->id,
-                'status'            => 'Pending',
-                'remarks'           => 'Auto-created when a cannibalized repair using this vehicle\'s part was approved.',
-            ]);
-
-            if (!$existing) {
-                $donorVehicle->update(['condition' => 'Needs Inspection']);
-
+            // The donor is now missing a part: flag it for a Custodian check and
+            // leave a history entry (once per ticket, even if a rejected repair
+            // is resubmitted against the same donor).
+            $donorVehicle->update(['condition' => 'Needs Inspection']);
+            $alreadyNoted = VehicleHistory::where('vehicle_id', $donorVehicle->vehicle_id)
+                ->where('activity_type', 'Part Removed')
+                ->where('related_table', 'maintenance_tickets')
+                ->where('related_record_id', (string) $ticket->ticket_id)
+                ->exists();
+            if (!$alreadyNoted) {
                 VehicleHistory::create([
-                    'vehicle_id'         => $donorVehicle->vehicle_id,
-                    'activity_type'      => 'Issue Reported',
-                    'description'        => "A part was removed from {$donorVehicle->vehicle_name} for use on {$vehicleName} (Ticket #{$ticket->ticket_id}).",
-                    'related_table'      => 'vehicle_issue_reports',
-                    'related_record_id'  => (string) $issue->issue_report_id,
-                    'updated_by'         => $request->user()->id,
+                    'vehicle_id'        => $donorVehicle->vehicle_id,
+                    'activity_type'     => 'Part Removed',
+                    'description'       => "A part was removed from {$donorVehicle->vehicle_name} for use on {$vehicleName} (Ticket #{$ticket->ticket_id}).",
+                    'related_table'     => 'maintenance_tickets',
+                    'related_record_id' => (string) $ticket->ticket_id,
+                    'updated_by'        => $request->user()->id,
                 ]);
             }
 
@@ -1125,7 +1099,6 @@ class TicketController extends Controller
                 'cannibalization_status'       => 'Approved',
                 'cannibalization_reviewed_by'  => $request->user()->id,
                 'cannibalization_reviewed_at'  => now(),
-                'cannibalization_issue_report_id' => $issue->issue_report_id,
             ]);
 
             $this->log(
@@ -1362,7 +1335,6 @@ class TicketController extends Controller
                 'closing_notes' => $data['closing_notes'] ?? null,
             ]);
 
-            $this->resetLinkedIssueReports($ticket, 'Pending');
             // The job the schedule asked for was abandoned with the ticket.
             VehicleMaintenanceSchedule::where('resulting_ticket_id', $ticket->ticket_id)
                 ->where('status', 'Scheduled')->update(['status' => 'Cancelled']);
@@ -1474,10 +1446,6 @@ class TicketController extends Controller
             'archived_at'         => now(),
         ]);
 
-        if ($ticket->issue_report_id) {
-            VehicleIssueReport::where('issue_report_id', $ticket->issue_report_id)->update(['status' => 'Resolved']);
-        }
-
         $ticket->refresh()->load('subIssues');
         $this->archiveCompleted($ticket, $userId, 'Closed');
         $this->completeLinkedSchedule($ticket, $userId);
@@ -1509,16 +1477,11 @@ class TicketController extends Controller
             'confirmed_at'         => now(),
         ]);
 
-        if ($subIssue->issue_report_id) {
-            VehicleIssueReport::where('issue_report_id', $subIssue->issue_report_id)->update(['status' => 'Resolved']);
-        }
-
         // Unify ledger: every confirmed sub-issue is a line in the
         // single complete maintenance history, same as before.
         if ($subIssue->assigned_mechanic_id) {
             VehicleMaintenanceRecord::create([
                 'vehicle_id'               => $ticket->vehicle_id,
-                'issue_report_id'          => $subIssue->issue_report_id,
                 'maintenance_type'         => $subIssue->maintenance_type ?? 'Repair',
                 'problem_reason'           => $ticket->ticket_title . ': ' . $subIssue->title,
                 'date_started'             => $subIssue->repair_started_at,
@@ -1536,49 +1499,6 @@ class TicketController extends Controller
                 'confirmed_by'             => $subIssue->confirmed_by,
                 'confirmed_at'             => $subIssue->confirmed_at,
             ]);
-        }
-    }
-
-    /**
-     * The "breadcrumb": a deferred defect must not vanish. If the sub-issue
-     * came from a real Issue Report, resurface that same report as Pending
-     * so it's back on the active radar. Otherwise (a defect first found
-     * during inspection, with no formal report) open a fresh one. Returns
-     * the report id either way.
-     */
-    private function createDeferralBreadcrumb(MaintenanceTicket $ticket, TicketSubIssue $subIssue, string $reason, int $userId): ?int
-    {
-        if ($subIssue->issue_report_id) {
-            VehicleIssueReport::where('issue_report_id', $subIssue->issue_report_id)->update([
-                'status'  => 'Pending',
-                'remarks' => "Deferred from Ticket #{$ticket->ticket_id}: {$reason}",
-            ]);
-
-            return $subIssue->issue_report_id;
-        }
-
-        $report = VehicleIssueReport::create([
-            'vehicle_id'        => $ticket->vehicle_id,
-            'issue_type'        => 'Other',
-            'issue_description' => "[Deferred from Ticket #{$ticket->ticket_id}] {$subIssue->title}",
-            'severity_level'    => 'Medium',
-            'reported_by'       => $userId,
-            'status'            => 'Pending',
-            'remarks'           => "Auto-created when this repair was deferred. Reason: {$reason}. Re-open a ticket when it can be addressed.",
-        ]);
-
-        return $report->issue_report_id;
-    }
-
-    private function resetLinkedIssueReports(MaintenanceTicket $ticket, string $status): void
-    {
-        $ids = $ticket->subIssues()->pluck('issue_report_id')
-            ->push($ticket->issue_report_id)
-            ->filter()
-            ->unique();
-
-        if ($ids->isNotEmpty()) {
-            VehicleIssueReport::whereIn('issue_report_id', $ids)->update(['status' => $status]);
         }
     }
 
