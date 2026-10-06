@@ -242,6 +242,11 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     // Phase 3 — Mechanic: Log physical repairs on a sub-issue
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/log-repairs', [TicketController::class, 'logRepairs']);
+    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/external-sent', [TicketController::class, 'markExternalSent']);
+    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/external-returned', [TicketController::class, 'markExternalReturned']);
+    Route::post('/tickets/{ticket}/sub-issues', [TicketController::class, 'addSubIssue']);
+    Route::put('/tickets/{ticket}/sub-issues/{subIssue}', [TicketController::class, 'updateSubIssue']);
+    Route::delete('/tickets/{ticket}/sub-issues/{subIssue}', [TicketController::class, 'deleteSubIssue']);
 
     // Phase 3.5 — Admin: Approve or reject a cannibalized repair
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/approve-cannibalization', [TicketController::class, 'approveCannibalization']);

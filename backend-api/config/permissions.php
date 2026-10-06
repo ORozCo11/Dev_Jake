@@ -165,6 +165,8 @@ return [
     'ticket.reopen_archived' => ['Admin'],
 
     // Sub-issues
+    // Add / rename / remove a not-yet-dispatched sub-issue (Custodian: own ticket only).
+    'subissue.manage' => ['Admin', 'Custodian'],
     'subissue.assign_mechanic' => ['Admin'],
     'subissue.reassign_mechanic' => ['Admin'],
     'subissue.log_repair' => ['Maintenance Personnel'],

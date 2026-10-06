@@ -3221,6 +3221,8 @@ function Workspace() {
               vehicleOptions={lookups.vehicles ?? []}
               onBack={() => returnToModule('ticketWorkOrders')}
               onSubmit={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/log-repairs`, payload, 'Repair logs submitted. Sent for Custodian verification.').then((ok) => { if (ok) returnToModule('ticketWorkOrders'); })}
+              onExternalSend={(row, payload) => ticketAction(`/tickets/${row.ticket_id}/sub-issues/${row.sub_issue_id}/external-sent`, payload, 'Marked as sent to the shop.')}
+              onExternalReturn={(row, payload) => ticketAction(`/tickets/${row.ticket_id}/sub-issues/${row.sub_issue_id}/external-returned`, payload, 'Marked as returned from the shop.')}
               onDirty={() => setHasUnsavedChanges(true)}
             />
           ) : inspectTicketId ? (
@@ -12564,8 +12566,9 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
 // TICKET DETAIL PANEL — shown when admin clicks a ticket row
 // =========================================================================
 
-function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onDeferSubIssue, onCloseTicket, onLogRepairs, onViewIssue, onCancel, onUncancel, onDelete, onRequestConfirmation, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
+function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEditSubIssue, onDeleteSubIssue, onAssignMechanic, onReassignMechanic, onReassignCustodian, onConfirm, onReopenDone, onDeferSubIssue, onCloseTicket, onLogRepairs, onViewIssue, onCancel, onUncancel, onDelete, onRequestConfirmation, onVerify, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
   const [assigningAll, setAssigningAll] = useState(false);
+  const [subDraft, setSubDraft] = useState(null); // { id|null, title, maintenance_type }
   // Which sub-issue's Reassign/Defer inline form is open, if any — replaces
   // the old bulk Reassign/Defer modals with a per-card icon + inline panel
   // (only one sub-issue can have its form open at a time).
@@ -12939,6 +12942,51 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                 </div>
               )}
 
+              {onAddSubIssue && ticket.status === 'Active' && canDo(user, 'subissue.manage') && (hasRole(user, 'Admin') || String(ticket.assigned_custodian_id) === String(userId)) && (
+                <div className="ticket-inline-form" style={{ marginBottom: 10, padding: '10px 12px' }}>
+                  {!subDraft ? (
+                    <button type="button" className="primary-button" onClick={() => setSubDraft({ id: null, title: '', maintenance_type: '' })}>
+                      <Icon name="plus" size={12} /> Add Sub-issue
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="What else is wrong?"
+                        value={subDraft.title}
+                        onChange={(e) => setSubDraft({ ...subDraft, title: e.target.value })}
+                        style={{ flex: '2 1 240px' }}
+                      />
+                      <input
+                        type="text"
+                        list="subissue-maintenance-types"
+                        placeholder="Maintenance type (optional)"
+                        value={subDraft.maintenance_type}
+                        onChange={(e) => setSubDraft({ ...subDraft, maintenance_type: e.target.value })}
+                        style={{ flex: '1 1 180px' }}
+                      />
+                      <datalist id="subissue-maintenance-types">
+                        {(lookups.maintenance_types ?? []).map((t) => <option key={t.name ?? t} value={t.name ?? t} />)}
+                      </datalist>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        disabled={!subDraft.title.trim()}
+                        onClick={async () => {
+                          const payload = { title: subDraft.title.trim(), maintenance_type: subDraft.maintenance_type.trim() || null };
+                          const ok = subDraft.id ? await onEditSubIssue(ticket, subDraft.id, payload) : await onAddSubIssue(ticket, payload);
+                          if (ok !== false) setSubDraft(null);
+                        }}
+                      >
+                        {subDraft.id ? 'Save' : 'Add'}
+                      </button>
+                      <button type="button" className="ghost-button" onClick={() => setSubDraft(null)}>Cancel</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {subIssues.map((si, index) => {
                 const stageBanner = {
                   'Pending Approval': { color: '#d97706', bg: '#fffbeb', text: '#92400e', icon: 'alert', label: 'Cannibalized repair — awaiting Admin approval' },
@@ -12955,7 +13003,14 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
                     <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, flexShrink: 0 }}>{index + 1}</span>
                     <strong style={{ fontSize: '0.9rem' }}>{si.title}</strong>
                     <TicketStatusBadge value={si.status} />
-                  </div>
+                    {onEditSubIssue && ticket.status === 'Active' && si.status === 'Open' && !si.assigned_mechanic_id && canDo(user, 'subissue.manage') && (hasRole(user, 'Admin') || String(ticket.assigned_custodian_id) === String(userId)) && (
+                      <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4 }}>
+                        <button type="button" className="btn-edit-action icon-btn" title="Edit sub-issue" aria-label="Edit sub-issue" onClick={() => setSubDraft({ id: si.sub_issue_id, title: si.title, maintenance_type: si.maintenance_type ?? '' })}><Icon name="edit" size={13} /></button>
+                        {subIssues.length > 1 && (
+                          <button type="button" className="btn-delete-action icon-btn" title="Remove sub-issue" aria-label="Remove sub-issue" onClick={() => onDeleteSubIssue(ticket, si)}><Icon name="trash" size={13} /></button>
+                        )}
+                      </span>
+                    )}                  </div>
 
                   <div className="subissue-body-grid">
                   <div className="subissue-body-main">
@@ -13405,6 +13460,9 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
       userId={userId}
       ticket={ticket}
       lookups={ticketLookups}
+      onAddSubIssue={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues`, payload, 'Sub-issue added.', 'post').then(afterAction)}
+      onEditSubIssue={(t, id, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${id}`, payload, 'Sub-issue updated.').then(afterAction)}
+      onDeleteSubIssue={(t, si) => onRequestConfirmation({ title: 'Remove sub-issue?', message: `"${si.title}" will be removed from this ticket.`, confirmLabel: 'Remove', onConfirm: () => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${si.sub_issue_id}`, {}, 'Sub-issue removed.', 'delete').then(afterAction) })}
       onAssignMechanic={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/assign-mechanic`, payload, 'Mechanic assigned — work order dispatched.').then(afterAction)}
       onReassignMechanic={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reassign-mechanic`, payload, 'Work order reassigned.').then(afterAction)}
       onReassignCustodian={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/reassign-custodian`, payload, 'Custodian reassigned.').then(afterAction)}
@@ -16446,7 +16504,7 @@ function MechanicWorkOrderModule({
   );
 }
 
-function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty }) {
+function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty, onExternalSend, onExternalReturn }) {
   const [repairLogs, setRepairLogs] = useState('');
   const [parts, setParts] = useState([{ name: '', cost: '' }]);
   const [attachment, setAttachment] = useState(null);
@@ -16463,6 +16521,15 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
   // date casts serialize with a time component (ISO datetime) — <input
   // type="date"> needs exactly YYYY-MM-DD or it silently fails to populate.
   const [warrantyUntil, setWarrantyUntil] = useState((ticket?.warranty_until ?? '').slice(0, 10));
+  // Cannibalized part details.
+  const [partNeeded, setPartNeeded] = useState(ticket?.part_needed ?? '');
+  const [partQuantity, setPartQuantity] = useState(ticket?.part_quantity ?? '');
+  const [partCondition, setPartCondition] = useState(ticket?.part_condition ?? '');
+  const [cannibalReason, setCannibalReason] = useState(ticket?.cannibal_reason ?? '');
+  const [partInstalledAt, setPartInstalledAt] = useState((ticket?.part_installed_at ?? '').slice(0, 10));
+  // External shop stages: send out, then mark returned, then submit.
+  const [sendForm, setSendForm] = useState({ external_vendor: ticket?.external_vendor ?? '', external_reason: '', external_work_scope: '', external_shop_contact: '', external_estimated_cost: '' });
+  const [returnForm, setReturnForm] = useState({ external_return_notes: '', external_actual_cost: '', warranty_until: '' });
 
   if (!ticket) {
     return (
@@ -16495,6 +16562,11 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
       source_vehicle_id: repairType === 'cannibalized' ? sourceVehicleId : undefined,
       external_vendor: repairType === 'external' ? (externalVendor || undefined) : undefined,
       warranty_until: repairType === 'external' ? (warrantyUntil || undefined) : undefined,
+      part_needed: repairType === 'cannibalized' ? (partNeeded || undefined) : undefined,
+      part_quantity: repairType === 'cannibalized' ? (partQuantity || undefined) : undefined,
+      part_condition: repairType === 'cannibalized' ? (partCondition || undefined) : undefined,
+      cannibal_reason: repairType === 'cannibalized' ? (cannibalReason || undefined) : undefined,
+      part_installed_at: repairType === 'cannibalized' ? (partInstalledAt || undefined) : undefined,
     });
   };
 
@@ -16567,6 +16639,64 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
             )}
           </div>
         </div>
+
+        {repairType === 'cannibalized' && (
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.85rem' }}>Part Taken From Donor</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
+              <input type="text" placeholder="Part (e.g. Radiator)" value={partNeeded} onChange={(e) => { setPartNeeded(e.target.value); onDirty?.(); }} />
+              <input type="number" min="1" placeholder="Quantity" value={partQuantity} onChange={(e) => { setPartQuantity(e.target.value); onDirty?.(); }} />
+              <input type="text" placeholder="Part condition" value={partCondition} onChange={(e) => { setPartCondition(e.target.value); onDirty?.(); }} />
+              <span title="Date installed"><DateFilterInput value={partInstalledAt} onChange={(v) => { setPartInstalledAt(v); onDirty?.(); }} /></span>
+            </div>
+            <textarea rows={2} placeholder="Why this donor / why not buy the part?" value={cannibalReason} onChange={(e) => { setCannibalReason(e.target.value); onDirty?.(); }} style={{ width: '100%', marginTop: 8 }} />
+          </div>
+        )}
+
+        {repairType === 'external' && onExternalSend && (
+          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.85rem' }}>External Shop</h4>
+            {!ticket.external_sent_at ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
+                  <input type="text" placeholder="Shop name *" value={sendForm.external_vendor} onChange={(e) => setSendForm({ ...sendForm, external_vendor: e.target.value })} />
+                  <input type="text" placeholder="Why outside? *" value={sendForm.external_reason} onChange={(e) => setSendForm({ ...sendForm, external_reason: e.target.value })} />
+                  <input type="text" placeholder="Shop contact" value={sendForm.external_shop_contact} onChange={(e) => setSendForm({ ...sendForm, external_shop_contact: e.target.value })} />
+                  <input type="number" min="0" placeholder="Estimated cost (₱)" value={sendForm.external_estimated_cost} onChange={(e) => setSendForm({ ...sendForm, external_estimated_cost: e.target.value })} />
+                </div>
+                <textarea rows={2} placeholder="Work to be done *" value={sendForm.external_work_scope} onChange={(e) => setSendForm({ ...sendForm, external_work_scope: e.target.value })} style={{ width: '100%', marginTop: 8 }} />
+                <button
+                  type="button"
+                  className="primary-button"
+                  style={{ marginTop: 8 }}
+                  disabled={!sendForm.external_vendor.trim() || !sendForm.external_reason.trim() || !sendForm.external_work_scope.trim()}
+                  onClick={() => onExternalSend(ticket, Object.fromEntries(Object.entries(sendForm).filter(([, v]) => String(v).trim() !== '')))}
+                >
+                  Mark as Sent to Shop
+                </button>
+              </>
+            ) : !ticket.external_returned_at ? (
+              <>
+                <p style={{ margin: '0 0 8px', fontSize: '0.85rem' }}>Sent to <strong>{ticket.external_vendor}</strong> on {formatDate(ticket.external_sent_at)} — waiting for it to come back.</p>
+                <textarea rows={2} placeholder="Result / condition on return *" value={returnForm.external_return_notes} onChange={(e) => setReturnForm({ ...returnForm, external_return_notes: e.target.value })} style={{ width: '100%' }} />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <input type="number" min="0" placeholder="Actual cost (₱)" value={returnForm.external_actual_cost} onChange={(e) => setReturnForm({ ...returnForm, external_actual_cost: e.target.value })} />
+                  <span title="Warranty until"><DateFilterInput value={returnForm.warranty_until} onChange={(v) => setReturnForm({ ...returnForm, warranty_until: v })} /></span>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={!returnForm.external_return_notes.trim()}
+                    onClick={() => onExternalReturn(ticket, Object.fromEntries(Object.entries(returnForm).filter(([, v]) => String(v).trim() !== '')))}
+                  >
+                    Mark as Returned
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p style={{ margin: 0, fontSize: '0.85rem' }}>Returned from <strong>{ticket.external_vendor}</strong> on {formatDate(ticket.external_returned_at)}. {ticket.external_return_notes}</p>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 190px', gap: 8, marginBottom: 12, alignItems: 'start' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

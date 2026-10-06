@@ -415,17 +415,20 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function an_existing_ticket_cannot_take_any_more_sub_issues(): void
+    public function only_admin_and_the_assigned_custodian_can_append_sub_issues_to_an_active_ticket(): void
     {
-        // A ticket's sub-issues are fixed at proposal or inspection. A newly
-        // found problem is reported on its own (Report Issue), not appended.
+        // Spec phase 4 (2026-10-06): sub-issues can be added after inspection
+        // while still undispatched; Maintenance Personnel never can.
         $ticket = $this->inspectWithSubIssues($this->createTicket($this->vehicle()), ['Low coolant level']);
 
-        foreach ([$this->custodian, $this->mechanic, $this->admin] as $who) {
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", ['title' => 'Another problem'])->assertForbidden();
+
+        foreach ([$this->custodian, $this->admin] as $who) {
             Sanctum::actingAs($who, ['*']);
-            $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", ['title' => 'Another problem'])->assertNotFound();
+            $this->postJson("/api/tickets/{$ticket->ticket_id}/sub-issues", ['title' => 'Another problem'])->assertCreated();
         }
-        $this->assertSame(1, $ticket->fresh()->subIssues()->count());
+        $this->assertSame(3, $ticket->fresh()->subIssues()->count());
     }
 
     #[Test]

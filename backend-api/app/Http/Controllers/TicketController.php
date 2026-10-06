@@ -1179,6 +1179,125 @@ class TicketController extends Controller
     // PHASE 3 — Mechanic: Log Repair on a Sub-Issue
     // ===================================================================
 
+    /**
+     * Sub-issues can be added, renamed and removed after the inspection, but
+     * only while they are still plain "Open" — no mechanic dispatched, no work
+     * started — so nobody's recorded work is ever edited out from under them.
+     * Admin may do this on any ticket; a Custodian only on their own.
+     */
+    private function authorizeSubIssueEdit(Request $request, MaintenanceTicket $ticket): void
+    {
+        $this->requireAbility($request, 'subissue.manage');
+        if (!$request->user()->hasRole('Admin')) {
+            abort_unless($ticket->assigned_custodian_id === $request->user()->id, 403, 'This ticket is not assigned to you.');
+        }
+        abort_unless($ticket->status === 'Active', 422, "Sub-issues can only be changed while the ticket is Active. Current status: {$ticket->status}.");
+    }
+
+    public function addSubIssue(Request $request, MaintenanceTicket $ticket)
+    {
+        $this->authorizeSubIssueEdit($request, $ticket);
+
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:255'],
+            'maintenance_type' => ['nullable', 'string', 'max:150'],
+        ]);
+
+        $subIssue = TicketSubIssue::create([
+            'ticket_id' => $ticket->ticket_id,
+            'created_by' => $request->user()->id,
+            'title' => $data['title'],
+            'maintenance_type' => !empty($data['maintenance_type']) ? MaintenanceType::resolve($data['maintenance_type']) : null,
+            'status' => 'Open',
+        ]);
+        $this->log($request, 'Sub-issue Added', "Ticket #{$ticket->ticket_id} — added sub-issue \"{$subIssue->title}\".", $ticket->ticket_id);
+
+        return response()->json($subIssue, 201);
+    }
+
+    public function updateSubIssue(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
+    {
+        $this->authorizeSubIssueEdit($request, $ticket);
+        $this->assertBelongsToTicket($ticket, $subIssue);
+        abort_unless($subIssue->status === 'Open' && !$subIssue->assigned_mechanic_id, 422, 'Only a sub-issue that has not been dispatched yet can be edited.');
+
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:255'],
+            'maintenance_type' => ['nullable', 'string', 'max:150'],
+        ]);
+
+        $old = $subIssue->title;
+        $subIssue->update([
+            'title' => $data['title'],
+            'maintenance_type' => !empty($data['maintenance_type']) ? MaintenanceType::resolve($data['maintenance_type']) : null,
+        ]);
+        $this->log($request, 'Sub-issue Edited', "Ticket #{$ticket->ticket_id} — sub-issue \"{$old}\" updated to \"{$subIssue->title}\".", $ticket->ticket_id);
+
+        return $subIssue->fresh();
+    }
+
+    public function deleteSubIssue(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
+    {
+        $this->authorizeSubIssueEdit($request, $ticket);
+        $this->assertBelongsToTicket($ticket, $subIssue);
+        abort_unless($subIssue->status === 'Open' && !$subIssue->assigned_mechanic_id, 422, 'Only a sub-issue that has not been dispatched yet can be removed.');
+        abort_if(TicketSubIssue::where('ticket_id', $ticket->ticket_id)->count() <= 1, 422, 'A ticket needs at least one sub-issue. Cancel the ticket instead.');
+
+        $this->log($request, 'Sub-issue Removed', "Ticket #{$ticket->ticket_id} — removed sub-issue \"{$subIssue->title}\".", $ticket->ticket_id);
+        $subIssue->delete();
+
+        return response()->json(['message' => 'Sub-issue removed.']);
+    }
+
+    /** The mechanic hands the vehicle (or part) to an outside shop. */
+    public function markExternalSent(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
+    {
+        $this->requireAbility($request, 'subissue.log_repair');
+        $this->assertBelongsToTicket($ticket, $subIssue);
+        abort_unless($subIssue->assigned_mechanic_id === $request->user()->id, 403, 'This work order is not assigned to you.');
+        abort_unless($subIssue->status === 'Under Repair', 422, "Only an Under Repair sub-issue can be sent out. Current: {$subIssue->status}.");
+        abort_if($subIssue->external_sent_at, 422, 'This repair has already been sent out.');
+
+        $data = $request->validate([
+            'external_vendor' => ['required', 'string', 'max:255'],
+            'external_reason' => ['required', 'string', 'max:255'],
+            'external_work_scope' => ['required', 'string'],
+            'external_shop_contact' => ['nullable', 'string', 'max:255'],
+            'external_contact_person' => ['nullable', 'string', 'max:255'],
+            'external_estimated_cost' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $subIssue->update($data + [
+            'repair_type' => 'external',
+            'external_sent_at' => now(),
+            'external_sent_by' => $request->user()->id,
+        ]);
+        $this->log($request, 'Sent Out', "Ticket #{$ticket->ticket_id} — sub-issue \"{$subIssue->title}\" sent to {$data['external_vendor']}.", $ticket->ticket_id);
+
+        return $subIssue->fresh();
+    }
+
+    /** The shop returns it; the mechanic records the outcome before writing up the repair. */
+    public function markExternalReturned(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
+    {
+        $this->requireAbility($request, 'subissue.log_repair');
+        $this->assertBelongsToTicket($ticket, $subIssue);
+        abort_unless($subIssue->assigned_mechanic_id === $request->user()->id, 403, 'This work order is not assigned to you.');
+        abort_unless($subIssue->external_sent_at, 422, 'This repair has not been sent out yet.');
+        abort_if($subIssue->external_returned_at, 422, 'This repair has already been marked returned.');
+
+        $data = $request->validate([
+            'external_return_notes' => ['required', 'string'],
+            'external_actual_cost' => ['nullable', 'numeric', 'min:0'],
+            'warranty_until' => ['nullable', 'date'],
+        ]);
+
+        $subIssue->update($data + ['external_returned_at' => now()]);
+        $this->log($request, 'Returned From Shop', "Ticket #{$ticket->ticket_id} — sub-issue \"{$subIssue->title}\" returned from {$subIssue->external_vendor}.", $ticket->ticket_id);
+
+        return $subIssue->fresh();
+    }
+
     public function logRepairs(Request $request, MaintenanceTicket $ticket, TicketSubIssue $subIssue)
     {
         $this->requireAbility($request, 'subissue.log_repair');
@@ -1203,9 +1322,23 @@ class TicketController extends Controller
             'source_vehicle_id'     => ['nullable', 'required_if:repair_type,cannibalized', 'exists:vehicles,vehicle_id'],
             'external_vendor'       => ['nullable', 'string', 'max:255'],
             'warranty_until'        => ['nullable', 'date'],
+            'part_missing'          => ['nullable', 'string', 'max:255'],
+            'part_needed'           => ['nullable', 'string', 'max:255'],
+            'part_quantity'         => ['nullable', 'integer', 'min:1'],
+            'part_condition'        => ['nullable', 'string', 'max:255'],
+            'cannibal_reason'       => ['nullable', 'string'],
+            'part_installed_at'     => ['nullable', 'date'],
         ]);
 
         $effectiveRepairType = $data['repair_type'] ?? $subIssue->repair_type;
+
+        // Once a repair has been sent out to a shop it can't be written up as
+        // done until the vehicle is marked back (markExternalReturned()).
+        abort_if(
+            $effectiveRepairType === 'external' && $subIssue->external_sent_at && !$subIssue->external_returned_at,
+            422,
+            'This repair was sent to an outside shop. Mark it as returned before submitting the repair.'
+        );
 
         if ($effectiveRepairType === 'cannibalized') {
             $donorId = $data['source_vehicle_id'] ?? $subIssue->source_vehicle_id;
@@ -1246,6 +1379,12 @@ class TicketController extends Controller
                 'external_vendor'           => $effectiveRepairType === 'external'
                     ? ($data['external_vendor'] ?? $subIssue->external_vendor)
                     : null,
+                'part_missing'              => $effectiveRepairType === 'cannibalized' ? ($data['part_missing'] ?? $subIssue->part_missing) : $subIssue->part_missing,
+                'part_needed'               => $effectiveRepairType === 'cannibalized' ? ($data['part_needed'] ?? $subIssue->part_needed) : $subIssue->part_needed,
+                'part_quantity'             => $effectiveRepairType === 'cannibalized' ? ($data['part_quantity'] ?? $subIssue->part_quantity) : null,
+                'part_condition'            => $effectiveRepairType === 'cannibalized' ? ($data['part_condition'] ?? $subIssue->part_condition) : null,
+                'cannibal_reason'           => $effectiveRepairType === 'cannibalized' ? ($data['cannibal_reason'] ?? $subIssue->cannibal_reason) : null,
+                'part_installed_at'         => $effectiveRepairType === 'cannibalized' ? ($data['part_installed_at'] ?? $subIssue->part_installed_at) : null,
                 'warranty_until'            => $effectiveRepairType === 'external'
                     ? ($data['warranty_until'] ?? $subIssue->warranty_until)
                     : null,
