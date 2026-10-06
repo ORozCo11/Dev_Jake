@@ -6833,13 +6833,6 @@ const REPORT_CATALOG = [
     ],
   },
   {
-    category: 'Issue Reports',
-    icon: 'alert',
-    reports: [
-      { type: 'Vehicle Issue Report', icon: 'alert', description: 'Reported issues filtered by type, severity, and date.', fields: ['issue_type', 'severity_level', 'dates'] },
-    ],
-  },
-  {
     category: 'Maintenance Reports',
     icon: 'wrench',
     reports: [
