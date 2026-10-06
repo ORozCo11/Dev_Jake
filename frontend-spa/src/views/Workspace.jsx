@@ -2620,10 +2620,29 @@ function Workspace() {
                           // mark it read and leave the user where they were.
                           if (n.ticket_id) {
                             openTicketProfile({ ticket_id: n.ticket_id });
-                          } else if (n.issue_report_id) {
-                            navigate(`${roleRoutes[user.role]}/issues/${n.issue_report_id}`);
                           } else if (n.vehicle_id) {
                             navigate(`${roleRoutes[user.role]}/vehicles/${n.vehicle_id}`);
+                          } else if (n.schedule_id && n.type === 'schedule_due' && canDo(user, 'ticket.propose')) {
+                            // A due schedule opens the Propose Ticket form pre-filled
+                            // from it — the single way a schedule becomes a ticket.
+                            try {
+                              const res = await api.get('/maintenance-schedules');
+                              const sch = (res.data ?? []).find((x) => x.schedule_id === n.schedule_id);
+                              if (sch) {
+                                setPrefilledTicketData({
+                                  vehicle_id: sch.vehicle_id,
+                                  problem: `Scheduled ${sch.maintenance_type}`,
+                                  maintenance_type: sch.maintenance_type,
+                                  details: `Scheduled maintenance (${sch.maintenance_type}) due ${sch.scheduled_date}.${sch.notes ? ` ${sch.notes}` : ''}`,
+                                  priority: 'Medium',
+                                  schedule_id: sch.schedule_id,
+                                  suggested_mechanic_id: sch.assigned_to ?? '',
+                                });
+                                navigate(`${roleRoutes[user.role]}/tickets/new`);
+                              }
+                            } catch {
+                              returnToModule('schedules');
+                            }
                           } else if (n.schedule_id) {
                             // Not every role that can receive this (e.g. a
                             // Maintenance Personnel assignee) holds
@@ -2970,7 +2989,10 @@ function Workspace() {
               canViewUsage={canDo(user, 'usage.view')}
               canLogUsage={canDo(user, 'usage.log')}
               canCheckReadiness={canDo(user, 'vehicle.readiness_check')}
-              canRequestInspection={canDo(user, 'vehicle.request_inspection')}
+              canRecordCondition={canDo(user, 'condition.create')}
+              canProposeTicket={canDo(user, 'ticket.propose')}
+              onProposeMaintenance={(prefill) => { setPrefilledTicketData(prefill); navigate(`${roleRoutes[user.role]}/tickets/new`); }}
+              canViewHistory={canDo(user, 'vehicle.view_history')}
               // Production-readiness audit finding #8 — the reliability
               // endpoint was fully built with no UI anywhere; surfaced here
               // (an existing Admin page) rather than a new sidebar module.
@@ -9141,6 +9163,27 @@ function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus,
         );
       },
     },
+    {
+      key: 'usage',
+      label: 'Usage',
+      className: 'cell-center',
+      // Usage is its own indicator — never a fleet status. Blank for a vehicle
+      // that can't be used at all (retired / in maintenance).
+      render: (row) => {
+        if (row.usage_state === 'out') {
+          return (
+            <span
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.74rem', fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', whiteSpace: 'nowrap' }}
+              title={row.usage_purpose ? `${row.usage_purpose} — out since ${formatDate(row.usage_since)}` : undefined}
+            >
+              Currently Out
+            </span>
+          );
+        }
+        if (row.readiness_state === 'retired' || row.status === 'Under Maintenance') return <span className="muted">—</span>;
+        return <span style={{ display: 'inline-flex', fontSize: '0.74rem', fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>At Base</span>;
+      },
+    },
   ];
 
   if (filterStatus?.includes?.('Inactive')) {
@@ -14679,13 +14722,14 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
   );
 }
 
-function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canRequestInspection = false, canViewReliability = false, canViewUsage = false, canLogUsage = false, setNotice, onSaved, onRequestConfirmation }) {
+function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canRecordCondition = false, canProposeTicket = false, onProposeMaintenance, canViewHistory = false, canViewReliability = false, canViewUsage = false, canLogUsage = false, setNotice, onSaved, onRequestConfirmation }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('tab') === 'edit');
   const [decommissioning, setDecommissioning] = useState(false);
   const [readiness, setReadiness] = useState(null);
   const [checkingReadiness, setCheckingReadiness] = useState(false);
+  const [recordingCondition, setRecordingCondition] = useState(false);
   // Live-tracks the Edit form's Vehicle Type select so switching a vehicle
   // to a Water category shows Hull Material/Engine Type immediately,
   // instead of only after saving and reloading. Reset whenever a different
@@ -14776,18 +14820,34 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage =
     );
   }
 
-  // Admin may not report an issue or open a ticket — the way to act on a
-  // hunch is to ask the Custodians to go and look.
-  const requestInspection = async () => {
+  // A condition check is the Custodian's quick "how does it look today" note.
+  // Anything other than Good offers to propose a maintenance ticket right away,
+  // pre-filled from the check — one click from "something is wrong" to the form.
+  const handleConditionCheck = async (payload) => {
     setNotice(null);
     try {
-      await api.post(`/vehicles/${vehicle.vehicle_id}/request-inspection`);
-      setNotice({ type: 'success', text: 'Custodians notified to inspect this vehicle.' });
+      const response = await api.post('/conditions', { vehicle_id: vehicle.vehicle_id, ...payload });
+      await onSaved();
+      setRecordingCondition(false);
+      setNotice({ type: 'success', text: 'Condition check recorded.' });
+      if (payload.condition_result !== 'Good' && canProposeTicket) {
+        onRequestConfirmation?.({
+          title: 'Propose a maintenance ticket?',
+          message: `${vehicle.vehicle_name} was recorded as "${payload.condition_result}". Propose maintenance for it now — the form is pre-filled.`,
+          confirmLabel: 'Propose Ticket',
+          onConfirm: () => onProposeMaintenance?.({
+            vehicle_id: vehicle.vehicle_id,
+            problem: payload.observations || payload.condition_result,
+            details: payload.observations ? `Condition check: ${payload.condition_result}. ${payload.observations}` : `Condition check: ${payload.condition_result}.`,
+            priority: payload.condition_result === 'Needs Repair' ? 'High' : 'Medium',
+            condition_check_id: response.data?.condition_check_id,
+          }),
+        });
+      }
     } catch (error) {
       showError(error, setNotice);
     }
   };
-
   const handleSave = async (payload) => {
     setNotice(null);
     try {
@@ -14816,9 +14876,14 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage =
               <Icon name="edit" size={13} /> Edit Vehicle
             </button>
           )}
-          {canRequestInspection && !['Decommissioned', 'Inactive'].includes(vehicle.status) && !editing && (
-            <button className="btn-sm ghost-button" type="button" onClick={requestInspection}>
-              <Icon name="search" size={13} /> Request Custodian Inspection
+          {canProposeTicket && !['Decommissioned', 'Inactive'].includes(vehicle.status) && !editing && (
+            <button className="btn-sm primary-button" type="button" onClick={() => onProposeMaintenance?.({ vehicle_id: vehicle.vehicle_id })}>
+              <Icon name="wrench" size={13} /> Propose Maintenance
+            </button>
+          )}
+          {canRecordCondition && !['Decommissioned', 'Inactive'].includes(vehicle.status) && !editing && (
+            <button className="btn-sm ghost-button" type="button" onClick={() => setRecordingCondition(true)}>
+              <Icon name="search" size={13} /> Condition Check
             </button>
           )}
           {canCheckReadiness && !['Decommissioned', 'Inactive'].includes(vehicle.status) && !editing && (
@@ -14860,6 +14925,21 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage =
           vehicle={vehicle}
           onCancel={() => setCheckingReadiness(false)}
           onSubmit={handleReadinessCheck}
+        />
+      </FormModal>
+
+      <FormModal open={recordingCondition} title={`Condition Check — ${vehicle.vehicle_name}`} onClose={() => setRecordingCondition(false)}>
+        <SmartForm
+          fields={[
+            { label: 'Condition', name: 'condition_result', options: ['Good', 'Needs Inspection', 'Needs Repair'], required: true, type: 'select' },
+            { label: 'Observations (optional)', name: 'observations', type: 'textarea', rows: 3 },
+          ]}
+          key={`condition-${vehicle.vehicle_id}`}
+          initialValues={{ condition_result: 'Good' }}
+          onCancel={() => setRecordingCondition(false)}
+          onSubmit={handleConditionCheck}
+          submitLabel="Save Check"
+          title=""
         />
       </FormModal>
 
@@ -15007,7 +15087,9 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage =
 
               {canViewReliability && <VehicleReliabilityCard vehicleId={vehicle.vehicle_id} />}
 
-              {canViewUsage && <VehicleUsageCard vehicleId={vehicle.vehicle_id} canLog={canLogUsage} vehicleStatus={vehicle.status} />}
+              {canViewUsage && <VehicleUsageCard vehicleId={vehicle.vehicle_id} canLog={canLogUsage} vehicleStatus={vehicle.status} readinessState={readiness?.state} onChanged={onSaved} />}
+
+              {canViewHistory && <VehicleHistoryCard vehicleId={vehicle.vehicle_id} />}
             </div>
           </div>
 
@@ -17523,10 +17605,59 @@ function CapabilityImpactCard({ items, onNavigate, basePath }) {
 
 // Vehicle Usage Log — open a trip when the vehicle goes out, close it when it
 // is back. Recording only; it never changes the vehicle's status.
-function VehicleUsageCard({ vehicleId, canLog, vehicleStatus }) {
+// One timeline per vehicle. Maintenance, condition, readiness, location and
+// usage history are just filters over it, not separate screens.
+const HISTORY_FILTERS = [
+  { key: 'all', label: 'All', test: () => true },
+  { key: 'maintenance', label: 'Maintenance', test: (t) => /ticket|maintenance|repair|part removed|schedule|decommission|restored|archived/i.test(t) },
+  { key: 'condition', label: 'Condition', test: (t) => /condition/i.test(t) },
+  { key: 'readiness', label: 'Readiness', test: (t) => /readiness|available/i.test(t) },
+  { key: 'location', label: 'Location', test: (t) => /location/i.test(t) },
+  { key: 'usage', label: 'Usage', test: (t) => /taken out|returned/i.test(t) },
+];
+
+function VehicleHistoryCard({ vehicleId }) {
+  const [rows, setRows] = useState([]);
+  const [filter, setFilter] = useState('all');
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/histories', { params: { vehicle_id: vehicleId } }).then((res) => { if (!cancelled) setRows(res.data); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [vehicleId]);
+
+  const active = HISTORY_FILTERS.find((f) => f.key === filter) ?? HISTORY_FILTERS[0];
+  const shown = rows.filter((r) => active.test(r.activity_type ?? '')).slice(0, 40);
+
+  return (
+    <section className="veh-card">
+      <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>History</h4></div>
+      <div style={{ padding: '0 18px 18px', display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {HISTORY_FILTERS.map((f) => (
+            <button key={f.key} type="button" className={f.key === filter ? 'btn-sm primary-button' : 'btn-sm ghost-button'} onClick={() => setFilter(f.key)}>{f.label}</button>
+          ))}
+        </div>
+        {shown.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>Nothing recorded yet.</p>
+        ) : (
+          <div style={{ display: 'grid', gap: 6, maxHeight: 320, overflow: 'auto' }}>
+            {shown.map((r) => (
+              <div key={r.history_id} style={{ fontSize: '0.84rem', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <span><strong>{r.activity_type}</strong> — {r.description}</span>
+                <span className="muted">{formatDate(r.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function VehicleUsageCard({ vehicleId, canLog, vehicleStatus, readinessState, onChanged }) {
   const [trips, setTrips] = useState([]);
-  const [form, setForm] = useState({ purpose: '', destination: '', driver_name: '', odometer_start: '' });
-  const [endForm, setEndForm] = useState({ odometer_end: '' });
+  const [form, setForm] = useState({ purpose: '', destination: '', driver_name: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -17538,48 +17669,53 @@ function VehicleUsageCard({ vehicleId, canLog, vehicleStatus }) {
   }, [vehicleId, reloadKey]);
 
   const open = trips.find((t) => !t.ended_at);
+  const lastTrip = trips.find((t) => t.ended_at);
 
   const run = async (fn) => {
     setBusy(true); setError('');
-    try { await fn(); setReloadKey((k) => k + 1); } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.errors && Object.values(err.response.data.errors)[0]?.[0] || 'Could not save.');
+    try { await fn(); setReloadKey((k) => k + 1); await onChanged?.(); } catch (err) {
+      setError(err.response?.data?.message || (err.response?.data?.errors && Object.values(err.response.data.errors)[0]?.[0]) || 'Could not save.');
     } finally { setBusy(false); }
   };
 
   const clean = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => String(v).trim() !== ''));
 
+  // Take Out is only possible for a vehicle that is Available AND verified ready.
+  const blockedReason = vehicleStatus !== 'Available'
+    ? `This vehicle is ${vehicleStatus ?? 'unavailable'}, so it can't be taken out.`
+    : readinessState !== 'ready'
+      ? 'Run a readiness check first — a vehicle must be verified ready before it goes out.'
+      : null;
+
   return (
     <section className="veh-card">
-      <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Usage Log</h4></div>
+      <div className="veh-card-head">
+        <Icon name="vehicle" size={16} /><h4>Usage</h4>
+        <span className="area-chart-tag" style={{ marginLeft: 'auto' }}>{open ? 'Currently Out' : 'At Base'}</span>
+      </div>
       <div style={{ padding: '0 18px 18px', display: 'grid', gap: 10 }}>
         {error && <div className="notice error">{error}</div>}
-        {canLog && !open && vehicleStatus === 'Available' && (
+        {open ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input type="text" placeholder="Purpose *" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} style={{ flex: '2 1 180px' }} />
-            <input type="text" placeholder="Destination" value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} style={{ flex: '1 1 140px' }} />
-            <input type="text" placeholder="Driver" value={form.driver_name} onChange={(e) => setForm({ ...form, driver_name: e.target.value })} style={{ flex: '1 1 120px' }} />
-            <input type="number" min="0" placeholder="Odometer" value={form.odometer_start} onChange={(e) => setForm({ ...form, odometer_start: e.target.value })} style={{ width: 110 }} />
-            <button type="button" className="primary-button" disabled={busy || !form.purpose.trim()} onClick={() => run(async () => { await api.post(`/vehicles/${vehicleId}/usage`, clean(form)); setForm({ purpose: '', destination: '', driver_name: '', odometer_start: '' }); })}>Take Out</button>
+            <span style={{ fontSize: '0.85rem' }}>Out since {formatDate(open.started_at)}: <strong>{open.purpose}</strong>{open.destination ? ` → ${open.destination}` : ''}{open.driver_name ? ` · ${open.driver_name}` : ''}</span>
+            {canLog && (
+              <button type="button" className="primary-button" disabled={busy} onClick={() => run(() => api.put(`/usage-logs/${open.usage_id}/end`, {}))}>Mark Returned</button>
+            )}
           </div>
+        ) : canLog && (
+          blockedReason ? (
+            <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>{blockedReason}</p>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <input type="text" placeholder="Purpose *" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} style={{ flex: '2 1 180px' }} />
+              <input type="text" placeholder="Destination" value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} style={{ flex: '1 1 140px' }} />
+              <input type="text" placeholder="Driver" value={form.driver_name} onChange={(e) => setForm({ ...form, driver_name: e.target.value })} style={{ flex: '1 1 120px' }} />
+              <button type="button" className="primary-button" disabled={busy || !form.purpose.trim()} onClick={() => run(async () => { await api.post(`/vehicles/${vehicleId}/usage`, clean(form)); setForm({ purpose: '', destination: '', driver_name: '' }); })}>Take Out</button>
+            </div>
+          )
         )}
-        {canLog && open && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem' }}>Out since {formatDate(open.started_at)}: <strong>{open.purpose}</strong></span>
-            <input type="number" min={open.odometer_start ?? 0} placeholder="Odometer on return" value={endForm.odometer_end} onChange={(e) => setEndForm({ odometer_end: e.target.value })} style={{ width: 150 }} />
-            <button type="button" className="primary-button" disabled={busy} onClick={() => run(async () => { await api.put(`/usage-logs/${open.usage_id}/end`, clean(endForm)); setEndForm({ odometer_end: '' }); })}>Mark Returned</button>
-          </div>
-        )}
-        {trips.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>No trips recorded yet.</p>
-        ) : (
-          <div style={{ display: 'grid', gap: 6 }}>
-            {trips.slice(0, 8).map((t) => (
-              <div key={t.usage_id} style={{ fontSize: '0.84rem', display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                <span><strong>{t.purpose}</strong>{t.destination ? ` → ${t.destination}` : ''}{t.driver_name ? ` · ${t.driver_name}` : ''}</span>
-                <span className="muted">{formatDate(t.started_at)}{t.ended_at ? ` – ${formatDate(t.ended_at)}` : ' · out now'}{t.odometer_start != null && t.odometer_end != null ? ` · ${t.odometer_end - t.odometer_start} km` : ''}</span>
-              </div>
-            ))}
-          </div>
+        {!open && lastTrip && (
+          <p className="muted" style={{ margin: 0, fontSize: '0.82rem' }}>Last used {formatDate(lastTrip.started_at)} – {formatDate(lastTrip.ended_at)}: {lastTrip.purpose}</p>
         )}
       </div>
     </section>
