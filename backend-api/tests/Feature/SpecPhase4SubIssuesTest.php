@@ -60,50 +60,6 @@ class SpecPhase4SubIssuesTest extends TestCase
     }
 
     #[Test]
-    public function admin_and_the_assigned_custodian_can_add_edit_and_delete_an_open_sub_issue(): void
-    {
-        foreach ([$this->admin, $this->custodian] as $user) {
-            Sanctum::actingAs($user, ['*']);
-            $id = $this->postJson($this->url(), ['title' => 'Radiator leak'])->assertCreated()->json('sub_issue_id');
-            $this->putJson($this->url("/{$id}"), ['title' => 'Radiator hose leak'])->assertOk()->assertJsonPath('title', 'Radiator hose leak');
-            $this->deleteJson($this->url("/{$id}"))->assertOk();
-        }
-        $this->assertDatabaseCount('ticket_sub_issues', 1);
-    }
-
-    #[Test]
-    public function other_roles_and_other_custodians_cannot_change_sub_issues(): void
-    {
-        foreach ([$this->mechanic, $this->otherCustodian] as $user) {
-            Sanctum::actingAs($user, ['*']);
-            $this->postJson($this->url(), ['title' => 'Nope'])->assertForbidden();
-        }
-    }
-
-    #[Test]
-    public function a_dispatched_sub_issue_cannot_be_edited_or_removed_and_the_last_one_stays(): void
-    {
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->dispatchTo($this->sub);
-        $this->putJson($this->url("/{$this->sub->sub_issue_id}"), ['title' => 'x'])->assertUnprocessable();
-        $this->deleteJson($this->url("/{$this->sub->sub_issue_id}"))->assertUnprocessable();
-
-        $open = TicketSubIssue::create(['ticket_id' => $this->ticket->ticket_id, 'created_by' => $this->admin->id, 'title' => 'Second', 'status' => 'Open']);
-        $this->deleteJson($this->url("/{$open->sub_issue_id}"))->assertOk();
-
-        $this->sub->update(['status' => 'Open', 'assigned_mechanic_id' => null]);
-        $this->deleteJson($this->url("/{$this->sub->sub_issue_id}"))->assertUnprocessable(); // last remaining
-    }
-
-    #[Test]
-    public function sub_issues_cannot_change_once_the_ticket_is_no_longer_active(): void
-    {
-        $this->ticket->update(['status' => 'Closed']);
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->postJson($this->url(), ['title' => 'Late'])->assertUnprocessable();
-    }
-
-    #[Test]
     public function a_cannibalized_repair_stores_the_part_details(): void
     {
         $category = VehicleCategory::first();

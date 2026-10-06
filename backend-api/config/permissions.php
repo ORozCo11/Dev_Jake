@@ -144,7 +144,6 @@ return [
 
     // Tickets
     'ticket.view_open_for_vehicle' => ['Admin'],
-    'ticket.view_archives' => ['Admin'],
     'ticket.check_recurrence' => ['Admin', 'Custodian'],
     // Nobody holds this any more — every ticket must originate as a
     // Custodian's proposal (ticket.propose) that Admin then reviews, edits,
@@ -152,21 +151,14 @@ return [
     // empty grant, not deleted, so the POST /tickets endpoint it gates
     // (TicketController::createTicket) stays documented as intentionally
     // unreachable rather than looking like an oversight.
-    'ticket.create' => [],
     'ticket.propose' => ['Custodian'],
     'ticket.approve' => ['Admin'],
     'ticket.decline' => ['Admin'],
-    'ticket.inspect' => ['Custodian'],
     'ticket.reassign_custodian' => ['Admin'],
-    'ticket.close' => ['Admin'],
     'ticket.cancel' => ['Admin'],
-    'ticket.uncancel' => ['Admin'],
-    'ticket.delete' => ['Admin'],
-    'ticket.reopen_archived' => ['Admin'],
 
     // Sub-issues
     // Add / rename / remove a not-yet-dispatched sub-issue (Custodian: own ticket only).
-    'subissue.manage' => ['Admin', 'Custodian'],
     'subissue.assign_mechanic' => ['Admin'],
     'subissue.reassign_mechanic' => ['Admin'],
     'subissue.log_repair' => ['Maintenance Personnel'],
@@ -175,9 +167,6 @@ return [
     // action now. An unavailable Custodian is handled by reassigning the
     // ticket (ticket.reassign_custodian), not by Admin standing in.
     'subissue.verify' => ['Custodian'],
-    'subissue.confirm' => ['Admin'],
-    'subissue.reopen_confirmed' => ['Admin'],
-    'subissue.defer' => ['Admin'],
 
     // Cannibalized-repair approval
     'repair.approve_cannibalized' => ['Admin'],

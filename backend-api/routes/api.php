@@ -226,14 +226,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::get('/tickets', [TicketController::class, 'index']);
     Route::get('/tickets/{ticket}', [TicketController::class, 'show']);
 
-    // Phase 1 — Admin: Create ticket (Main Issue) & assign to Custodian
-    Route::post('/tickets', [TicketController::class, 'createTicket']);
     Route::post('/tickets/propose', [TicketController::class, 'proposeTicket']);
     Route::put('/tickets/{ticket}/approve', [TicketController::class, 'approveTicket']);
     Route::put('/tickets/{ticket}/decline', [TicketController::class, 'declineTicket']);
-
-    // Phase 2 — Custodian: Submit inspection, populate the sub-issue list
-    Route::put('/tickets/{ticket}/inspect', [TicketController::class, 'submitInspection']);
 
     // Phase 3 — Admin: Dispatch work order to a mechanic, per sub-issue
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/assign-mechanic', [TicketController::class, 'assignMechanic']);
@@ -250,9 +245,6 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/log-repairs', [TicketController::class, 'logRepairs']);
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/external-sent', [TicketController::class, 'markExternalSent']);
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/external-returned', [TicketController::class, 'markExternalReturned']);
-    Route::post('/tickets/{ticket}/sub-issues', [TicketController::class, 'addSubIssue']);
-    Route::put('/tickets/{ticket}/sub-issues/{subIssue}', [TicketController::class, 'updateSubIssue']);
-    Route::delete('/tickets/{ticket}/sub-issues/{subIssue}', [TicketController::class, 'deleteSubIssue']);
 
     // Phase 3.5 — Admin: Approve or reject a cannibalized repair
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/approve-cannibalization', [TicketController::class, 'approveCannibalization']);
@@ -261,31 +253,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     // Phase 4 Tier 1 — Custodian: Verify a sub-issue's repair
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/verify', [TicketController::class, 'verifyRepair']);
 
-    // Phase 4 Tier 2 — Admin: Confirm or rework a sub-issue
-    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/confirm', [TicketController::class, 'confirmSubIssue']);
-
-    // Admin: Reopen a confirmed sub-issue (send back for re-verification)
-    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/reopen-confirmed', [TicketController::class, 'reopenConfirmedSubIssue']);
-
-    // Admin: Defer a sub-issue that can't be finished now (records the
-    // decision + opens a breadcrumb Issue Report so it isn't forgotten)
-    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/defer', [TicketController::class, 'deferSubIssue']);
-
-    // Phase 5 — Admin: Explicit ticket closure (only once every sub-issue is Done)
-    Route::put('/tickets/{ticket}/close', [TicketController::class, 'closeTicket']);
-
     // Admin: Cancel ticket at any stage before Closed
     Route::put('/tickets/{ticket}/cancel', [TicketController::class, 'cancelTicket']);
-    Route::put('/tickets/{ticket}/uncancel', [TicketController::class, 'uncancelTicket']);
 
-    // Admin: Delete ticket completely (in case of mistakes)
-    Route::delete('/tickets/{ticket}', [TicketController::class, 'deleteTicket']);
-
-    // Archived ticket audit log — a "Closed" entry is permanently locked, but
-    // a "Deleted" entry (an accidental delete that had real progress on it)
-    // can be reopened.
-    Route::get('/ticket-archives', [TicketController::class, 'archives']);
-    Route::put('/ticket-archives/{archive}/reopen', [TicketController::class, 'reopenArchive']);
 
     // Notifications API
     Route::get('/notifications', [NotificationController::class, 'index']);

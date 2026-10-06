@@ -264,7 +264,6 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
 
     private function driveToClosed(MaintenanceTicket $ticket): void
     {
-        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
         $sub = $ticket->subIssues->first();
 
         Sanctum::actingAs($this->mechanic, ['*']);
@@ -274,9 +273,7 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
             'verification_verdict' => 'Approved', 'test_attested' => true,
             'functional_test' => [['item' => 'Brakes respond properly', 'passed' => true]],
         ])->assertOk();
-        Sanctum::actingAs($admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$sub->sub_issue_id}/confirm", ['confirmation_verdict' => 'Confirmed'])->assertOk();
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/close", [])->assertOk();
+        // The Custodian's approving verification closes the ticket.
     }
 
     #[Test]
@@ -320,7 +317,7 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
     }
 
     #[Test]
-    public function cancelling_the_ticket_cancels_its_schedule_and_restoring_it_brings_it_back(): void
+    public function cancelling_the_ticket_cancels_its_schedule(): void
     {
         [, $schedule, $ticket] = $this->convertedSchedule();
         $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
@@ -328,8 +325,5 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
         Sanctum::actingAs($admin, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/cancel", [])->assertOk();
         $this->assertSame('Cancelled', $schedule->fresh()->status);
-
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/uncancel", [])->assertOk();
-        $this->assertSame('Scheduled', $schedule->fresh()->status);
     }
 }
