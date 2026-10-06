@@ -13981,3 +13981,18 @@ html[data-theme="light"] .workspace.sidebar-collapsed {
 .ticket-preview-body.ticket-preview-body--lg span.muted {
   font-size: 0.92rem;
 }
+
+/* Sidebar labels: wrap between words only, never mid-word ("Maintenanc / e").
+   A slightly tighter indent/gap/size keeps the longest single word on one line
+   even with a badge beside it. Kept last so it wins over the earlier themes. */
+.module-nav button { gap: 8px; font-size: 0.85rem; }
+.module-nav button > span:not(.module-nav-badge) {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  line-height: 1.25;
+}
+.module-nav-group > button:not(.module-nav-section),
+html[data-theme="light"] .module-nav-group > button:not(.module-nav-section) {
+  padding-left: 28px;
+}
