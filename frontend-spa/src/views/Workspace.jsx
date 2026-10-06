@@ -113,7 +113,6 @@ const modulesByRole = {
     { section: null, items: [['dashboard', 'Dashboard']] },
     { section: null, items: [
       ['ticketWorkOrders', 'My Work'],
-      ['schedules', 'Scheduled Work'],
       ['vehicles', 'Vehicles'],
     ] },
   ],
@@ -2767,7 +2766,7 @@ function Workspace() {
           user={user}
           basePath={roleRoutes[user.role]}
           onNavigate={navigate}
-          onGoToSchedules={() => returnToModule('schedules')}
+          onGoToSchedules={() => returnToModule(modules.some(([k]) => k === 'schedules') ? 'schedules' : 'ticketWorkOrders')}
           onGoToModule={returnToModule}
         />
       );
