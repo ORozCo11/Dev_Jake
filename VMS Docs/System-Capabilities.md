@@ -1,5 +1,9 @@
 # Barangay VMS — Full System Capabilities Reference
 
+> **2026-10-07 simplification.** The system now runs on one rule: **one problem → one maintenance ticket → one approval → one repair → one verification → one closure.** Issue Reports, the Custodian inspection step, the Admin "confirm" step, sub-issue lists, manual Maintenance Records, manual Location Records and ticket delete/archive/restore were removed as user-facing workflows (their historical data is kept). Anything below that still describes those is superseded by §§4–7.
+
+**Sidebars now:** Admin — Dashboard; Fleet (Vehicles, Vehicle Types, Vehicle Location); Maintenance (Maintenance Tickets, Maintenance Schedule); Administration (Users, Reports, Activity Log). Custodian — Dashboard, Vehicles, My Work (To Verify / My Tickets, with *Propose Ticket*). Maintenance Personnel — Dashboard, My Work, Scheduled Work, Vehicles. Super Admin — its own platform portal (§12). Checks, history, documents and usage live on the vehicle profile, not in the sidebar.
+
 A complete, code-verified catalog of everything the system can do today, organized by module. Every capability listed here was confirmed directly against the current codebase (not assumed) — where something is partially built, unused, or a known gap, it's flagged explicitly rather than glossed over. See `Documentation.md` in this folder for the shorter architectural overview; this document goes deep on every feature.
 
 ---
@@ -8,11 +12,10 @@ A complete, code-verified catalog of everything the system can do today, organiz
 
 | Role | Scope | One-line summary |
 |---|---|---|
-| **Admin** | One Barangay | Manage → Assign → Monitor → Confirm → Close. Runs the fleet; does **not** create tickets directly. |
-| **Custodian** | One Barangay | Report → Create Ticket → Inspect → Verify. The only role that creates a Maintenance Ticket. |
-| **Maintenance Personnel** | One Barangay | Diagnose → Report / Recommend a ticket → Repair → Record → Complete. Can report an issue and *recommend* a ticket (the Custodian proposes it), but never creates one. |
-| **Super Admin** | Platform-wide | Account/platform administration only — **no access to fleet data** (vehicles, tickets, issues) at all; enforced server-side, not just hidden in the UI. |
-
+| **Admin** | One Barangay | Review → Approve & Assign → Monitor. Runs the fleet; never reports a problem or creates a ticket. |
+| **Custodian** | One Barangay | Propose → Verify. The only role that creates a ticket (by proposing it) and the one who verifies the repair, which closes it. |
+| **Maintenance Personnel** | One Barangay | Do the assigned work. Never creates, recommends or reports anything. |
+| **Super Admin** | Platform-wide | Account/platform administration only — **no access to fleet data** (vehicles, tickets) at all; enforced server-side, not just hidden in the UI. |
 A user can hold more than one of the three barangay roles at once (a "dual-hat" account, e.g. Custodian + Maintenance Personnel in a small barangay). Every permission check ORs across every role an account holds, and several workflow guards (most notably self-verification) specifically account for dual-hat accounts rather than assuming one person = one role.
 
 ---
@@ -50,9 +53,9 @@ New vehicles start at status **Available**, condition **Good**. Registration has
 
 **Statuses**: Available, Under Maintenance, Inactive, Decommissioned. (A fifth status, "In Use," exists in the database but is deliberately never set anywhere — the system tracks *availability*, not live dispatch.) Status is mostly system-driven: a failed condition check, an active issue report, or an active ticket automatically flips a vehicle between Available and Under Maintenance. Admin/Custodian can also force a vehicle back to Available via a readiness-check shortcut even with a lingering repair flag — deliberate, since physical readiness and an outstanding paperwork flag are tracked independently.
 
-**Conditions**: Good, Needs Inspection, Needs Repair — driven by issue reports, condition checks, or a ticket moving into maintenance. A retired vehicle (Inactive/Decommissioned) is explicitly protected from having any of this un-retire it.
+**Conditions**: Good, Needs Inspection, Needs Repair — driven by condition checks or a ticket moving into maintenance. A retired vehicle (Inactive/Decommissioned) is explicitly protected from having any of this un-retire it.
 
-**Vehicle Profile page** is a single dashboard-style layout (not tabs): Vehicle Information, Status & Key Dates (availability/condition/readiness badges, current location, estimated return date), a Reports card (print a Vehicle Summary Report), a Files card (documents, §3.4), a single-pin location map, a **Usage Log** card (Admin and Custodian — "Take Out" records purpose/destination/driver/odometer for an Available vehicle, one open trip at a time; "Mark Returned" closes it with an optional return odometer; it writes history and Activity Log entries but never changes the vehicle's status), and role-gated header actions (Edit — Admin; Readiness Check — Custodian; **Request Custodian Inspection** — Admin, which notifies the Custodians to inspect without opening an issue or ticket on their behalf; Decommission/Recommission — Admin).
+**Vehicle Profile page** is a single dashboard-style layout (not tabs): Vehicle Information, Status & Key Dates (availability/condition/readiness badges, current location, estimated return date), a Reports card (print a Vehicle Summary Report), a Files card (documents, §3.4), a single-pin location map, a **Usage** card (Admin and Custodian — a vehicle reads **At Base** or **Currently Out**. *Take Out* records purpose/destination/driver and is only possible while the vehicle is Available **and** verified Ready; *Mark Returned* closes it. It writes history and Activity Log entries but never changes the vehicle's fleet status, and there is no odometer), and a **History** card (one timeline with All / Maintenance / Condition / Readiness / Location / Usage filters), and role-gated header actions (Edit — Admin; Readiness Check — Custodian; **Propose Maintenance** and **Condition Check** — Custodian; Decommission/Recommission — Admin).
 
 ### 3.2 Vehicle Types
 
@@ -71,12 +74,11 @@ A per-vehicle file cabinet, separate from the vehicle's cover photo — Title (r
 
 ### 3.5 Vehicle History
 
-A fully automatic, derived activity timeline — there is no manual "add a history entry." The backend writes an entry on nearly every vehicle-affecting action: added, info updated, location changed, archived, restored, decommissioned, readiness checked (pass/fail), marked available, condition checked/updated/deleted, issue reported/updated, document added, vehicle taken out / returned (usage log), spreadsheet import, and — closed as a gap in the final senior system review (2026-10-10), since these are arguably the biggest status/condition drivers in the system — a ticket being approved, inspected, closed, cancelled, or restored. Viewable with activity-type and date-range filters, free-text search, a card/table toggle, CSV export, and print — available to Admin and Custodian.
+One automatic timeline per vehicle, shown on the vehicle profile — there is no manual "add a history entry" and no separate Maintenance History, Records or Location Record screen. The backend writes an entry on nearly every vehicle-affecting action (added, updated, location changed, archived/restored/decommissioned, ticket approved/closed, part removed for another vehicle's repair, readiness and condition checks, taken out/returned, imported). Maintenance, Condition, Readiness, Location and Usage are simply **filters over this one timeline**. Available to Admin and Custodian.
 
-### 3.6 Condition Monitoring
+### 3.6 Condition & Readiness Checks (on the vehicle)
 
-A Custodian's routine, *proactive* inspection log — explicitly distinct from an Issue Report (which is reactive, "something's already wrong"). Each check records a Result (Good/Needs Inspection/Needs Repair) and free-text Observations. Custodian creates and can only edit a check **they personally performed**; only Admin can delete one (which reverts the vehicle to its next-latest remaining check, or Good if none remain). A "Needs Repair" result flips the vehicle to Under Maintenance. From the Condition Monitoring list, a check can be turned directly into a ticket proposal ("Create Ticket from Condition" — pre-fills title/description/priority/sub-issue) or into a lighter "Suggest Schedule from Condition" for a non-urgent follow-up. Not visible to Maintenance Personnel at all — scoped out by design.
-
+A Custodian's quick, proactive "how does it look today" note — **Condition Check** (Good / Needs Inspection / Needs Repair + observations) — is recorded from the vehicle profile; there is no separate Condition Monitoring screen. Anything other than Good offers **Propose Maintenance** immediately, pre-filled from the check. A "Needs Repair" result flips the vehicle Under Maintenance. Only the Custodian records a check (and may edit only their own); Admin may delete a mistaken one.
 ### 3.7 Readiness Checks
 
 A pre-deployment "is this vehicle mission-ready right now" checklist, deliberately independent of repair/condition status (a vehicle can be Available with a lingering Needs Repair flag and still pass readiness). The checklist is type-specific: Water vehicles get fuel/life-vests/bilge-pump/no-hull-water items; an "ambulance" category gets fuel/oxygen/lights-siren/stretcher; a "fire" category gets fuel/water-tank/pump/hoses/lights-siren; everything else gets a generic fuel/lights/engine-starts set — custom items can be added, and there's a "Mark all OK" bulk toggle. Any single failed item fails the whole check.
@@ -85,135 +87,66 @@ Recorded by Custodian only. A passing check is only considered **fresh for 24 ho
 
 ---
 
-## 4. Issue Reporting
+## 4. Proposing Maintenance (replaces Issue Reporting)
 
-An Issue Report captures: vehicle, issue type (a free-text catalog that grows as new values are typed, not a fixed list), description, severity (Low/Medium/High), any number of file attachments (jpg/jpeg/png/pdf/doc/docx, 10MB each), and optional remarks.
-
-**Who can file**: Custodian and Maintenance Personnel (an Admin cannot report an issue — they request a Custodian inspection from the vehicle profile instead, §3.1). On a Pending/Under Review report with no ticket yet, Maintenance Personnel can **Recommend Maintenance Ticket**, which notifies the Custodians and deep-links them to that exact report to propose the ticket. A pure Maintenance Personnel account only sees/tracks the reports **they themselves** filed — browsing the whole barangay's queue stays a Custodian/Admin concern. Filing one sets the vehicle's condition to "Needs Inspection," notifies that barangay's Admins, and — specifically when the reporter is a pure Maintenance Personnel account — also notifies its Custodians, since a mechanic's finding still has to go through a Custodian's ticket proposal.
-
-After submitting, the system lands directly on that report's own detail page — not back on a list — with a **Create Maintenance Ticket** action right there for whoever holds that permission (Custodian).
-
-**Statuses**: Pending → Under Review → In Maintenance → Resolved, kept in lockstep with the vehicle's own status/condition. A Custodian may edit or delete **their own** report only while it's still Pending. **Dismissal** (Admin only, requires a reason) is only available before a ticket exists for the report, and deliberately does not touch the vehicle's status, since nothing about the vehicle itself changed.
-
-**No auto-escalation exists** — a filed report with nobody acting on it just sits there indefinitely; there's no timer or automatic conversion to a ticket. The one place a dormant report resurfaces on its own is downstream of a ticket: if a sub-issue tied to it later gets Deferred, the report is reopened to Pending as a reminder breadcrumb.
-
-**Duplicate-report aid**: before filing, the form checks for any other currently-open report on the same vehicle and shows a non-blocking warning (never forces a merge — left to human judgment).
+There is no Issue Report. When something is wrong, a **Custodian proposes a maintenance ticket** — the problem *is* the form: vehicle, what is wrong, maintenance type, details, priority and an optional suggested mechanic. Entry points, all landing on the same pre-filled form: the vehicle profile's **Propose Maintenance**, the **Propose Ticket** button in *My Work*, a **Condition Check** that isn't Good, and a **due Maintenance Schedule's** notification. One ticket holds exactly one job; a second problem is a second ticket (a proposal with more than one problem is rejected). The server builds the ticket title (`MT-0010 — <Vehicle> — <Issue>`); nobody types it. Maintenance Personnel and Admin cannot propose, report or "recommend" — the Custodian is the single door into maintenance.
 
 ---
 
 ## 5. Maintenance Ticket Workflow
 
-This is the heart of the system. **Every ticket enters as a `Pending Approval` proposal that an Admin must review and approve before it's live** — there is no reachable "Admin creates directly" path (the direct-create endpoint exists in code but is permanently unreachable by permission design, kept only as documentation of the shared business rules). A proposal has exactly two sources: a **human** Custodian proposing one by hand, or the **system** auto-proposing one from a Maintenance Schedule whose date has arrived (§6) — either way, it's the same `Pending Approval` → Admin-reviews → `Active` pipeline, never a bypass.
+```
+Custodian proposes ─▶ Admin approves + assigns ─▶ Maintenance repairs ─▶ Custodian verifies ─▶ Closed
+   (Pending Approval)        (Active)                (Under Repair)        (verification = close)
+```
 
-### 5.1 Creating a proposal (Custodian only)
+**5.1 Proposal.** Pending Approval; nothing about the vehicle changes yet. Duplicate protection (same vehicle, same open issue) and recurrence detection (same fault again within 90 days) still apply and are shown to the Admin.
 
-Required on every proposal: vehicle, description, priority, and **at least one sub-issue** — there's no "diagnose later" mode for a proposal, since the Custodian has already seen the vehicle and Admin's review is the check that stands in for a separate inspection step. There is no separate title field: the system composes the ticket's title itself (`MT-0010 — <Vehicle> — <Issue>`, using the first sub-issue's maintenance type/title as the issue summary) the moment the proposal is created — any title sent by the client is ignored. Optionally linked to an Issue Report and/or a Condition Check (each validated to belong to the same vehicle and not already claimed elsewhere).
+**5.2 Review & Assign (Admin).** One screen: the problem, maintenance type, priority, details — and **who will do the work**. *Approve & Assign* is a single action: the ticket goes Active, the vehicle goes Under Maintenance, and the mechanic receives the work order. A mechanic is required to approve. Declining needs a reason and permanently removes the proposal (the decline is kept in the Activity Log). If the vehicle is currently recorded as Out, the Admin is warned (non-blocking).
 
-Three repair-path modes, chosen once per ticket and stamped onto every sub-issue:
-- **In-house** — no extra fields beyond the sub-issue basics.
-- **Cannibalized** — requires a donor vehicle (different vehicle, same barangay, not retired) plus, per sub-issue, what's missing and what part is being pulled from the donor.
-- **External** — requires a reason from a fixed, objective-and-Admin-checkable list (warranty coverage; parts/service only at an authorized shop; needs specialized shop equipment; requires licensed/certified service; mechanic recommended it) and a work-scope description; optionally vendor, shop contact, who sent it, contact person, and estimated cost.
+**5.3 Repair (Maintenance Personnel).** The assigned mechanic logs the repair (notes, parts, cost, dates, optional photo). The repair method is chosen here, not at proposal: **in-house**, **using a part from another vehicle** (donor part, quantity, condition, reason, date installed — an Admin approves it before the part is removed, and the donor is flagged *Needs Inspection* with a history entry), or **sent to an outside shop** (mark *sent* with shop/reason/scope/estimate, then *returned* with the result/actual cost/warranty — the repair cannot be submitted while it is still out). The Admin may reassign a mechanic (with a reason) or the ticket's Custodian.
 
-Each sub-issue also carries a free-text maintenance-type (another growing catalog) and an optional **suggested mechanic** — a suggestion only; it doesn't dispatch a real work order or notify anyone until an Admin actually approves the ticket.
+**5.4 Verification = closure (Custodian).** The Custodian runs the type-specific functional test, attests they actually operated the vehicle, and approves or rejects. **Approving is the final sign-off: the job becomes Done, the ticket closes, the vehicle returns to Available, a Maintenance Record is written automatically, and Admin is notified.** Rejecting sends it back to the mechanic. Nobody verifies their own repair (a dual-role account that did the work cannot verify it; the ticket must be reassigned to another Custodian). There is no separate Admin confirmation, no decision-close, and no deferral.
 
-**Duplicate-ticket prevention**: titles are normalized (an auto-added "[Issue #N]" prefix stripped, case/whitespace-insensitive) and checked against every other open ticket on the same vehicle, re-checked again under a row lock at the moment of creation so two concurrent proposals can't both slip through.
+**5.5 Cancellation.** An Admin may cancel a ticket before it is closed (this also cancels the schedule it came from). A Closed ticket is locked: it cannot be cancelled, deleted, restored or reopened. There is no ticket delete, archive browser or restore.
 
-**Recurrence detection**: looks back 90 days on the same vehicle for a matching closed ticket or completed maintenance record (by maintenance type, then issue type, then title). A match stamps a recurrence count on the new ticket and sends all barangay Admins a "Recurring Fault Detected" notification naming the occurrence number and explicitly suggesting a deeper fix or a decommission review. A standalone check endpoint lets the UI show this *before* a proposal is even submitted.
-
-### 5.2 Admin review (Admin only)
-
-Can edit description, priority, assigned custodian, and per-sub-issue title/maintenance-type/suggested-mechanic before deciding.
-
-**On approve**: status becomes Active; the vehicle goes Needs Repair/Under Maintenance; every sub-issue with a still-valid suggested mechanic is automatically dispatched (assigned, notified) — a stale suggestion (deactivated account, moved barangay) is left unassigned rather than force-dispatched; the proposing Custodian is notified. The ticket's title was already finalized at proposal time (§5.1) and is never touched here; duplicate and recurrence matching compare the issue part of it only. At least one sub-issue must exist, and the vehicle must not have gone Inactive/Decommissioned since the proposal was filed.
-
-**On decline**: requires a reason. The entire proposal — and its sub-issues — is **permanently deleted**, by design — but the decline itself (ticket title, vehicle, original proposer, and reason) is captured as an Activity Log entry first, so the operational record disappearing doesn't erase the audit trail of why. Any linked Issue Report resets back to Pending.
-
-### 5.3 Assignment & repair
-
-Admin assigns (and can later reassign, with a reason) a mechanic per sub-issue — flagged, non-blocking, if the chosen mechanic is also this ticket's own Custodian (a self-verification conflict waiting to happen later). Admin can also reassign the ticket's Custodian entirely, which correctly carries any pending verification assignment along with it.
-
-While the ticket is Active, an Admin — or the ticket's assigned Custodian — can **add, rename or remove a sub-issue** from a single-input panel on the ticket page, but only while that sub-issue is still untouched (Open, no mechanic dispatched), and the last remaining sub-issue cannot be removed (cancel the ticket instead). Maintenance Personnel cannot.
-
-The assigned mechanic logs repair notes (append-only, never overwritten), parts used, cost, start/completion dates, an optional photo/file, and can confirm or correct the repair-type details. A **cannibalized** repair also records the donor part, quantity, condition, the reason for using a donor, and the date installed. An **external** repair has explicit stages: the mechanic marks it *sent to the shop* (shop, reason, work scope, contact, estimated cost), then *returned* (result, actual cost, warranty) — and the repair cannot be submitted for verification while it is still out. A **cannibalized** repair routes to a dedicated Admin approval step first (since it's really two actions — fixing one vehicle by un-fixing another): approving it auto-files a new Issue Report on the donor vehicle so its own missing part is never invisible; rejecting it (with a reason) sends the sub-issue back to repair.
-
-### 5.4 Verification & confirmation — the two-tier gate
-
-**Tier 1 — Verify (Custodian only — Admin cannot verify, not even as a fallback)**: a real functional test, not a rubber stamp. The checklist is vehicle-type-specific (a base set plus extra items for land vehicles, fire units, and water vehicles), custom items can be added, and approving **requires an explicit attestation** that the vehicle was actually operated/tested — the server independently re-checks that nothing in the submitted checklist failed before it will accept an Approve. A failed test sends the sub-issue back to repair.
-
-**Self-verification is blocked unconditionally**: whoever performed the repair can never verify it — checked against every mechanic who was ever assigned to this sub-issue, not just the current one, so a mechanic reassigned away mid-repair (before finalizing their own repair log) can't later verify their own earlier work through a dual-hat Custodian account either (closed in the final senior system review, 2026-10-10). The verifier must also be exactly the Custodian this sub-issue's verification was assigned to. If that Custodian is unavailable, the fix is reassigning the ticket to a different Custodian (which correctly carries the verification assignment along with it) — Admin is never a stand-in verifier for this step, by design.
-
-**Tier 2 — Confirm (Admin only)**: Confirmed finalizes the sub-issue (Done, a permanent maintenance-ledger entry is written, linked issue report resolved, and — if this was the ticket's last unfinished sub-issue — Admins are told the ticket is ready to close). Reopened sends it back to repair, clearing the verification verdict. **The same self-verification rule is independently re-checked here too** — specifically to catch a dual-role Admin + Maintenance Personnel account confirming their own work, since Tier 1 alone wouldn't stop an Admin.
-
-An already-confirmed sub-issue can later be reopened (Admin only) — reverses the ledger entry it wrote and re-stamps verification to the ticket's *current* Custodian, not whoever was Custodian when it was first confirmed.
-
-### 5.5 Deferral & closing
-
-**Deferring** a single sub-issue (Admin, with a required reason) marks it permanently Deferred and auto-generates a follow-up breadcrumb — either reopening the linked Issue Report to Pending, or creating a brand-new one — so the defect stays visible for later instead of vanishing.
-
-**Closing** a ticket is always an Admin action. A normal close happens when everything is already Done or Deferred. A **decision-close** triggers automatically whenever something is still genuinely unresolved — it requires both a written reason (the leftovers get swept into Deferred) and an explicit fitness-for-service call (does the vehicle actually go back into service, or not). Sub-issues already sitting at "verified, awaiting confirmation" are finalized properly rather than treated as unfinished. **A Closed ticket is permanently locked** — no more sub-issues, no reopening, ever.
-
-### 5.6 Cancellation, deletion, archiving
-
-Cancel/Uncancel (Admin only) works at any pre-Closed stage, except a still-Pending-Approval proposal (approve or decline it instead) and except a ticket where every sub-issue is already resolved (that's real completed work — close it). Deleting a ticket that never had any completed work leaves no trace; deleting one that *did* have completed work archives a full recoverable snapshot first. A Closed ticket can never be deleted. An archived "Deleted" entry can be reopened as a brand-new live ticket (re-running the duplicate-ticket check); an archived "Closed" entry is permanently locked and can't be.
+**5.6 Existing data.** Tickets that were waiting on the old Admin confirmation were settled automatically by migration (verified repairs became Done and fully-resolved tickets closed). Old issue reports, maintenance records and location records remain in the database; they simply have no screens.
 
 ---
 
 ## 6. Maintenance Schedules
 
-Captures vehicle, maintenance type, scheduled date/time, service location, notes, an optional assignee, and an optional recurrence (any whole number of months, 1–60 — not a fixed weekly/monthly/yearly preset list).
+Admin creates and edits schedules (vehicle, maintenance type, date/time, location, notes, assignee, optional 1–60-month recurrence) with the same non-blocking conflict warnings as before; Admin also reassigns, cancels and restores. Custodians no longer see or suggest schedules.
 
-**Conflict warnings** (never blocking, always "confirm anyway"): fire when the same vehicle already has another entry on that exact date, or when the barangay's total scheduled count for that date reaches a configurable daily-volume threshold.
-
-**Who does what** (2026-10-06 spec, reversing the earlier rule): **Admin creates and edits schedules**; a Custodian only **suggests** one (vehicle, type, date, notes) from the schedule page, which notifies the Admins and does not book anything; reassigning the mechanic is Admin-only; cancel/restore is Admin-only; **completing is the specific Maintenance Personnel it's assigned to, and only them** — Admin no longer has a blanket override (final senior system review, 2026-10-05, since "complete" means physically performed the work, and Admin never performs repair work in this system). An Admin who needs to hand off a stuck or unassigned schedule reassigns it to someone else first, exactly like reassigning a ticket's mechanic.
-
-Completing a schedule creates a proof-of-work maintenance record, always at **For Verification** — a receipt or completed-work photo can still be attached as evidence, but it never substitutes for an independent Custodian check (a "receipt attached = instantly Completed" shortcut existed here previously and was removed in the final stabilization pass, 2026-10-05, since it let whoever performed the work certify it themselves). A recurring schedule auto-creates its next occurrence at completion date + interval, correctly handling month-end edge cases (a Jan 31 monthly schedule lands on Feb 28, or Feb 29 in a leap year — not an overflow into March).
-
-A **daily background job** automatically turns any schedule whose date has arrived into a ticket **proposal** — `Pending Approval`, exactly like a human Custodian's, titled "Preventive Maintenance - [type]" with its one sub-issue titled "Scheduled Maintenance" (the real maintenance type stays in that sub-issue's own Maintenance Type field) — so it reads as planned work, not a diagnosed defect, anywhere it shows up. Its scheduled mechanic (if any) rides along as a suggestion only. It still has to pass through the same Admin review/approve step as every other proposal (and the same duplicate-ticket check) before it becomes a live, Active ticket running the normal assign → repair → verify → confirm pipeline. This was previously a direct bypass straight to an Active, pre-assigned ticket — fixed in the production-readiness audit (2026-10-05) specifically because it skipped Admin review, duplicate prevention, and the mechanic-assignment ability.
+**A due schedule never creates a ticket by itself.** A daily job notifies the barangay's Custodians **once** that it is due; the notification opens *Propose Ticket* pre-filled from the schedule (vehicle, type, description, suggested mechanic, `schedule_id`). Submitting links the schedule to that ticket — a schedule can become only one ticket — and from then on it follows the normal flow. Closing the ticket completes the schedule and, for a recurring one, seeds the next occurrence (month-end safe). Cancelling the ticket cancels the schedule. A schedule that already became a ticket cannot also be "completed" directly. The assigned Maintenance Personnel marks stand-alone schedule work done, which creates a record that the Custodian verifies.
 
 ---
 
-## 7. Maintenance Records (standalone ledger)
+## 7. Maintenance Records
 
-> Records are written automatically from confirmed ticket sub-issues and completed schedules. Manual entry remains Admin-only, kept for legacy/historical work; it is not a standing workflow for other roles.
-
-A parallel record type for maintenance that didn't originate from a ticket sub-issue being confirmed (manual entries, historical/external work, or a mechanic self-filing a field repair) — though confirming a ticket sub-issue *also* writes one of these, so this ledger ends up as the single unified maintenance history regardless of where the work came from.
-
-Creation is Admin-only for most fields, though a non-Admin filing a field repair is always stamped as the performer themselves and triggers an Admin notification since Admin wasn't in the loop when the work started. A record can never be created or edited directly into Completed — not even with a receipt or photo attached — only the dedicated Confirm action (Admin, after Custodian verification has passed) can finalize one; this mirrors the ticket workflow exactly and closes a bypass that previously existed here (removed 2026-10-05).
-
-Has its own verify/confirm flow mirroring the ticket workflow (Custodian verifies, cannot be the repairer; Admin gives final confirmation) and its own decision-close option for ending a record without waiting on verification, with the same written-reason-plus-fitness-call requirement.
+There is no manual Maintenance Records screen or entry form any more. The ledger is written **automatically** when a ticket is verified/closed or a schedule is completed, and it surfaces through the vehicle's History and the Reports module. Existing manual records are preserved read-only.
 
 ---
-
 ## 8. Notifications
 
-**The mechanism itself**: every user has an in-app notification list (latest 50), can mark one or all as read, and can delete one. Clicking a notification opens the exact ticket, issue report, or maintenance schedule it's about (not just a generic dashboard) whenever one is linked to it. Old notifications are pruned automatically by a **daily scheduled job** — a read notification is removed after 30 days, and anything (read or not) is removed after 90 days regardless.
+**The mechanism itself**: every user has an in-app notification list (latest 50), can mark one or all as read, and can delete one. Clicking a notification opens the exact ticket, vehicle, or (for a due schedule) a pre-filled Propose Ticket form it's about (not just a generic dashboard) whenever one is linked to it. Old notifications are pruned automatically by a **daily scheduled job** — a read notification is removed after 30 days, and anything (read or not) is removed after 90 days regardless.
 
 **What triggers one, and who gets it** — every distinct event found wired to a notification across the ticket/issue/schedule workflow:
 
 | Event | Recipient |
 |---|---|
-| Maintenance Personnel recommends a ticket for an issue | Barangay Custodians (links to that issue) |
-| Admin requests a Custodian inspection of a vehicle | Barangay Custodians (links to that vehicle) |
-| Custodian suggests a maintenance schedule | Barangay Admins |
 | Custodian proposes a ticket | Barangay Admins |
-| Admin approves / declines a proposal | The proposing Custodian |
-| A mechanic is assigned or reassigned to a sub-issue | The (new) mechanic (+ the previous one, on reassignment) |
-| A ticket's Custodian is reassigned | The new Custodian (+ the previous one) |
-| A repair is logged and ready for review | The assigned Custodian |
+| Admin approves & assigns a proposal | The proposing Custodian + the assigned mechanic |
+| Admin declines a proposal | The proposing Custodian |
+| A mechanic is reassigned / the ticket's Custodian is reassigned | The new (and previous) person |
+| A repair is logged and ready to verify | The assigned Custodian |
 | A cannibalized repair is submitted / approved / rejected | Barangay Admins, then the mechanic |
-| A functional test passes / fails | Barangay Admins, or the mechanic (on failure) |
-| A sub-issue is confirmed Done | The assigned Custodian (+ Admins, if that was the ticket's last one) |
-| A confirmed sub-issue is sent back for rework | The mechanic |
-| A sub-issue is deferred | The assigned Custodian |
-| A ticket is closed | The assigned Custodian + every mechanic who worked on it |
-| An archived ticket is reopened | The newly-assigned Custodian |
-| An issue report is filed | Barangay Admins (+ Custodians too, if filed by a pure Maintenance Personnel account) |
-| An issue report is dismissed | The original reporter |
-| A recurring fault is detected | Barangay Admins |
+| A verification passes | (ticket closes) Barangay Admins + the mechanic(s) |
+| A verification fails | The mechanic |
+| A due schedule | The barangay's Custodians (opens Propose Ticket pre-filled) || A recurring fault is detected | Barangay Admins |
 | A non-Admin self-files a maintenance record | Barangay Admins |
 | A maintenance record is decision-closed without verification | Barangay Custodians |
 | A schedule is created/edited/reassigned/restored with an assignee | That assignee (+ the previous one, on reassignment) |
-| A due schedule auto-converts into a ticket proposal | That schedule's Custodian + Barangay Admins (it still needs their review, same as a human proposal) |
 
 ---
 
@@ -228,7 +161,7 @@ All computed live on every dashboard load — there is no caching or scheduled p
 5. **Single-point-of-failure detection** — any vehicle type down to one (or zero, flagged critical) ready unit.
 6. **Fleet-wide failure-pattern detection** — the last 12 months of maintenance grouped by type, surfacing a systemic recurring cause rather than isolated incidents.
 7. **Per-vehicle reliability lens** — failure counts, average days out of service, lifetime repair spend, a "chronic" flag, and a decommission signal when lifetime repair spend nears acquisition cost. Shown as a "Reliability" card on the Vehicle Profile page, visible to Admin.
-8. **Action Queue** (Admin) — one ranked worklist combining pending issue reports, sub-issues needing attention, tickets ready to close, readiness-check gaps, overdue schedules, and recurring-fault reviews.
+8. **Action Queue** (Admin) — one ranked worklist combining proposals awaiting review, jobs with no mechanic, readiness-check gaps, overdue schedules, and recurring-fault reviews.
 9. **My Scheduled Work** (Maintenance Personnel) — that mechanic's own upcoming assigned schedules.
 10. **Sole-active-Admin warning** — proactively flags an Admin if they're the only one left for their barangay, before anyone tries to deactivate/demote them (the guard itself is described in §11.2).
 11. Supporting KPI tiles and charts: fleet counts by status, by type, by location, by condition; total maintenance spend; a recent-activity feed; role-tailored metric subsets (Admin gets the full operational/financial picture; Custodian gets issue-centric counts; Maintenance Personnel gets repair/schedule-centric counts plus a "vehicles needing attention" list).
@@ -306,7 +239,7 @@ Stated plainly, as found in the code — not implied to be bugs, just not (yet) 
 - **File storage is bucket-public by design** — vehicle documents, issue attachments, and repair photos are reachable by anyone holding the exact (non-sequential, not browsable) generated URL, with no per-request authentication. A documented, deliberate trade-off, not an oversight — see the code comment on `config/filesystems.php`'s `'public'` visibility setting.
 - The **last-Admin protection** stops specific actions (deactivate, remove Admin role, platform role change) but doesn't prevent every conceivable way a barangay could end up without an active Admin — the Super Admin recovery tool exists specifically to fix that case after the fact, not to make it impossible in advance.
 - **Import / custom-field limits:** an import takes at most 500 rows / 2 MB per file; custom fields are per Vehicle Type (a template column per distinct label), and the import template does not yet include a per-row hull/engine hint beyond the Instructions sheet.
-- **Usage Log is recording only** — it does not gate or change vehicle status.
+- **Usage is an indicator, not dispatch** — it records a checkout and return (no GPS, trips or odometer). It only gates *Take Out* (Available + Ready); it never changes the fleet status.
 - **Barangay boundary lookup** depends on a public third-party geocoder with no guaranteed coverage — a legitimate "no boundary found" result is expected for some barangays, not a bug.
 
 ---
