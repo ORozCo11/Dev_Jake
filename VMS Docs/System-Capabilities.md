@@ -71,7 +71,7 @@ A per-vehicle file cabinet, separate from the vehicle's cover photo — Title (r
 
 ### 3.5 Vehicle History
 
-A fully automatic, derived activity timeline — there is no manual "add a history entry." The backend writes an entry on nearly every vehicle-affecting action: added, info updated, location changed, archived, restored, decommissioned, readiness checked (pass/fail), marked available, condition checked/updated/deleted, issue reported/updated, document added, vehicle taken out / returned (usage log), spreadsheet import. Viewable with activity-type and date-range filters, free-text search, a card/table toggle, CSV export, and print — available to Admin and Custodian.
+A fully automatic, derived activity timeline — there is no manual "add a history entry." The backend writes an entry on nearly every vehicle-affecting action: added, info updated, location changed, archived, restored, decommissioned, readiness checked (pass/fail), marked available, condition checked/updated/deleted, issue reported/updated, document added, vehicle taken out / returned (usage log), spreadsheet import, and — closed as a gap in the final senior system review (2026-10-10), since these are arguably the biggest status/condition drivers in the system — a ticket being approved, inspected, closed, cancelled, or restored. Viewable with activity-type and date-range filters, free-text search, a card/table toggle, CSV export, and print — available to Admin and Custodian.
 
 ### 3.6 Condition Monitoring
 
@@ -107,7 +107,7 @@ This is the heart of the system. **Every ticket enters as a `Pending Approval` p
 
 ### 5.1 Creating a proposal (Custodian only)
 
-Required on every proposal: vehicle, title, description, priority, and **at least one sub-issue** — there's no "diagnose later" mode for a proposal, since the Custodian has already seen the vehicle and Admin's review is the check that stands in for a separate inspection step. Optionally linked to an Issue Report and/or a Condition Check (each validated to belong to the same vehicle and not already claimed elsewhere).
+Required on every proposal: vehicle, description, priority, and **at least one sub-issue** — there's no "diagnose later" mode for a proposal, since the Custodian has already seen the vehicle and Admin's review is the check that stands in for a separate inspection step. There is no separate title field: the system composes the ticket's title itself (`MT-0010 — <Vehicle> — <Issue>`, using the first sub-issue's maintenance type/title as the issue summary) the moment the proposal is created — any title sent by the client is ignored. Optionally linked to an Issue Report and/or a Condition Check (each validated to belong to the same vehicle and not already claimed elsewhere).
 
 Three repair-path modes, chosen once per ticket and stamped onto every sub-issue:
 - **In-house** — no extra fields beyond the sub-issue basics.
@@ -124,7 +124,7 @@ Each sub-issue also carries a free-text maintenance-type (another growing catalo
 
 Can edit description, priority, assigned custodian, and per-sub-issue title/maintenance-type/suggested-mechanic before deciding.
 
-**On approve**: status becomes Active; the vehicle goes Needs Repair/Under Maintenance; the ticket's title is server-built as `MT-0010 — <Vehicle> — <Issue>` (nobody types or edits a ticket title; duplicate and recurrence matching compare the issue part only); every sub-issue with a still-valid suggested mechanic is automatically dispatched (assigned, notified) — a stale suggestion (deactivated account, moved barangay) is left unassigned rather than force-dispatched; the proposing Custodian is notified. At least one sub-issue must exist, and the vehicle must not have gone Inactive/Decommissioned since the proposal was filed.
+**On approve**: status becomes Active; the vehicle goes Needs Repair/Under Maintenance; every sub-issue with a still-valid suggested mechanic is automatically dispatched (assigned, notified) — a stale suggestion (deactivated account, moved barangay) is left unassigned rather than force-dispatched; the proposing Custodian is notified. The ticket's title was already finalized at proposal time (§5.1) and is never touched here; duplicate and recurrence matching compare the issue part of it only. At least one sub-issue must exist, and the vehicle must not have gone Inactive/Decommissioned since the proposal was filed.
 
 **On decline**: requires a reason. The entire proposal — and its sub-issues — is **permanently deleted**, by design — but the decline itself (ticket title, vehicle, original proposer, and reason) is captured as an Activity Log entry first, so the operational record disappearing doesn't erase the audit trail of why. Any linked Issue Report resets back to Pending.
 
@@ -140,7 +140,7 @@ The assigned mechanic logs repair notes (append-only, never overwritten), parts 
 
 **Tier 1 — Verify (Custodian only — Admin cannot verify, not even as a fallback)**: a real functional test, not a rubber stamp. The checklist is vehicle-type-specific (a base set plus extra items for land vehicles, fire units, and water vehicles), custom items can be added, and approving **requires an explicit attestation** that the vehicle was actually operated/tested — the server independently re-checks that nothing in the submitted checklist failed before it will accept an Approve. A failed test sends the sub-issue back to repair.
 
-**Self-verification is blocked unconditionally**: whoever performed the repair can never verify it. The verifier must also be exactly the Custodian this sub-issue's verification was assigned to. If that Custodian is unavailable, the fix is reassigning the ticket to a different Custodian (which correctly carries the verification assignment along with it) — Admin is never a stand-in verifier for this step, by design.
+**Self-verification is blocked unconditionally**: whoever performed the repair can never verify it — checked against every mechanic who was ever assigned to this sub-issue, not just the current one, so a mechanic reassigned away mid-repair (before finalizing their own repair log) can't later verify their own earlier work through a dual-hat Custodian account either (closed in the final senior system review, 2026-10-10). The verifier must also be exactly the Custodian this sub-issue's verification was assigned to. If that Custodian is unavailable, the fix is reassigning the ticket to a different Custodian (which correctly carries the verification assignment along with it) — Admin is never a stand-in verifier for this step, by design.
 
 **Tier 2 — Confirm (Admin only)**: Confirmed finalizes the sub-issue (Done, a permanent maintenance-ledger entry is written, linked issue report resolved, and — if this was the ticket's last unfinished sub-issue — Admins are told the ticket is ready to close). Reopened sends it back to repair, clearing the verification verdict. **The same self-verification rule is independently re-checked here too** — specifically to catch a dual-role Admin + Maintenance Personnel account confirming their own work, since Tier 1 alone wouldn't stop an Admin.
 
@@ -232,6 +232,7 @@ All computed live on every dashboard load — there is no caching or scheduled p
 9. **My Scheduled Work** (Maintenance Personnel) — that mechanic's own upcoming assigned schedules.
 10. **Sole-active-Admin warning** — proactively flags an Admin if they're the only one left for their barangay, before anyone tries to deactivate/demote them (the guard itself is described in §11.2).
 11. Supporting KPI tiles and charts: fleet counts by status, by type, by location, by condition; total maintenance spend; a recent-activity feed; role-tailored metric subsets (Admin gets the full operational/financial picture; Custodian gets issue-centric counts; Maintenance Personnel gets repair/schedule-centric counts plus a "vehicles needing attention" list).
+12. **Fleet Capability & Readiness Impact** — the per-vehicle Criticality Watch (below) rolled up to the Vehicle Type level, answering "what emergency capability is at risk right now?" rather than "which vehicle." Each affected type gets a coverage state — `COVERED` (not shown — only affected types are listed), `LIMITED` (ready units exist, but something's down), `AT_RISK` (down to its last ready unit — agrees with the single-point-of-failure flag above), or `NO_COVERAGE` (zero ready units) — plus the type's highest effective criticality, a primary reason, the specific affected vehicles, and a link to each one's active ticket when one exists. Built entirely from the same `responseReadinessState`/`effectiveCriticality` primitives as everything else here — no second algorithm. Shown as a dashboard card (Custodian/Maintenance Personnel) or inside Risk & Readiness Watch (Admin).
 
 ---
 
@@ -320,6 +321,7 @@ This document was compiled by direct code review, not from memory or prior docum
 - `backend-api/app/Console/Commands/{ConvertDueSchedulesToTickets,PruneOldNotifications}.php`
 - `backend-api/database/migrations/2026_10_05_*.php` (vehicle-registration delegation, notification record links)
 - `backend-api/app/Http/Controllers/{VehicleImportController,VehicleTypeFieldController,VehicleUsageController}.php` and `backend-api/database/migrations/2026_10_0[6-9]_*.php` (notification vehicle link, vehicle imports, type custom fields, repair-method details, criticality & usage logs)
+- `backend-api/database/migrations/2026_10_10_000001_add_prior_mechanics_to_ticket_sub_issues.php` (the mid-repair-reassignment self-verification fix) and `backend-api/app/Models/TicketSubIssue.php`
 - `frontend-spa/src/views/Workspace.jsx` and `frontend-spa/src/components/{LocationDensityMap,VehicleLocationMap,AddLocationMap}.jsx`
 
 See `Documentation.md` for the shorter architectural overview, and `Role-Realignment-Analysis.md` for the history behind the current role/permission model.

@@ -15,6 +15,10 @@
 
 return [
     // Vehicle types
+    // .view is a broad grant — it's custom-field schema/labels (not vehicle
+    // data), needed by anyone viewing a vehicle with custom fields filled
+    // in, not just whoever manages the type itself.
+    'vehicle_type.view' => ['Admin', 'Custodian', 'Maintenance Personnel'],
     'vehicle_type.create' => ['Admin'],
     'vehicle_type.edit' => ['Admin'],
     'vehicle_type.delete' => ['Admin'],
@@ -108,22 +112,15 @@ return [
     'record.confirm' => ['Admin'],
     'record.decision_close' => ['Admin'],
 
-    // Maintenance schedules — REVERSED after Phase B4: the original code's
-    // own reasoning (Custodian has the day-to-day visibility into a
-    // vehicle's condition; booking a date isn't a cost/risk decision the
-    // way completing it is) turned out to be right. Custodian owns
-    // creation; Admin keeps oversight (edit/cancel/reassign any of them,
-    // not just their own) without originating new ones.
-    // `schedule.suggest`/suggestSchedule() retired in the final
-    // stabilization pass (2026-10-05, P1) — confirmed zero callers.
-    // Spec §19 (2026-10-06) reverses the earlier Custodian-owned model: Admin
-    // controls create/update/reschedule/cancel; a Custodian only suggests
-    // (schedule.suggest notifies Admin, books nothing).
+    // Maintenance schedules — Spec §19 (2026-10-06, current): Admin controls
+    // create/update/reschedule/cancel; a Custodian only suggests one
+    // (schedule.suggest notifies Admin, books nothing — see
+    // FleetController::suggestSchedule()). This reverses an earlier,
+    // now-superseded Custodian-owned-creation model.
     'schedule.create' => ['Admin'],
     'schedule.suggest' => ['Custodian'],
-    // Custodian may edit their OWN created entry (ownership enforced in
-    // FleetController::updateSchedule, same pattern as condition.edit);
-    // Admin edits any.
+    // Admin-only, per the same 2026-10-06 reversal above — a Custodian no
+    // longer edits schedules directly, only suggests one.
     'schedule.edit' => ['Admin'],
     'schedule.reassign' => ['Admin'],
     // Final senior system review (2026-10-05, §2/§12) — Admin no longer

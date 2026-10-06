@@ -74,6 +74,24 @@ class VehicleTypeFieldsTest extends TestCase
     }
 
     #[Test]
+    public function reading_a_types_field_schema_requires_authentication_and_any_barangay_role_can_read_it(): void
+    {
+        // Final senior system review — index() previously had no ability
+        // check at all, reachable by any authenticated user of any role.
+        // vehicle_type.view closes that while still allowing everyone who
+        // legitimately needs the field schema (anyone viewing a vehicle
+        // with custom fields filled in) to read it.
+        $this->getJson("/api/categories/{$this->type->category_id}/fields")->assertUnauthorized();
+
+        $mechanic = User::factory()->create(['role' => 'Maintenance Personnel', 'roles' => ['Maintenance Personnel']]);
+
+        foreach ([$this->admin, $this->custodian, $mechanic] as $user) {
+            Sanctum::actingAs($user, ['*']);
+            $this->getJson("/api/categories/{$this->type->category_id}/fields")->assertOk();
+        }
+    }
+
+    #[Test]
     public function a_vehicle_must_satisfy_its_types_active_fields_and_stores_the_values(): void
     {
         Sanctum::actingAs($this->admin, ['*']);

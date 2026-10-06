@@ -289,6 +289,11 @@ class FleetController extends Controller
             // the lone unit is still healthy.
             'fragility' => $this->fragility(),
 
+            // Final feature pass — Fleet Capability & Readiness Impact: the
+            // same readiness/criticality signals above, rolled up to "which
+            // emergency capability is at risk right now" per Vehicle Type.
+            'capability_impact' => $this->capabilityImpact(),
+
             // Gap C — what's breaking most across the whole fleet (12 months).
             'failure_patterns' => $this->failurePatterns(),
 
@@ -636,6 +641,95 @@ class FleetController extends Controller
             })
             ->filter(fn ($r) => $r['single_point'])
             ->sortBy('category')
+            ->values()
+            ->all();
+    }
+
+    /** Every ticket still open (not Closed/Cancelled), one per vehicle (the most recent), keyed by vehicle_id. */
+    private function activeTicketsByVehicle()
+    {
+        return MaintenanceTicket::whereNotIn('status', ['Closed', 'Cancelled'])
+            ->orderByDesc('ticket_id')
+            ->get(['ticket_id', 'vehicle_id'])
+            ->unique('vehicle_id')
+            ->keyBy('vehicle_id');
+    }
+
+    /**
+     * Fleet Capability & Readiness Impact — final feature pass (2026-10-10).
+     * Answers "what emergency capability is currently at risk?" at the
+     * Vehicle Type level, rather than making someone mentally aggregate the
+     * per-vehicle Criticality Watch themselves. Deliberately reuses
+     * responseReadinessState() and effectiveCriticality() as the only two
+     * primitives — no second readiness or criticality algorithm — and keeps
+     * "ready" defined the same way fragility() already does (Available
+     * status), so a type's coverage_state here always agrees with whether
+     * fragility() already flagged it single_point/critical.
+     */
+    private function capabilityImpact(): array
+    {
+        $labels = ['in_maintenance' => 'In maintenance', 'not_ready' => 'Failed readiness check', 'unchecked' => 'Never checked', 'stale' => 'Check out of date'];
+        $ticketsByVehicle = $this->activeTicketsByVehicle();
+
+        return Vehicle::with('category')
+            ->whereNotIn('status', ['Inactive', 'Decommissioned'])
+            ->get()
+            ->groupBy(fn ($v) => $v->category?->category_name ?? 'Uncategorized')
+            ->map(function ($group, $name) use ($labels, $ticketsByVehicle) {
+                $total = $group->count();
+                $ready = $group->where('status', 'Available')->count();
+                $down = $total - $ready;
+
+                $coverageState = match (true) {
+                    $ready === 0 => 'NO_COVERAGE',
+                    $ready === 1 => 'AT_RISK',
+                    $down > 0   => 'LIMITED',
+                    default     => 'COVERED',
+                };
+
+                // The type's own criticality is the HIGHEST effective
+                // criticality among its vehicles — one Critical ambulance in
+                // an otherwise Normal fleet still makes that type's coverage
+                // a Critical concern.
+                $criticality = $group
+                    ->map(fn ($v) => $v->effectiveCriticality())
+                    ->sort(fn ($a, $b) => array_search($a, self::CRITICALITY_LEVELS, true) <=> array_search($b, self::CRITICALITY_LEVELS, true))
+                    ->first() ?? 'Normal';
+
+                $affected = $group
+                    ->where('status', '!=', 'Available')
+                    ->map(function ($v) use ($labels, $ticketsByVehicle) {
+                        // Non-Available status short-circuits responseReadinessState()
+                        // before it ever looks at the readiness check, so $latest
+                        // can safely be null here.
+                        $state = $this->responseReadinessState($v, null);
+                        return [
+                            'vehicle_id'       => $v->vehicle_id,
+                            'vehicle_name'     => $v->vehicle_name,
+                            'plate_number'     => $v->plate_number,
+                            'state'            => $state,
+                            'reason'           => $labels[$state] ?? 'Not available',
+                            'active_ticket_id' => $ticketsByVehicle->get($v->vehicle_id)?->ticket_id,
+                        ];
+                    })
+                    ->values();
+
+                return [
+                    'category'         => $name,
+                    'criticality'      => $criticality,
+                    'coverage_state'   => $coverageState,
+                    'ready'            => $ready,
+                    'down'             => $down,
+                    'total'            => $total,
+                    'primary_reason'   => $affected->first()['reason'] ?? null,
+                    'affected_vehicles' => $affected->all(),
+                ];
+            })
+            ->filter(fn ($r) => $r['coverage_state'] !== 'COVERED')
+            ->sortBy([
+                fn ($a, $b) => array_search($a['criticality'], self::CRITICALITY_LEVELS, true) <=> array_search($b['criticality'], self::CRITICALITY_LEVELS, true),
+                fn ($a, $b) => strcmp($a['category'], $b['category']),
+            ])
             ->values()
             ->all();
     }
@@ -2527,11 +2621,6 @@ class FleetController extends Controller
             'message' => implode(' ', $messages) . ' Are you sure you want to add another?',
         ];
     }
-
-    // suggestSchedule() / schedule.suggest removed in the final stabilization
-    // pass (2026-10-05, P1) — confirmed zero frontend callers. Condition
-    // Monitoring's "Suggest Schedule from Condition" action uses the normal
-    // create-schedule endpoint below (pre-filled), not this one.
 
     public function updateSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
     {

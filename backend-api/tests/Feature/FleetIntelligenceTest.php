@@ -800,4 +800,126 @@ class FleetIntelligenceTest extends TestCase
 
         $this->assertDatabaseCount('vehicle_locations', 0);
     }
+
+    // ---- Final feature: Fleet Capability & Readiness Impact ---------------
+
+    #[Test]
+    public function a_type_with_no_units_down_is_covered_and_not_listed(): void
+    {
+        $vehicle = $this->vehicle('Fire Truck'); // Available, alone
+        $this->vehicle('Fire Truck', ['category_id' => $vehicle->category_id]); // also Available
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $impact = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'));
+
+        $this->assertNull($impact->firstWhere('category', $vehicle->fresh()->category->category_name), 'A fully-covered type should not appear.');
+    }
+
+    #[Test]
+    public function a_type_with_one_of_several_units_down_is_limited(): void
+    {
+        $vehicle = $this->vehicle('Fire Truck');
+        $this->vehicle('Fire Truck', ['category_id' => $vehicle->category_id]);
+        $this->vehicle('Fire Truck', ['category_id' => $vehicle->category_id, 'status' => 'Under Maintenance']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $impact = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'));
+        $row = $impact->firstWhere('category', $vehicle->fresh()->category->category_name);
+
+        $this->assertNotNull($row);
+        $this->assertSame('LIMITED', $row['coverage_state']);
+        $this->assertSame(2, $row['ready']);
+        $this->assertSame(1, $row['down']);
+        $this->assertSame(3, $row['total']);
+        $this->assertCount(1, $row['affected_vehicles']);
+    }
+
+    #[Test]
+    public function a_type_down_to_its_last_ready_unit_is_at_risk_and_matches_fragility(): void
+    {
+        $ambulance = $this->vehicle('Ambulance');
+        $this->vehicle('Ambulance', ['category_id' => $ambulance->category_id, 'status' => 'Under Maintenance']);
+        $this->vehicle('Ambulance', ['category_id' => $ambulance->category_id, 'status' => 'Under Maintenance']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $dash = $this->getJson('/api/dashboard')->assertOk();
+        $categoryName = $ambulance->fresh()->category->category_name;
+
+        $impactRow = collect($dash->json('capability_impact'))->firstWhere('category', $categoryName);
+        $fragilityRow = collect($dash->json('fragility'))->firstWhere('category', $categoryName);
+
+        $this->assertSame('AT_RISK', $impactRow['coverage_state']);
+        $this->assertSame(1, $impactRow['ready']);
+        $this->assertTrue($fragilityRow['single_point'], 'AT_RISK must agree with fragility()\'s single_point flag.');
+        $this->assertFalse($fragilityRow['critical']);
+    }
+
+    #[Test]
+    public function a_type_with_zero_ready_units_is_no_coverage_with_a_reason(): void
+    {
+        $ambulance = $this->vehicle('Ambulance', ['status' => 'Under Maintenance']);
+        $this->vehicle('Ambulance', ['category_id' => $ambulance->category_id, 'status' => 'Under Maintenance']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $impact = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'));
+        $row = $impact->firstWhere('category', $ambulance->fresh()->category->category_name);
+
+        $this->assertSame('NO_COVERAGE', $row['coverage_state']);
+        $this->assertSame(0, $row['ready']);
+        $this->assertSame('In maintenance', $row['primary_reason']);
+        $this->assertCount(2, $row['affected_vehicles']);
+    }
+
+    #[Test]
+    public function at_risk_types_are_ranked_critical_before_normal(): void
+    {
+        $critical = $this->vehicle('Fire Truck', ['criticality' => 'Critical']);
+        $this->vehicle('Fire Truck', ['category_id' => $critical->category_id, 'status' => 'Under Maintenance']);
+
+        $normal = $this->vehicle('Water Rescue');
+        $this->vehicle('Water Rescue', ['category_id' => $normal->category_id, 'status' => 'Under Maintenance']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $impact = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'));
+
+        $critIndex = $impact->search(fn ($r) => $r['category'] === $critical->fresh()->category->category_name);
+        $normalIndex = $impact->search(fn ($r) => $r['category'] === $normal->fresh()->category->category_name);
+        $this->assertNotFalse($critIndex);
+        $this->assertNotFalse($normalIndex);
+        $this->assertLessThan($normalIndex, $critIndex, 'Critical-criticality type must rank before a Normal one.');
+    }
+
+    #[Test]
+    public function an_affected_vehicles_open_ticket_is_linked_but_a_closed_one_is_not(): void
+    {
+        $ambulance = $this->vehicle('Ambulance', ['status' => 'Under Maintenance']);
+
+        $closed = MaintenanceTicket::create([
+            'vehicle_id' => $ambulance->vehicle_id,
+            'created_by' => $this->admin->id,
+            'ticket_title' => 'Old Issue',
+            'ticket_description' => 'x',
+            'priority' => 'High',
+            'status' => 'Closed',
+            'closed_at' => now()->subDay(),
+        ]);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $row = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'))
+            ->firstWhere('category', $ambulance->fresh()->category->category_name);
+        $this->assertNull($row['affected_vehicles'][0]['active_ticket_id'], 'A Closed ticket must not be linked as active.');
+
+        $active = MaintenanceTicket::create([
+            'vehicle_id' => $ambulance->vehicle_id,
+            'created_by' => $this->admin->id,
+            'ticket_title' => 'Brake Failure',
+            'ticket_description' => 'x',
+            'priority' => 'High',
+            'status' => 'Active',
+        ]);
+
+        $row = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'))
+            ->firstWhere('category', $ambulance->fresh()->category->category_name);
+        $this->assertSame($active->ticket_id, $row['affected_vehicles'][0]['active_ticket_id']);
+    }
 }

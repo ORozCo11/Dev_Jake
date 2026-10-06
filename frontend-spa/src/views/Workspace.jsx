@@ -91,11 +91,12 @@ const modulesByRole = {
       ['maintenance', 'Maintenance Records'],
       ['conditions', 'Condition Monitoring'],
     ] },
-    // 'vehicleDocuments' is a vehicle picker + the same per-vehicle Files
-    // card/modal VehicleProfilePage uses (see VehicleDocumentsPage) — not a
-    // new document store, just a cross-vehicle entry point into the
-    // existing one. Ticket Archives moved into the Maintenance Tickets
-    // module itself (a toolbar link there) instead of its own top-level row.
+    // The old cross-vehicle "Vehicle Documents" picker page (VehicleDocumentsPage)
+    // was removed (2026-10-10) — unlinked everywhere and reachable only by
+    // forcing its module key. Documents now live solely on the vehicle
+    // profile's own Files card. Ticket Archives moved into the Maintenance
+    // Tickets module itself (a toolbar link there) instead of its own
+    // top-level row.
     { section: 'Fleet & Assets', icon: 'vehicle', items: [
       ['vehicles', 'Vehicle Management'],
       ['categories', 'Vehicle Types'],
@@ -150,10 +151,10 @@ const modulesByRole = {
     { section: 'Issues', icon: 'issues', items: [
       ['issues', 'Vehicle Issues'],
     ] },
-    // Final stabilization pass (2026-10-05, P0) — Vehicle Documents removed
-    // entirely for this role (was view-only before); they still see vehicle
-    // info via View Vehicles, and repair evidence through their own work
-    // orders, which covers everything actually needed for assigned work.
+    // No standalone "Vehicle Documents" sidebar item for any role — the
+    // module lives only on the vehicle profile's own Files card now
+    // (document.view/.create abilities). Maintenance Personnel reaches it
+    // the same way: open a vehicle from View Vehicles below.
     { section: 'Vehicles', icon: 'vehicle', items: [
       ['vehicles', 'View Vehicles'],
     ] },
@@ -427,14 +428,6 @@ const moduleIcons = {
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  ),
-  vehicleDocuments: (
-    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="9" y1="13" x2="15" y2="13" />
-      <line x1="9" y1="17" x2="13" y2="17" />
     </svg>
   ),
 };
@@ -3009,15 +3002,12 @@ function Workspace() {
               lookups={lookups}
               allHubs={allHubs}
               canManage={hasRole(user, 'Admin')}
-              // Phase B4 — document.create/edit dropped Maintenance Personnel
-              // entirely (view/download only now); Custodian keeps upload +
-              // edit-own (VehicleFiles/VehicleFilesModal enforce the
-              // ownership half via added_by), Admin unrestricted.
+              // 2026-10-06 spec reversal — Maintenance Personnel can now view
+              // documents and upload repair evidence (edit only their own
+              // upload); Custodian keeps upload + edit-own (VehicleFiles/
+              // VehicleFilesModal enforce the ownership half via added_by);
+              // Admin unrestricted; delete stays Admin-only everywhere.
               canManageDocuments={canDo(user, 'document.create')}
-              // Final stabilization pass (2026-10-05, P0) — Maintenance
-              // Personnel has NO Vehicle Documents access at all now, not
-              // even read-only; they see repair evidence through the
-              // ticket/work-order record itself instead.
               canViewDocuments={canDo(user, 'document.view')}
               canViewUsage={canDo(user, 'usage.view')}
               canLogUsage={canDo(user, 'usage.log')}
@@ -3723,29 +3713,6 @@ function Workspace() {
             )}
           </ModulePanel>
         </>
-      );
-    }
-
-    if (activeModule === 'vehicleDocuments') {
-      // Final stabilization pass (2026-10-05, P0) — enforced here too, not
-      // just by leaving it out of Maintenance Personnel's sidebar, in case
-      // this module is ever reached another way.
-      if (!canDo(user, 'document.view')) {
-        return (
-          <ModulePanel description="Vehicle Documents">
-            <div className="empty-prereq">
-              <h3>Not available for your role</h3>
-              <p>Vehicle Documents isn't part of Maintenance Personnel's access.</p>
-            </div>
-          </ModulePanel>
-        );
-      }
-      return (
-        <VehicleDocumentsPage
-          vehicles={lookups.vehicles ?? []}
-          canManage={hasRole(user, 'Admin') || hasRole(user, 'Custodian')}
-          onRequestConfirmation={setConfirmDialog}
-        />
       );
     }
 
@@ -5056,6 +5023,9 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
   // Gap A — readiness watch; Gap B — fragility; Gap C — failure patterns.
   const readinessWatch = data.readiness_watch ?? [];
   const criticalityWatch = data.criticality_watch ?? [];
+  // Final feature pass — Fleet Capability & Readiness Impact: the same
+  // signals above, rolled up to "which emergency capability is at risk?".
+  const capabilityImpact = data.capability_impact ?? [];
   const fragility = data.fragility ?? [];
   const failurePatterns = data.failure_patterns ?? [];
   const showBreakingMost = hasRole(user, 'Admin') && failurePatterns.length > 0;
@@ -5266,6 +5236,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
         )}
 
         <CriticalityWatchCard items={criticalityWatch} onNavigate={onNavigate} basePath={basePath} />
+        <CapabilityImpactCard items={capabilityImpact} onNavigate={onNavigate} basePath={basePath} />
 
         <section className="panel col-span-5 dashboard-lean-panel">
           <div className="panel-header-bar">
@@ -5682,6 +5653,30 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
                     <span className={`risk-watch-item-dot${f.critical ? ' is-critical' : ''}`} />
                     Only 1 {f.category}
                   </div>
+                ))}
+              </div>
+            )}
+            {capabilityImpact.length > 0 && (
+              <div className="risk-watch-col">
+                <h4>Capability impact by type</h4>
+                {capabilityImpact.map((row) => (
+                  <button
+                    key={row.category}
+                    type="button"
+                    className={`risk-watch-item risk-watch-item-clickable${row.criticality === 'Critical' ? ' is-critical' : ''}`}
+                    onClick={() => { setOpenDashboardModal(null); onNavigate(`${basePath}/vehicles`); }}
+                  >
+                    <span className={`risk-watch-item-dot${row.criticality === 'Critical' ? ' is-critical' : ''}`} />
+                    <div className="risk-watch-item-body">
+                      <span className="risk-watch-item-top">
+                        <span className="risk-watch-item-title">{row.category}</span>
+                        <span className={`risk-watch-tag${row.coverage_state === 'NO_COVERAGE' ? ' is-critical' : ''}`}>
+                          {CAPABILITY_STATE_LABEL[row.coverage_state] ?? row.coverage_state}
+                        </span>
+                      </span>
+                      <span className="risk-watch-item-sub">{row.ready}/{row.total} ready · {row.primary_reason ?? 'Based on current records.'}</span>
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -14838,60 +14833,6 @@ function IssueFilesCard({ issue }) {
 // the exact same per-vehicle Files card (VehicleFiles/VehicleFilesModal)
 // VehicleProfilePage already uses, so there's no second document store or
 // upload path to keep in sync, just another way to reach the existing one.
-function VehicleDocumentsPage({ vehicles, canManage, onRequestConfirmation }) {
-  const [query, setQuery] = useState('');
-  const [selectedId, setSelectedId] = useState(null);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return vehicles;
-    return vehicles.filter((v) => `${v.vehicle_name} ${v.plate_number}`.toLowerCase().includes(q));
-  }, [vehicles, query]);
-
-  const selected = vehicles.find((v) => String(v.vehicle_id) === String(selectedId));
-
-  return (
-    <ModulePanel description="Browse and manage each vehicle's uploaded documents — registration papers, inspection reports, repair evidence, and photos.">
-      <section className="panel">
-        <div className="panel-header-bar">
-          <h3>Vehicle Documents</h3>
-          <LocalSearchInput value={query} onChange={setQuery} placeholder="Search vehicles..." />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 300px) 1fr', gap: 18, alignItems: 'start', marginTop: 10 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 560, overflowY: 'auto' }}>
-            {filtered.map((v) => (
-              <button
-                key={v.vehicle_id}
-                type="button"
-                onClick={() => setSelectedId(v.vehicle_id)}
-                style={{
-                  textAlign: 'left', padding: '8px 10px', borderRadius: 8,
-                  border: String(v.vehicle_id) === String(selectedId) ? '1px solid #2563eb' : '1px solid #e2e8f0',
-                  background: String(v.vehicle_id) === String(selectedId) ? '#eff6ff' : '#fff', cursor: 'pointer',
-                }}
-              >
-                <strong>{v.vehicle_name}</strong>
-                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{v.plate_number}</div>
-              </button>
-            ))}
-            {filtered.length === 0 && <p className="muted" style={{ padding: 10 }}>No vehicles match.</p>}
-          </div>
-          <div>
-            {selected ? (
-              <VehicleFiles vehicleId={selected.vehicle_id} canManage={canManage} onRequestConfirmation={onRequestConfirmation} />
-            ) : (
-              <div className="empty-prereq">
-                <h3>Select a vehicle</h3>
-                <p>Pick a vehicle on the left to view or manage its documents.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-    </ModulePanel>
-  );
-}
-
 // Production-readiness audit finding #8 — FleetController::vehicleReliability()
 // was fully built (failure counts, days out of service, lifetime spend, a
 // chronic flag, a decommission signal) but had no caller anywhere in the
@@ -18007,6 +17948,72 @@ function CriticalityWatchCard({ items, onNavigate, basePath }) {
       {items.length > shown.length && (
         <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.78rem' }}>+ {items.length - shown.length} more — open Vehicles to see them all.</p>
       )}
+    </section>
+  );
+}
+
+// Fleet Capability & Readiness Impact — final feature pass (2026-10-10).
+// The per-vehicle Criticality Watch above, rolled up to "which emergency
+// capability is at risk?" per Vehicle Type. Entirely server-computed
+// (capability_impact on the dashboard response) — this component only
+// renders what it's given, it never recomputes readiness/criticality itself.
+const CAPABILITY_STATE_LABEL = { LIMITED: 'Limited', AT_RISK: 'At Risk', NO_COVERAGE: 'No Coverage' };
+
+function CapabilityImpactCard({ items, onNavigate, basePath }) {
+  if (!items?.length) return null;
+
+  return (
+    <section className="panel col-span-7 dashboard-lean-panel">
+      <div className="panel-header-bar">
+        <h3><Icon name="alert" size={16} /> Fleet Capability Impact</h3>
+        <span className="area-chart-tag">{items.length} type{items.length === 1 ? '' : 's'} affected</span>
+      </div>
+      <div className="risk-watch-col">
+        {items.map((row) => (
+          <div key={row.category} className={`risk-watch-item${row.criticality === 'Critical' ? ' is-critical' : ''}`} style={{ cursor: 'default', alignItems: 'flex-start' }}>
+            <span className={`risk-watch-item-dot${row.criticality === 'Critical' ? ' is-critical' : ''}`} />
+            <div className="risk-watch-item-body">
+              <span className="risk-watch-item-top">
+                <span className="risk-watch-item-title">{row.category}</span>
+                <span className={`risk-watch-tag${row.coverage_state === 'NO_COVERAGE' ? ' is-critical' : ''}`}>
+                  {CAPABILITY_STATE_LABEL[row.coverage_state] ?? row.coverage_state}
+                </span>
+              </span>
+              <span className="risk-watch-item-sub">
+                {row.ready}/{row.total} ready · {row.criticality} · {row.primary_reason ?? 'Based on current records.'}
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, alignItems: 'center' }}>
+                {row.affected_vehicles.slice(0, 4).map((v) => (
+                  <span key={v.vehicle_id} style={{ display: 'inline-flex', borderRadius: 999, overflow: 'hidden', border: '1px solid #cbd5e1' }}>
+                    <button
+                      type="button"
+                      className="btn-view-action"
+                      style={{ fontSize: '0.74rem', padding: '3px 9px', border: 'none', borderRadius: 0 }}
+                      onClick={() => onNavigate(`${basePath}/vehicles/${v.vehicle_id}`)}
+                    >
+                      {v.vehicle_name}
+                    </button>
+                    {v.active_ticket_id && (
+                      <button
+                        type="button"
+                        className="btn-view-action"
+                        title={`Open Ticket #${v.active_ticket_id}`}
+                        style={{ fontSize: '0.74rem', padding: '3px 9px', border: 'none', borderLeft: '1px solid #cbd5e1', borderRadius: 0, background: '#eff6ff' }}
+                        onClick={() => onNavigate(`${basePath}/tickets/${v.active_ticket_id}`)}
+                      >
+                        Ticket
+                      </button>
+                    )}
+                  </span>
+                ))}
+                {row.affected_vehicles.length > 4 && (
+                  <span className="muted" style={{ fontSize: '0.72rem' }}>+ {row.affected_vehicles.length - 4} more</span>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

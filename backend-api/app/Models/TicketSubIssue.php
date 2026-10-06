@@ -30,6 +30,10 @@ class TicketSubIssue extends Model
         'title',
         'status',
         'assigned_mechanic_id',
+        // Every mechanic who ever held assigned_mechanic_id on this sub-issue
+        // before the current one — closes a self-verification gap for a
+        // mechanic reassigned away mid-repair (see the 2026_10_10 migration).
+        'prior_mechanic_ids',
         // A Custodian's proposed mechanic, before an Admin has approved the
         // ticket — see the 2026_09_28_000002 migration's docblock.
         'suggested_mechanic_id',
@@ -111,6 +115,7 @@ class TicketSubIssue extends Model
         'external_estimated_cost' => 'decimal:2',
         'functional_test'      => 'array',
         'test_attested'        => 'boolean',
+        'prior_mechanic_ids'   => 'array',
     ];
 
     public function ticket()

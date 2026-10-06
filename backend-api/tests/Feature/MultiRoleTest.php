@@ -138,7 +138,7 @@ class MultiRoleTest extends TestCase
             'test_attested' => true,
             'functional_test' => [['item' => 'Reported issue no longer occurs', 'passed' => true]],
         ])->assertForbidden()
-            ->assertJsonFragment(['message' => 'You performed this repair — it must be verified by a different Custodian. Reassign this ticket to another Custodian.']);
+            ->assertJsonFragment(['message' => 'You performed repair work on this sub-issue — it must be verified by a different Custodian. Reassign this ticket to another Custodian.']);
 
         // Admin is no longer a verification fallback (production-readiness
         // audit finding #2) — the actual fix is reassigning the ticket to a
@@ -269,7 +269,7 @@ class MultiRoleTest extends TestCase
         $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
             'confirmation_verdict' => 'Confirmed',
         ])->assertForbidden()
-            ->assertJsonFragment(['message' => 'You performed this repair — another Admin needs to give the final confirmation.']);
+            ->assertJsonFragment(['message' => 'You performed repair work on this sub-issue — another Admin needs to give the final confirmation.']);
 
         Sanctum::actingAs($otherAdmin, ['*']);
         $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/confirm", [

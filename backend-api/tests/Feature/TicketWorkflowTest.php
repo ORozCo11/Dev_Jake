@@ -1217,9 +1217,88 @@ class TicketWorkflowTest extends TestCase
             'test_attested'        => true,
             'functional_test'      => [['item' => 'Engine starts', 'passed' => true]],
         ])->assertForbidden()
-            ->assertJsonFragment(['message' => 'You performed this repair — it must be verified by a different Custodian. Reassign this ticket to another Custodian.']);
+            ->assertJsonFragment(['message' => 'You performed repair work on this sub-issue — it must be verified by a different Custodian. Reassign this ticket to another Custodian.']);
 
         $this->assertSame('For Inspection', $subIssue->fresh()->status);
+    }
+
+    #[Test]
+    public function a_mechanic_reassigned_away_mid_repair_who_is_also_the_custodian_still_cannot_verify_their_own_earlier_work(): void
+    {
+        // Final senior system review — closes a self-verification gap: the
+        // old guard only ever checked the CURRENT assigned_mechanic_id, so a
+        // mechanic who did real repair work and was then reassigned away
+        // before finalizing it (reassignMechanic() only fires while still
+        // 'Under Repair') was never blocked, as long as they also held this
+        // ticket's Custodian hat — because by the time it reached
+        // verification, assigned_mechanic_id named someone else entirely.
+        $vehicle = $this->vehicle();
+        $ticket = $this->createTicket($vehicle);
+        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
+        $subIssue = $ticket->subIssues->first();
+
+        $this->custodian->update(['roles' => ['Custodian', 'Maintenance Personnel']]);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+            'assigned_mechanic_id' => $this->custodian->id,
+            'maintenance_type' => 'Engine Repair',
+        ])->assertOk();
+
+        // Reassigned away before the custodian-mechanic ever submits repair
+        // logs for their own work.
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/reassign-mechanic", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+            'reassign_reason' => 'Reassigning mid-repair for testing.',
+        ])->assertOk();
+
+        $this->assertSame([$this->custodian->id], $subIssue->fresh()->prior_mechanic_ids);
+
+        // A different mechanic finishes and submits the paperwork.
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/log-repairs", [
+            'repair_logs' => 'Picked up where the reassigned mechanic left off.',
+        ])->assertOk();
+
+        // The original mechanic — now only wearing the Custodian hat on
+        // paper, but who actually did earlier repair work on this exact
+        // sub-issue — still cannot verify it, even though assigned_mechanic_id
+        // now names someone else entirely.
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/verify", [
+            'verification_verdict' => 'Approved',
+            'test_attested'        => true,
+            'functional_test'      => [['item' => 'Engine starts', 'passed' => true]],
+        ])->assertForbidden()
+            ->assertJsonFragment(['message' => 'You performed repair work on this sub-issue — it must be verified by a different Custodian. Reassign this ticket to another Custodian.']);
+    }
+
+    #[Test]
+    public function prior_mechanic_ids_accumulate_across_reassignments_without_duplicates(): void
+    {
+        $vehicle = $this->vehicle();
+        $ticket = $this->createTicket($vehicle);
+        $ticket = $this->inspectWithSubIssues($ticket, ['Low coolant level']);
+        $subIssue = $ticket->subIssues->first();
+        $third = User::factory()->create(['role' => 'Maintenance Personnel']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+            'maintenance_type' => 'Engine Repair',
+        ])->assertOk();
+
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/reassign-mechanic", [
+            'assigned_mechanic_id' => $this->mechanic2->id,
+            'reassign_reason' => 'first handoff',
+        ])->assertOk();
+
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/reassign-mechanic", [
+            'assigned_mechanic_id' => $third->id,
+            'reassign_reason' => 'second handoff',
+        ])->assertOk();
+
+        $this->assertSame([$this->mechanic->id, $this->mechanic2->id], $subIssue->fresh()->prior_mechanic_ids);
     }
 
     #[Test]

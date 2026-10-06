@@ -20,8 +20,15 @@ class VehicleTypeFieldController extends Controller
 {
     use AuthorizesAbilities;
 
-    public function index(VehicleCategory $category)
+    public function index(Request $request, VehicleCategory $category)
     {
+        // Final senior system review — this had no ability check at all,
+        // reachable by any authenticated user of any role. A broad read
+        // grant (it's just field schema/labels, not vehicle data) closes
+        // that without blocking anyone who legitimately needs it to render
+        // a vehicle's custom fields.
+        $this->requireAbility($request, 'vehicle_type.view');
+
         return $category->fields;
     }
 

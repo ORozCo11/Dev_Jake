@@ -321,10 +321,9 @@ class PhaseB4RoleModelTest extends TestCase
     }
 
     // =======================================================================
-    // Maintenance Schedules — REVERSED after this test file was first
-    // written: Custodian creates directly now (they have the day-to-day
-    // visibility a booking decision needs); Admin keeps oversight
-    // (edit/cancel/reassign) but no longer originates one directly.
+    // Maintenance Schedules — Spec §19 (2026-10-06, current): Admin owns the
+    // calendar (create/edit/cancel/reassign); a Custodian only suggests one
+    // (schedule.suggest notifies Admin, books nothing).
     // =======================================================================
 
     #[Test]
@@ -425,13 +424,6 @@ class PhaseB4RoleModelTest extends TestCase
             'notes' => 'Trying to edit someone else\'s schedule.',
         ])->assertForbidden();
     }
-
-    // schedule.suggest / suggestSchedule() removed in the final stabilization
-    // pass (2026-10-05, P1) — confirmed zero frontend callers (the
-    // Condition Monitoring "Suggest Schedule from Condition" action uses the
-    // normal POST /maintenance-schedules create endpoint, pre-filled, not
-    // this one), matching the dead-code note that used to sit on the ability
-    // in config/permissions.php.
 
     // =======================================================================
     // Issue reports — Maintenance Personnel loses edit entirely; Custodian's
