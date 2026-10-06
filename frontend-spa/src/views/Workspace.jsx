@@ -3081,6 +3081,8 @@ function Workspace() {
               // even read-only; they see repair evidence through the
               // ticket/work-order record itself instead.
               canViewDocuments={canDo(user, 'document.view')}
+              canViewUsage={canDo(user, 'usage.view')}
+              canLogUsage={canDo(user, 'usage.log')}
               canCheckReadiness={canDo(user, 'vehicle.readiness_check')}
               canRequestInspection={canDo(user, 'vehicle.request_inspection')}
               // Production-readiness audit finding #8 — the reliability
@@ -5115,6 +5117,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
   const preventiveWatch = data.preventive_watch ?? [];
   // Gap A — readiness watch; Gap B — fragility; Gap C — failure patterns.
   const readinessWatch = data.readiness_watch ?? [];
+  const criticalityWatch = data.criticality_watch ?? [];
   const fragility = data.fragility ?? [];
   const failurePatterns = data.failure_patterns ?? [];
   const showBreakingMost = hasRole(user, 'Admin') && failurePatterns.length > 0;
@@ -5324,6 +5327,8 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
             )}
           </section>
         )}
+
+        <CriticalityWatchCard items={criticalityWatch} onNavigate={onNavigate} basePath={basePath} />
 
         <section className="panel col-span-5 dashboard-lean-panel">
           <div className="panel-header-bar">
@@ -5725,6 +5730,23 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           onClose={() => setOpenDashboardModal(null)}
         >
           <div className="risk-watch-columns">
+            {criticalityWatch.some((r) => r.criticality !== 'Normal') && (
+              <div className="risk-watch-col">
+                <h4>Critical &amp; high-priority vehicles not ready</h4>
+                {criticalityWatch.filter((r) => r.criticality !== 'Normal').map((r) => (
+                  <div key={r.vehicle_id} className={`risk-watch-item${r.criticality === 'Critical' ? ' is-critical' : ''}`}>
+                    <span className={`risk-watch-item-dot${r.criticality === 'Critical' ? ' is-critical' : ''}`} />
+                    <div className="risk-watch-item-body">
+                      <span className="risk-watch-item-top">
+                        <span className="risk-watch-item-title">{r.vehicle_name}</span>
+                        <span className={`risk-watch-tag${r.criticality === 'Critical' ? ' is-critical' : ''}`}>{r.criticality.toUpperCase()}</span>
+                      </span>
+                      <span className="risk-watch-item-sub">{r.category ?? '—'} · {r.reason}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {fragility.length > 0 && (
               <div className="risk-watch-col">
                 <h4>No backup if it goes down</h4>
@@ -7971,11 +7993,22 @@ const emptyTicketLookups = {
   sub_issue_statuses: [],
 };
 
+const CRITICALITY_LEVELS = ['Critical', 'High', 'Normal'];
+
+function vehicleCriticality(vehicle, lookups) {
+  const typeDefault = (lookups.categories ?? []).find((c) => String(c.category_id) === String(vehicle.category_id))?.default_criticality ?? 'Normal';
+  return vehicle.criticality ? `${vehicle.criticality} (set for this vehicle)` : `${typeDefault} (from vehicle type)`;
+}
+
 const categoryFields = [
   { label: 'Vehicle Type Name', name: 'category_name', required: true, type: 'text', placeholder: 'e.g. Fire Truck, Rescue Boat' },
   {
     label: 'Domain', name: 'domain', options: ['Land', 'Water'], required: true, type: 'select',
     hint: 'Water changes what a vehicle of this type asks for elsewhere — hull material and engine type instead of the usual land specs.',
+  },
+  {
+    label: 'Default Criticality', name: 'default_criticality', options: CRITICALITY_LEVELS, type: 'select',
+    hint: 'How much a vehicle of this type matters operationally. Critical vehicles surface first on the readiness watch. Admin can override it per vehicle.',
   },
   { label: 'Description', name: 'description', type: 'textarea', placeholder: 'Optional notes about when to use this type' },
 ];
@@ -8580,6 +8613,7 @@ function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPhotoUrl 
       newItemLabel: 'vehicle type', catalogEndpoint: '/categories', idField: 'category_id', nameField: 'category_name', valueIsId: true,
       extraFields: [{ name: 'domain', label: 'Domain', options: ['Land', 'Water'], required: true, default: domain }],
     },
+    { label: 'Operational Criticality (override)', name: 'criticality', options: CRITICALITY_LEVELS, type: 'select', group: 'Vehicle identity', hint: 'Leave as is to inherit the Vehicle Type default.' },
     { label: 'Vehicle Photo', name: 'photo', accept: 'image/*', type: 'file', existingUrl: existingPhotoUrl, group: 'Vehicle photo' },
     { label: 'Brand', name: 'brand', required: true, type: 'text', group: 'Technical details' },
     { label: 'Model', name: 'model', required: true, type: 'text', group: 'Technical details' },
@@ -15316,7 +15350,7 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
   );
 }
 
-function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canRequestInspection = false, canViewReliability = false, setNotice, onSaved, onRequestConfirmation }) {
+function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canRequestInspection = false, canViewReliability = false, canViewUsage = false, canLogUsage = false, setNotice, onSaved, onRequestConfirmation }) {
   const location = useLocation();
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('tab') === 'edit');
   const [decommissioning, setDecommissioning] = useState(false);
@@ -15561,6 +15595,7 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                   </>
                 )}
                 <div><dt>Fuel Type</dt><dd>{vehicle.fuel_type ?? '-'}</dd></div>
+                <div><dt>Criticality</dt><dd>{vehicleCriticality(vehicle, lookups)}</dd></div>
                 {customValueRows(vehicle, lookups)}
               </dl>
             </div>
@@ -15614,6 +15649,8 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
               {canViewDocuments && <VehicleFiles vehicleId={vehicle.vehicle_id} canManage={canManageDocuments} onRequestConfirmation={onRequestConfirmation} />}
 
               {canViewReliability && <VehicleReliabilityCard vehicleId={vehicle.vehicle_id} />}
+
+              {canViewUsage && <VehicleUsageCard vehicleId={vehicle.vehicle_id} canLog={canLogUsage} vehicleStatus={vehicle.status} />}
             </div>
           </div>
 
@@ -15672,6 +15709,7 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                     <div><dt>Engine Type</dt><dd>{vehicle.engine_type ?? '-'}</dd></div>
                   </>
                 )}
+                <div><dt>Criticality</dt><dd>{vehicleCriticality(vehicle, lookups)}</dd></div>
                 {customValueRows(vehicle, lookups)}
                 <div><dt>Acquisition Cost</dt><dd>{vehicle.acquisition_cost != null ? `₱${Number(vehicle.acquisition_cost).toLocaleString()}` : '-'}</dd></div>
                 <div><dt>Status</dt><dd>{vehicle.status}</dd></div>
@@ -18004,6 +18042,109 @@ function CategoryFieldsManager({ categoryId, onChanged }) {
   );
 }
 
+// Fleet Readiness & Criticality Watch — every operational vehicle that isn't
+// verified ready, Critical first. Shown on the lean (Custodian/Maintenance)
+// dashboard; Admin sees the same list inside Risk & Readiness Watch.
+function CriticalityWatchCard({ items, onNavigate, basePath }) {
+  if (!items?.length) return null;
+  const shown = items.slice(0, 6);
+
+  return (
+    <section className="panel col-span-7 dashboard-lean-panel">
+      <div className="panel-header-bar">
+        <h3><Icon name="alert" size={16} /> Readiness &amp; Criticality Watch</h3>
+        <span className="area-chart-tag">{items.length} not ready</span>
+      </div>
+      <div className="risk-watch-col">
+        {shown.map((r) => (
+          <button
+            key={r.vehicle_id}
+            type="button"
+            className={`risk-watch-item risk-watch-item-clickable${r.criticality === 'Critical' ? ' is-critical' : ''}`}
+            onClick={() => onNavigate(`${basePath}/vehicles/${r.vehicle_id}`)}
+          >
+            <span className={`risk-watch-item-dot${r.criticality === 'Critical' ? ' is-critical' : ''}`} />
+            <div className="risk-watch-item-body">
+              <span className="risk-watch-item-top">
+                <span className="risk-watch-item-title">{r.vehicle_name}</span>
+                <span className={`risk-watch-tag${r.criticality === 'Critical' ? ' is-critical' : ''}`}>{r.criticality.toUpperCase()}</span>
+              </span>
+              <span className="risk-watch-item-sub">{r.category ?? '—'} · {r.reason}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+      {items.length > shown.length && (
+        <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.78rem' }}>+ {items.length - shown.length} more — open Vehicles to see them all.</p>
+      )}
+    </section>
+  );
+}
+
+// Vehicle Usage Log — open a trip when the vehicle goes out, close it when it
+// is back. Recording only; it never changes the vehicle's status.
+function VehicleUsageCard({ vehicleId, canLog, vehicleStatus }) {
+  const [trips, setTrips] = useState([]);
+  const [form, setForm] = useState({ purpose: '', destination: '', driver_name: '', odometer_start: '' });
+  const [endForm, setEndForm] = useState({ odometer_end: '' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get(`/vehicles/${vehicleId}/usage`).then((res) => { if (!cancelled) setTrips(res.data); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [vehicleId, reloadKey]);
+
+  const open = trips.find((t) => !t.ended_at);
+
+  const run = async (fn) => {
+    setBusy(true); setError('');
+    try { await fn(); setReloadKey((k) => k + 1); } catch (err) {
+      setError(err.response?.data?.message || err.response?.data?.errors && Object.values(err.response.data.errors)[0]?.[0] || 'Could not save.');
+    } finally { setBusy(false); }
+  };
+
+  const clean = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => String(v).trim() !== ''));
+
+  return (
+    <section className="veh-card">
+      <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Usage Log</h4></div>
+      <div style={{ padding: '0 18px 18px', display: 'grid', gap: 10 }}>
+        {error && <div className="notice error">{error}</div>}
+        {canLog && !open && vehicleStatus === 'Available' && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input type="text" placeholder="Purpose *" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} style={{ flex: '2 1 180px' }} />
+            <input type="text" placeholder="Destination" value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} style={{ flex: '1 1 140px' }} />
+            <input type="text" placeholder="Driver" value={form.driver_name} onChange={(e) => setForm({ ...form, driver_name: e.target.value })} style={{ flex: '1 1 120px' }} />
+            <input type="number" min="0" placeholder="Odometer" value={form.odometer_start} onChange={(e) => setForm({ ...form, odometer_start: e.target.value })} style={{ width: 110 }} />
+            <button type="button" className="primary-button" disabled={busy || !form.purpose.trim()} onClick={() => run(async () => { await api.post(`/vehicles/${vehicleId}/usage`, clean(form)); setForm({ purpose: '', destination: '', driver_name: '', odometer_start: '' }); })}>Take Out</button>
+          </div>
+        )}
+        {canLog && open && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.85rem' }}>Out since {formatDate(open.started_at)}: <strong>{open.purpose}</strong></span>
+            <input type="number" min={open.odometer_start ?? 0} placeholder="Odometer on return" value={endForm.odometer_end} onChange={(e) => setEndForm({ odometer_end: e.target.value })} style={{ width: 150 }} />
+            <button type="button" className="primary-button" disabled={busy} onClick={() => run(async () => { await api.put(`/usage-logs/${open.usage_id}/end`, clean(endForm)); setEndForm({ odometer_end: '' }); })}>Mark Returned</button>
+          </div>
+        )}
+        {trips.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No trips recorded yet.</p>
+        ) : (
+          <div style={{ display: 'grid', gap: 6 }}>
+            {trips.slice(0, 8).map((t) => (
+              <div key={t.usage_id} style={{ fontSize: '0.84rem', display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <span><strong>{t.purpose}</strong>{t.destination ? ` → ${t.destination}` : ''}{t.driver_name ? ` · ${t.driver_name}` : ''}</span>
+                <span className="muted">{formatDate(t.started_at)}{t.ended_at ? ` – ${formatDate(t.ended_at)}` : ' · out now'}{t.odometer_start != null && t.odometer_end != null ? ` · ${t.odometer_end - t.odometer_start} km` : ''}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add", onImport, columnChooser }) {
   return (
     <div className="local-search-bar">

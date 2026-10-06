@@ -16,6 +16,7 @@ use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VehicleImportController;
 use App\Http\Controllers\VehicleTypeFieldController;
+use App\Http\Controllers\VehicleUsageController;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\RestrictImpersonatedToReadOnly;
 use App\Http\Middleware\RestrictSuperAdminScope;
@@ -123,6 +124,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::get('/vehicles/{vehicle}/reliability', [FleetController::class, 'vehicleReliability']);
     Route::get('/vehicles/{vehicle}/readiness', [FleetController::class, 'vehicleReadiness']);
     Route::post('/vehicles/{vehicle}/request-inspection', [FleetController::class, 'requestInspection']);
+    Route::get('/vehicles/{vehicle}/usage', [VehicleUsageController::class, 'index']);
+    Route::post('/vehicles/{vehicle}/usage', [VehicleUsageController::class, 'start']);
+    Route::put('/usage-logs/{log}/end', [VehicleUsageController::class, 'end']);
     Route::post('/vehicles/{vehicle}/readiness-check', [FleetController::class, 'storeReadinessCheck']);
     Route::put('/vehicles/{vehicle}/mark-available', [FleetController::class, 'markVehicleAvailable']);
     Route::get('/vehicles/{vehicle}/open-tickets', [TicketController::class, 'openTicketsForVehicle']);

@@ -13,6 +13,7 @@ class Vehicle extends Model
 
     protected $fillable = [
         'custom_values',
+        'criticality',
         'vehicle_name',
         'plate_number',
         'category_id',
@@ -67,6 +68,12 @@ class Vehicle extends Model
     public function schedules()
     {
         return $this->hasMany(VehicleMaintenanceSchedule::class, 'vehicle_id', 'vehicle_id');
+    }
+
+    // Admin's per-vehicle override, else the Vehicle Type's default.
+    public function effectiveCriticality(): string
+    {
+        return $this->criticality ?: ($this->category?->default_criticality ?: 'Normal');
     }
 
     public function readinessChecks()

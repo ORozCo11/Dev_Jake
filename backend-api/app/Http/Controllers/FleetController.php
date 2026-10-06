@@ -39,6 +39,8 @@ class FleetController extends Controller
     use GuardsLastAdmin;
     use AuthorizesAbilities;
 
+    private const CRITICALITY_LEVELS = ['Critical', 'High', 'Normal'];
+
     private const HULL_MATERIAL_OPTIONS = ['Fiberglass', 'Aluminum', 'Steel', 'Wood', 'Rubber/Inflatable'];
 
     // Gap A — a passed readiness check is only "fresh" for this many hours;
@@ -272,6 +274,7 @@ class FleetController extends Controller
             // Gap A — available vehicles whose readiness check is stale, failed,
             // or never done: "available" but not verified ready to respond.
             'readiness_watch' => $this->readinessWatch($latestChecks),
+            'criticality_watch' => $this->criticalityWatch($latestChecks),
 
             // Gap B — standing single-point-of-failure risk, visible even while
             // the lone unit is still healthy.
@@ -555,9 +558,43 @@ class FleetController extends Controller
                     'category'     => $v->category?->category_name,
                     'state'        => $this->responseReadinessState($v, $latest),
                     'last_checked' => $latest?->checked_at,
+                    'criticality'  => $v->effectiveCriticality(),
                 ];
             })
             ->filter(fn ($r) => in_array($r['state'], ['stale', 'not_ready', 'unchecked'], true))
+            ->sortBy(fn ($r) => array_search($r['criticality'], self::CRITICALITY_LEVELS, true))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Fleet Readiness & Criticality Watch — every operational vehicle that is
+     * NOT currently verified ready (down for maintenance, or Available but
+     * unproven), ranked Critical -> High -> Normal so the vehicles that
+     * matter most surface first. Reuses responseReadinessState(), the one
+     * place "ready" is decided.
+     */
+    private function criticalityWatch($latestChecks): array
+    {
+        $labels = ['in_maintenance' => 'In maintenance', 'not_ready' => 'Failed readiness check', 'unchecked' => 'Never checked', 'stale' => 'Check out of date'];
+
+        return Vehicle::with('category')
+            ->whereNotIn('status', ['Inactive', 'Decommissioned'])
+            ->get()
+            ->map(fn ($v) => [
+                'vehicle_id'   => $v->vehicle_id,
+                'vehicle_name' => $v->vehicle_name,
+                'plate_number' => $v->plate_number,
+                'category'     => $v->category?->category_name,
+                'criticality'  => $v->effectiveCriticality(),
+                'state'        => $this->responseReadinessState($v, $latestChecks->get($v->vehicle_id)),
+            ])
+            ->filter(fn ($r) => $r['state'] !== 'ready')
+            ->map(fn ($r) => $r + ['reason' => $labels[$r['state']] ?? $r['state']])
+            ->sortBy([
+                fn ($a, $b) => array_search($a['criticality'], self::CRITICALITY_LEVELS, true) <=> array_search($b['criticality'], self::CRITICALITY_LEVELS, true),
+                fn ($a, $b) => strcmp($a['vehicle_name'], $b['vehicle_name']),
+            ])
             ->values()
             ->all();
     }
@@ -712,6 +749,7 @@ class FleetController extends Controller
         $data = $request->validate([
             'category_name' => ['required', 'string', 'max:255', 'unique:vehicle_categories,category_name'],
             'domain' => ['required', 'in:Land,Water'],
+            'default_criticality' => ['sometimes', Rule::in(self::CRITICALITY_LEVELS)],
             'description' => ['nullable', 'string'],
         ]);
 
@@ -733,6 +771,7 @@ class FleetController extends Controller
                 Rule::unique('vehicle_categories', 'category_name')->ignore($category->category_id, 'category_id'),
             ],
             'domain' => ['required', 'in:Land,Water'],
+            'default_criticality' => ['sometimes', Rule::in(self::CRITICALITY_LEVELS)],
             'description' => ['nullable', 'string'],
         ]);
 
@@ -2932,6 +2971,8 @@ class FleetController extends Controller
             'estimated_return_date' => ['nullable', 'date'],
             'photo' => ['nullable', 'image', 'max:4096'],
             'remarks' => ['nullable', 'string'],
+            // Admin-only override of the Vehicle Type's default (stripped for anyone else).
+            'criticality' => ['nullable', Rule::in(self::CRITICALITY_LEVELS)],
         ];
     }
 
@@ -2957,6 +2998,10 @@ class FleetController extends Controller
         $data = $request->validate($this->vehicleRules($category?->domain ?? 'Land', $vehicle, $category), $this->vehicleRuleMessages());
 
         // On edit, keep values for archived fields the form no longer shows.
+        if (!$request->user()->hasRole('Admin')) {
+            unset($data['criticality']);
+        }
+
         $values = array_merge($vehicle?->custom_values ?? [], $data['custom_fields'] ?? []);
         unset($data['custom_fields']);
         $data['custom_values'] = $values ?: null;

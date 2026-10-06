@@ -12,6 +12,7 @@ class VehicleCategory extends Model
         'category_name',
         'domain',
         'description',
+        'default_criticality',
     ];
 
     // All fields (archived ones included) in display order; forms filter on is_active.

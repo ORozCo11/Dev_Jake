@@ -28,6 +28,9 @@ return [
     // Bulk import registers vehicles, so FleetController::storeVehicle's
     // per-account delegation check (canRegisterVehicles) still applies on top.
     'vehicle.import' => ['Admin', 'Custodian'],
+    // Vehicle Usage Log: who took which vehicle where, and when it came back.
+    'usage.view' => ['Admin', 'Custodian'],
+    'usage.log' => ['Admin', 'Custodian'],
     'vehicle.edit' => ['Admin'],
     'vehicle.archive' => ['Admin'],
     'vehicle.restore' => ['Admin'],
