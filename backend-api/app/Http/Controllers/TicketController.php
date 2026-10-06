@@ -225,7 +225,8 @@ class TicketController extends Controller
             'external_sent_by'        => ['nullable', 'string', 'max:255'],
             'external_contact_person' => ['nullable', 'string', 'max:255'],
             'external_estimated_cost' => ['nullable', 'numeric', 'min:0'],
-            'sub_issues'                          => ['required', 'array', 'min:1'],
+            // One ticket = one maintenance job; a second problem is a second ticket.
+            'sub_issues'                          => ['required', 'array', 'min:1', 'max:1'],
             'sub_issues.*.title'                  => ['required', 'string', 'max:255'],
             'sub_issues.*.maintenance_type'        => ['nullable', 'string', 'max:150'],
             // Cannibalized: one row per part — what's missing here, and the
@@ -305,7 +306,7 @@ class TicketController extends Controller
 
         if ($duplicateMainIssue) {
             return response()->json([
-                'message' => "This vehicle already has an open ticket for \"{$issueSummary}\" (Ticket #{$duplicateMainIssue->ticket_id}). Add this as a sub-issue on that ticket instead of proposing a new one."
+                'message' => "This vehicle already has an open ticket for \"{$issueSummary}\" (Ticket #{$duplicateMainIssue->ticket_id}). Open a new ticket only for a different problem."
             ], 422);
         }
 
@@ -328,7 +329,7 @@ class TicketController extends Controller
             abort_if(
                 $duplicateMainIssue,
                 422,
-                "This vehicle already has an open ticket for \"{$data['ticket_title']}\" (Ticket #{$duplicateMainIssue?->ticket_id}). Add this as a sub-issue on that ticket instead of proposing a new one."
+                "This vehicle already has an open ticket for \"{$data['ticket_title']}\" (Ticket #{$duplicateMainIssue?->ticket_id}). Open a new ticket only for a different problem."
             );
 
             $ticket = MaintenanceTicket::create([
@@ -435,6 +436,8 @@ class TicketController extends Controller
             'ticket_description'    => ['sometimes', 'string'],
             'priority'              => ['sometimes', Rule::in($this->priorities)],
             'assigned_custodian_id' => ['sometimes', 'exists:users,id'],
+            // Approve and assign in one step: who will do the work.
+            'assigned_mechanic_id'  => ['nullable', 'exists:users,id'],
             'sub_issues'                        => ['nullable', 'array'],
             'sub_issues.*.sub_issue_id'          => ['required_with:sub_issues', 'exists:ticket_sub_issues,sub_issue_id'],
             'sub_issues.*.title'                 => ['nullable', 'string', 'max:255'],
@@ -484,7 +487,18 @@ class TicketController extends Controller
                 }
             }
 
+            // A mechanic named at approval becomes the job's assignee.
+            if (!empty($data['assigned_mechanic_id'])) {
+                $ticket->subIssues()->update(['suggested_mechanic_id' => $data['assigned_mechanic_id']]);
+            }
+
             $vehicle = $ticket->vehicle;
+            $hasValidMechanic = $ticket->subIssues()->get()->contains(function ($sub) use ($vehicle) {
+                $m = $sub->suggested_mechanic_id ? User::find($sub->suggested_mechanic_id) : null;
+
+                return $m && $m->hasRole('Maintenance Personnel') && $m->barangay_id === $vehicle->barangay_id;
+            });
+            abort_unless($hasValidMechanic, 422, 'Pick the Maintenance Personnel who will do the work before approving.');
 
             $ticket->update([
                 'status'            => 'Active',

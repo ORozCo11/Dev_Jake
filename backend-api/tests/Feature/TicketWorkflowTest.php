@@ -109,11 +109,14 @@ class TicketWorkflowTest extends TestCase
     {
         $mechanic ??= $this->mechanic;
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
-            'assigned_mechanic_id' => $mechanic->id,
-            'maintenance_type' => 'Engine Repair',
-        ])->assertOk();
+        // A job approved with a mechanic is already dispatched.
+        if ($subIssue->fresh()->status === 'Open') {
+            Sanctum::actingAs($this->admin, ['*']);
+            $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+                'assigned_mechanic_id' => $mechanic->id,
+                'maintenance_type' => 'Engine Repair',
+            ])->assertOk();
+        }
 
         Sanctum::actingAs($mechanic, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$subIssue->sub_issue_id}/log-repairs", [
@@ -514,7 +517,7 @@ class TicketWorkflowTest extends TestCase
 
         // ...and stays 'Pending Approval' until an Admin approves it.
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticketId}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticketId}/approve", ['assigned_mechanic_id' => $this->mechanic->id])->assertOk();
 
         // ...and the listing endpoint reads the ticket's LIVE status through
         // it, not a snapshot — no change to the condition check itself.
@@ -1221,7 +1224,7 @@ class TicketWorkflowTest extends TestCase
         $vehicle = $this->vehicle();
         $activeId = $this->propose($vehicle, ['sub_issues' => [['title' => 'Brakes']]])->assertCreated()->json('ticket_id');
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$activeId}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$activeId}/approve", ['assigned_mechanic_id' => $this->mechanic->id])->assertOk();
         $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
 
         // A second, still-unapproved proposal on the same vehicle.
