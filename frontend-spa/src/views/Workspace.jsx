@@ -2357,41 +2357,6 @@ function Workspace() {
       setNotice({ type: 'error', text: 'Could not impersonate that account.' });
     }
   };
-  // Present whenever the current session was reached via Impersonate —
-  // regardless of which role is being impersonated, or whether Impersonate
-  // itself is even reachable from here (e.g. a Custodian account has no
-  // impersonate control of its own, but still needs a way back to whoever
-  // put them here).
-  const impersonatorToken = localStorage.getItem('impersonator_token');
-  const impersonatorName = localStorage.getItem('impersonator_name');
-  // Shown whenever this session was reached via Impersonate, regardless of
-  // who started it — an Admin's own dev-only impersonate control needs a
-  // way back to their real account too, not just a Super Admin's production
-  // support flow (previously restricted to Super Admin only, which left an
-  // Admin who impersonated locally with no way back except logging out).
-  const showReturnButton = !!impersonatorToken;
-  const stopImpersonating = async () => {
-    if (!impersonatorToken) return;
-    const originalRole = localStorage.getItem('impersonator_role');
-    // Phase A5 — properly ends the impersonated session (revokes the token
-    // immediately rather than letting it just sit unused until its own
-    // 30-minute expiry, and logs "Impersonation Ended" — see
-    // AuthController::logout()) instead of only swapping tokens client-side.
-    // Best-effort: the token may already be close to expiring, and either
-    // way the local swap below is what actually gets the Super Admin back.
-    try {
-      await api.post('/logout');
-    } catch {
-      // ignore — proceeding to swap back regardless
-    }
-    localStorage.setItem('token', impersonatorToken);
-    localStorage.removeItem('impersonator_token');
-    localStorage.removeItem('impersonator_name');
-    localStorage.removeItem('impersonator_role');
-    sessionStorage.removeItem('token');
-    window.location.assign(roleRoutes[originalRole] ?? '/admin');
-  };
-
   // Vehicle Location map boundary selector — lets an Admin swap which
   // barangay outline the map draws. Scoped to Province + Barangay only
   // (no City/Municipality step) since Mandaue City is the only city with
@@ -2654,13 +2619,6 @@ function Workspace() {
               </select>
               <button type="button" onClick={doImpersonate}>Impersonate</button>
             </div>
-          )}
-          {/* Shown whenever an impersonation session is active (also in production,
-              where the dev account switcher above isn't rendered). */}
-          {showReturnButton && (
-            <button type="button" className="ghost-button" onClick={stopImpersonating} title="Stop impersonating and go back to your own account">
-              <Icon name="undo" size={13} /> Return to {impersonatorName || 'my account'}
-            </button>
           )}
         </div>
 
@@ -5155,7 +5113,6 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
   // that departure from happening through deactivate/role-change, but not
   // e.g. this Admin simply leaving with no successor ever promoted — this
   // is the "before it happens" half of that protection.
-  const soleActiveAdmin = isAdminDashboard && data.sole_active_admin === true;
   const primaryActionCount = isAdminDashboard
     ? actionQueue.length
     : isMaintenanceDashboard
@@ -5330,16 +5287,6 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
 
   return (
     <div className="dashboard-grid dashboard-grid-smart">
-      {soleActiveAdmin && (
-        <section className="dashboard-sole-admin-warning full-span" role="alert">
-          <Icon name="alert" size={18} />
-          <div>
-            <strong>You're the only active Admin for this barangay.</strong>
-            <p>If your account is deactivated or steps down, nobody will be left who can manage users, vehicles, or approvals here. Promote another trusted staff member to Admin as a backup.</p>
-          </div>
-          <button type="button" className="ghost-button" onClick={() => onGoToModule('users', [])}>Manage Users</button>
-        </section>
-      )}
       <section className={`dashboard-command-center full-span is-${opsTone}`}>
         <div className="dashboard-command-copy">
           <span className="dashboard-command-role">{greetingRole}</span>
