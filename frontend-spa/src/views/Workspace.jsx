@@ -1314,10 +1314,10 @@ function Workspace() {
     }
   };
 
-  const deleteRecord = async (path, success) => {
+  const deleteRecord = async (path, success, confirmMessage) => {
     setConfirmDialog({
       title: 'Confirm Action',
-      message: 'Continue with this action?',
+      message: confirmMessage ?? 'Continue with this action?',
       confirmLabel: 'Continue',
       variant: 'danger',
       onConfirm: async () => {
@@ -3001,6 +3001,7 @@ function Workspace() {
               vehicleId={vehicleProfileId}
               lookups={lookups}
               allHubs={allHubs}
+              basePath={roleRoutes[user.role]}
               canManage={hasRole(user, 'Admin')}
               // 2026-10-06 spec reversal — Maintenance Personnel can now view
               // documents and upload repair evidence (edit only their own
@@ -4197,7 +4198,7 @@ function Workspace() {
                   currentUser={user}
                   onComplete={openCompleteSchedule}
                   onEdit={(r) => navigate(`${roleRoutes[user.role]}/schedules/${r.schedule_id}/edit`)}
-                  onDelete={(r) => deleteRecord(`/maintenance-schedules/${r.schedule_id}`, 'Schedule cancelled.')}
+                  onDelete={(r) => deleteRecord(`/maintenance-schedules/${r.schedule_id}`, 'Schedule cancelled.', `Cancel the ${r.maintenance_type} schedule for ${r.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`)}
                   onRestore={(r) => restoreRecord(`/maintenance-schedules/${r.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?')}
                   onViewRecord={(r) => navigate(`${roleRoutes[user.role]}/maintenance/${r.resulting_maintenance_id}`)}
                   onReassign={setReassignScheduleTarget}
@@ -4738,8 +4739,6 @@ const ACTION_QUEUE_META = {
   schedule_overdue:        { icon: 'wrench',      color: '#b91c1c', route: null },
 };
 
-const READINESS_STATE_LABEL = { stale: 'Readiness check', not_ready: 'Not ready', unchecked: 'Never checked' };
-
 function ActionQueueRow({ item, basePath, onNavigate, onGoToSchedules }) {
   const meta = ACTION_QUEUE_META[item.type] ?? ACTION_QUEUE_META.issue_pending;
   const goTo = () => (meta.route ? onNavigate(meta.route(basePath, item.id)) : onGoToSchedules());
@@ -5220,7 +5219,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
                       <span className="risk-watch-item-top">
                         <span className="risk-watch-item-title">{r.vehicle_name}</span>
                         <span className={`risk-watch-tag${r.state === 'not_ready' ? ' is-critical' : ''}`}>
-                          {(READINESS_STATE_LABEL[r.state] ?? r.state).toUpperCase()}
+                          {(READINESS_BADGE[r.state]?.label ?? r.state).toUpperCase()}
                         </span>
                       </span>
                       <span className="risk-watch-item-sub">{r.category ?? '—'}</span>
@@ -5695,7 +5694,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
                       <span className="risk-watch-item-top">
                         <span className="risk-watch-item-title">{r.vehicle_name}</span>
                         <span className={`risk-watch-tag${r.state === 'not_ready' ? ' is-critical' : ''}`}>
-                          {(READINESS_STATE_LABEL[r.state] ?? r.state).toUpperCase()}
+                          {(READINESS_BADGE[r.state]?.label ?? r.state).toUpperCase()}
                         </span>
                       </span>
                       <span className="risk-watch-item-sub">{r.category ?? '—'}</span>
@@ -7917,9 +7916,12 @@ const emptyTicketLookups = {
 
 const CRITICALITY_LEVELS = ['Critical', 'High', 'Normal'];
 
+function defaultCriticalityFor(vehicle, lookups) {
+  return (lookups.categories ?? []).find((c) => String(c.category_id) === String(vehicle.category_id))?.default_criticality ?? 'Normal';
+}
+
 function vehicleCriticality(vehicle, lookups) {
-  const typeDefault = (lookups.categories ?? []).find((c) => String(c.category_id) === String(vehicle.category_id))?.default_criticality ?? 'Normal';
-  return vehicle.criticality ? `${vehicle.criticality} (set for this vehicle)` : `${typeDefault} (from vehicle type)`;
+  return vehicle.criticality ? `${vehicle.criticality} (set for this vehicle)` : `${defaultCriticalityFor(vehicle, lookups)} (from vehicle type)`;
 }
 
 const categoryFields = [
@@ -9259,7 +9261,7 @@ function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus,
             )
           ) : (
             canArchiveVehicle && (
-              <button className="btn-archive-action icon-btn" onClick={() => deleteRecord(`/vehicles/${row.vehicle_id}`, 'Vehicle marked inactive.')} type="button" title="Deactivate (reversible)" aria-label="Deactivate"><Icon name="archive" size={14} /></button>
+              <button className="btn-archive-action icon-btn" onClick={() => deleteRecord(`/vehicles/${row.vehicle_id}`, 'Vehicle marked inactive.', `Deactivate ${row.vehicle_name}? It will be marked Inactive and can be restored later.`)} type="button" title="Deactivate (reversible)" aria-label="Deactivate"><Icon name="archive" size={14} /></button>
             )
           )}
         </div>
@@ -9286,7 +9288,7 @@ function categoryColumns(onEdit, deleteRecord) {
       render: (row) => (
         <div className="row-actions">
           <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-          <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/categories/${row.category_id}`, 'Category deleted.')} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
+          <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/categories/${row.category_id}`, 'Category deleted.', `Delete the "${row.category_name}" vehicle type? This cannot be undone.`)} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
         </div>
       ),
     },
@@ -9471,7 +9473,7 @@ function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromConditio
             <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
           )}
           {canDelete && (
-            <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/conditions/${row.condition_check_id}`, 'Condition check deleted.')} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
+            <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/conditions/${row.condition_check_id}`, 'Condition check deleted.', `Delete this "${row.condition_result}" condition check for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? This cannot be undone.`)} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
           )}
         </div>
         )
@@ -10049,7 +10051,7 @@ function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, 
           {row.status === 'Pending' && (
             <>
               <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-              <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/issues/${row.issue_report_id}`, 'Issue deleted.')} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
+              <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/issues/${row.issue_report_id}`, 'Issue deleted.', `Delete this "${row.issue_type}" report for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? This cannot be undone.`)} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
             </>
           )}
         </div>
@@ -10584,7 +10586,7 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
               {row.status === 'Cancelled' && restoreRecord ? (
                 <button className="btn-confirm-action icon-btn" onClick={() => restoreRecord(`/maintenance-schedules/${row.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?')} type="button" title="Restore" aria-label="Restore"><Icon name="undo" size={14} /></button>
               ) : (
-                <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/maintenance-schedules/${row.schedule_id}`, 'Schedule cancelled.')} type="button" title="Cancel Schedule" aria-label="Cancel Schedule"><Icon name="trash" size={14} /></button>
+                <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/maintenance-schedules/${row.schedule_id}`, 'Schedule cancelled.', `Cancel the ${row.maintenance_type} schedule for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`)} type="button" title="Cancel Schedule" aria-label="Cancel Schedule"><Icon name="trash" size={14} /></button>
               )}
             </>
           )}
@@ -12505,7 +12507,7 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
         <div className="proposal-review-actions">
           <p className="proposal-review-hint">Edit anything above before approving. Declining permanently deletes this proposal.</p>
           <div className="proposal-review-buttons">
-            <button className="proposal-decline-btn" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
+            <button className="btn-sm danger-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
               <Icon name="close" size={14} /> Decline
             </button>
             <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
@@ -12644,8 +12646,11 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
           <div className="ticket-process-meter" style={{ '--ticket-progress': `${resolvedPercent}%` }}>
             <div className="ticket-process-meter-core">
               <span>Resolved</span>
-              <strong>{resolvedPercent}%</strong>
-              <small>{resolvedCount}/{progress.total || 0} items</small>
+              {/* A zero-sub-issue ticket (inspection found nothing to repair) has
+                  nothing to measure progress against — "0%" would read as
+                  "nothing done" right next to a "ready to close" banner. */}
+              <strong>{progress.total > 0 ? `${resolvedPercent}%` : '—'}</strong>
+              <small>{progress.total > 0 ? `${resolvedCount}/${progress.total} items` : 'No sub-issues'}</small>
             </div>
           </div>
           <div className="ticket-process-hero-main">
@@ -15052,8 +15057,8 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
       await api.put(`/documents/${editingId}`, { title: editTitle.trim(), category: editCategory.trim() || null });
       setEditingId(null);
       onChanged();
-    } catch {
-      setError('Could not save changes.');
+    } catch (err) {
+      setError(err?.response?.data?.message ?? 'Could not save changes.');
     }
   };
 
@@ -15062,8 +15067,8 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
       await api.delete(`/documents/${doc.document_id}`);
       if (selectedId === doc.document_id) setSelectedId(null);
       onChanged();
-    } catch {
-      setError('Could not delete file.');
+    } catch (err) {
+      setError(err?.response?.data?.message ?? 'Could not delete file.');
     }
   };
 
@@ -15218,8 +15223,9 @@ function VehicleFilesModal({ onClose, vehicleId, documents, canManage, onChanged
   );
 }
 
-function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canRequestInspection = false, canViewReliability = false, canViewUsage = false, canLogUsage = false, setNotice, onSaved, onRequestConfirmation }) {
+function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canRequestInspection = false, canViewReliability = false, canViewUsage = false, canLogUsage = false, setNotice, onSaved, onRequestConfirmation }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('tab') === 'edit');
   const [decommissioning, setDecommissioning] = useState(false);
   const [readiness, setReadiness] = useState(null);
@@ -15466,7 +15472,6 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                   </>
                 )}
                 <div><dt>Fuel Type</dt><dd>{vehicle.fuel_type ?? '-'}</dd></div>
-                <div><dt>Criticality</dt><dd>{vehicleCriticality(vehicle, lookups)}</dd></div>
                 {customValueRows(vehicle, lookups)}
               </dl>
             </div>
@@ -15491,6 +15496,31 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, canManage = false, ca
                     {readiness.last_checked && <div className="muted" style={{ fontSize: '0.72rem', marginTop: 3 }}>Last checked {formatDate(readiness.last_checked)}</div>}
                   </dd></div>
                 )}
+                {/* Confirmed via live review: a vehicle marked Under
+                    Maintenance had no visible path to WHY, forcing a
+                    separate hunt through Maintenance Tickets. */}
+                {readiness?.active_ticket_id && (
+                  <div><dt>Active Ticket</dt><dd>
+                    <button
+                      type="button"
+                      className="btn-view-action"
+                      style={{ fontSize: '0.78rem', padding: '3px 10px' }}
+                      onClick={() => navigate(`${basePath}/tickets/${readiness.active_ticket_id}`)}
+                    >
+                      {readiness.active_ticket_title ?? `Ticket #${readiness.active_ticket_id}`} →
+                    </button>
+                  </dd></div>
+                )}
+                {/* Kept beside the other at-a-glance status signals (not
+                    buried under specs) — this is how urgently a down unit of
+                    this type matters, same scale as the dashboard's
+                    Readiness & Criticality Watch. */}
+                <div><dt>Criticality</dt><dd>
+                  <span className={`risk-watch-tag${(vehicle.criticality ?? defaultCriticalityFor(vehicle, lookups)) === 'Critical' ? ' is-critical' : ''}`}>
+                    {(vehicle.criticality ?? defaultCriticalityFor(vehicle, lookups)).toUpperCase()}
+                  </span>
+                  <div className="muted" style={{ fontSize: '0.72rem', marginTop: 3 }}>{vehicle.criticality ? 'Set for this vehicle' : 'From vehicle type'}</div>
+                </dd></div>
                 <div><dt>Current Location</dt><dd>{vehicle.current_location ?? '-'}</dd></div>
                 {vehicle.estimated_return_date && (
                   <div><dt>Est. Return Date</dt><dd>{formatForecastDate(vehicle.estimated_return_date)}</dd></div>
@@ -16455,6 +16485,11 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
   // total would go stale the moment another row is added or edited after
   // pressing it. This always reflects exactly what's in the rows right now.
   const totalCost = parts.reduce((sum, p) => sum + (parseFloat(p.cost) || 0), 0);
+  // Confirmed via code audit: while a repair is sent out and waiting on the
+  // shop, Parts/Attachment/Schedule don't apply yet — the mechanic has
+  // nothing to log here until it comes back. De-emphasized, not removed or
+  // disabled, since a mechanic may still want to note something early.
+  const awaitingShopReturn = repairType === 'external' && !!ticket.external_sent_at && !ticket.external_returned_at;
   const sourceVehicleOptions = vehicleOptions.filter((v) => String(v.vehicle_id) !== String(ticket.vehicle?.vehicle_id));
 
   const handleSubmit = (e) => {
@@ -16607,7 +16642,12 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 190px', gap: 8, marginBottom: 12, alignItems: 'start' }}>
+        {awaitingShopReturn && (
+          <p className="muted" style={{ margin: '0 0 8px', fontSize: '0.8rem' }}>
+            The fields below apply once the vehicle is back from the shop — mark it Returned above when it comes in.
+          </p>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 190px', gap: 8, marginBottom: 12, alignItems: 'start', opacity: awaitingShopReturn ? 0.5 : 1 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
               <h4 style={{ margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', fontSize: '0.85rem' }}><Icon name="tools" size={14} /> Parts & Materials Used</h4>
@@ -17784,7 +17824,7 @@ function VehicleImportModal({ open, onClose, onImported }) {
               <button type="button" className="ghost-button" onClick={() => guard(() => saveBlob(`/vehicle-imports/${result.id}/errors`, {}, 'vehicle-import-errors.csv'))}>Download error report</button>
             )}
             <button type="button" className="ghost-button" onClick={() => { setStep('upload'); setResult(null); }}>Back</button>
-            <button type="button" className="primary-button" disabled={busy || result.valid_rows === 0} onClick={confirm}>{busy ? 'Importing…' : `Import ${result.valid_rows} vehicle(s)`}</button>
+            <button type="button" className="success-button" disabled={busy || result.valid_rows === 0} onClick={confirm}>{busy ? 'Importing…' : `Import ${result.valid_rows} vehicle(s)`}</button>
           </div>
         </div>
       )}
@@ -17917,36 +17957,41 @@ function CategoryFieldsManager({ categoryId, onChanged }) {
 // verified ready, Critical first. Shown on the lean (Custodian/Maintenance)
 // dashboard; Admin sees the same list inside Risk & Readiness Watch.
 function CriticalityWatchCard({ items, onNavigate, basePath }) {
-  if (!items?.length) return null;
-  const shown = items.slice(0, 6);
+  const shown = (items ?? []).slice(0, 6);
 
   return (
     <section className="panel col-span-7 dashboard-lean-panel">
       <div className="panel-header-bar">
         <h3><Icon name="alert" size={16} /> Readiness &amp; Criticality Watch</h3>
-        <span className="area-chart-tag">{items.length} not ready</span>
+        {items?.length > 0 && <span className="area-chart-tag">{items.length} not ready</span>}
       </div>
-      <div className="risk-watch-col">
-        {shown.map((r) => (
-          <button
-            key={r.vehicle_id}
-            type="button"
-            className={`risk-watch-item risk-watch-item-clickable${r.criticality === 'Critical' ? ' is-critical' : ''}`}
-            onClick={() => onNavigate(`${basePath}/vehicles/${r.vehicle_id}`)}
-          >
-            <span className={`risk-watch-item-dot${r.criticality === 'Critical' ? ' is-critical' : ''}`} />
-            <div className="risk-watch-item-body">
-              <span className="risk-watch-item-top">
-                <span className="risk-watch-item-title">{r.vehicle_name}</span>
-                <span className={`risk-watch-tag${r.criticality === 'Critical' ? ' is-critical' : ''}`}>{r.criticality.toUpperCase()}</span>
-              </span>
-              <span className="risk-watch-item-sub">{r.category ?? '—'} · {r.reason}</span>
-            </div>
-          </button>
-        ))}
-      </div>
-      {items.length > shown.length && (
-        <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.78rem' }}>+ {items.length - shown.length} more — open Vehicles to see them all.</p>
+      {!items?.length ? (
+        <p className="action-queue-clear"><Icon name="checkCircle" size={16} /> No readiness risks right now.</p>
+      ) : (
+        <>
+          <div className="risk-watch-col">
+            {shown.map((r) => (
+              <button
+                key={r.vehicle_id}
+                type="button"
+                className={`risk-watch-item risk-watch-item-clickable${r.criticality === 'Critical' ? ' is-critical' : ''}`}
+                onClick={() => onNavigate(`${basePath}/vehicles/${r.vehicle_id}`)}
+              >
+                <span className={`risk-watch-item-dot${r.criticality === 'Critical' ? ' is-critical' : ''}`} />
+                <div className="risk-watch-item-body">
+                  <span className="risk-watch-item-top">
+                    <span className="risk-watch-item-title">{r.vehicle_name}</span>
+                    <span className={`risk-watch-tag${r.criticality === 'Critical' ? ' is-critical' : ''}`}>{r.criticality.toUpperCase()}</span>
+                  </span>
+                  <span className="risk-watch-item-sub">{r.category ?? '—'} · {r.reason}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+          {items.length > shown.length && (
+            <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.78rem' }}>+ {items.length - shown.length} more — open Vehicles to see them all.</p>
+          )}
+        </>
       )}
     </section>
   );
@@ -17960,14 +18005,15 @@ function CriticalityWatchCard({ items, onNavigate, basePath }) {
 const CAPABILITY_STATE_LABEL = { LIMITED: 'Limited', AT_RISK: 'At Risk', NO_COVERAGE: 'No Coverage' };
 
 function CapabilityImpactCard({ items, onNavigate, basePath }) {
-  if (!items?.length) return null;
-
   return (
     <section className="panel col-span-7 dashboard-lean-panel">
       <div className="panel-header-bar">
         <h3><Icon name="alert" size={16} /> Fleet Capability Impact</h3>
-        <span className="area-chart-tag">{items.length} type{items.length === 1 ? '' : 's'} affected</span>
+        {items?.length > 0 && <span className="area-chart-tag">{items.length} type{items.length === 1 ? '' : 's'} affected</span>}
       </div>
+      {!items?.length ? (
+        <p className="action-queue-clear"><Icon name="checkCircle" size={16} /> No capability gaps right now.</p>
+      ) : (
       <div className="risk-watch-col">
         {items.map((row) => (
           <div key={row.category} className={`risk-watch-item${row.criticality === 'Critical' ? ' is-critical' : ''}`} style={{ cursor: 'default', alignItems: 'flex-start' }}>
@@ -18014,6 +18060,7 @@ function CapabilityImpactCard({ items, onNavigate, basePath }) {
           </div>
         ))}
       </div>
+      )}
     </section>
   );
 }

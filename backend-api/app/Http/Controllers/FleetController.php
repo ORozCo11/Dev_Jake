@@ -1259,12 +1259,23 @@ class FleetController extends Controller
     {
         $latest = $vehicle->readinessChecks()->orderByDesc('checked_at')->first();
 
+        // UI/UX pass — a vehicle profile previously showed "Under Maintenance"
+        // with no visible link to WHY, forcing a separate hunt through
+        // Maintenance Tickets. Reuses the same active-ticket lookup built for
+        // the Fleet Capability Impact feature.
+        $activeTicket = MaintenanceTicket::where('vehicle_id', $vehicle->vehicle_id)
+            ->whereNotIn('status', ['Closed', 'Cancelled'])
+            ->orderByDesc('ticket_id')
+            ->first(['ticket_id', 'ticket_title']);
+
         return response()->json([
-            'state'            => $this->responseReadinessState($vehicle, $latest),
-            'last_checked'     => $latest?->checked_at,
-            'latest_checklist' => $latest?->checklist,
-            'freshness_hours'  => self::READINESS_FRESHNESS_HOURS,
-            'history'          => $vehicle->readinessChecks()
+            'state'              => $this->responseReadinessState($vehicle, $latest),
+            'last_checked'       => $latest?->checked_at,
+            'latest_checklist'   => $latest?->checklist,
+            'freshness_hours'    => self::READINESS_FRESHNESS_HOURS,
+            'active_ticket_id'   => $activeTicket?->ticket_id,
+            'active_ticket_title' => $activeTicket?->ticket_title,
+            'history'            => $vehicle->readinessChecks()
                 ->with('checkedBy:id,name')
                 ->orderByDesc('checked_at')
                 ->limit(5)

@@ -8933,14 +8933,6 @@ html .ticket-section.proposal-review .proposal-review-head p strong { color: #ff
 .proposal-review-actions.is-declining { display: block; }
 html .ticket-section.proposal-review .proposal-review-hint { margin: 0; font-size: 0.78rem; color: #64748b; }
 .proposal-review-buttons { display: flex; gap: 8px; margin-left: auto; }
-.proposal-decline-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 16px; min-height: 40px;
-  border-radius: 8px; border: 1px solid #fecaca;
-  background: var(--surface, #fff); color: #dc2626;
-  font-weight: 700; font-size: 0.85rem; cursor: pointer;
-}
-.proposal-decline-btn:hover:not(:disabled) { background: #fef2f2; border-color: #f87171; }
 .ticket-section h4 {
   margin: 0 0 12px;
   padding: 0 0 10px;
