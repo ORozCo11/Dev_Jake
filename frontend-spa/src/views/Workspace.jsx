@@ -2805,7 +2805,6 @@ function Workspace() {
                 // would double-count them. Shown as its own small pill
                 // instead, so "N open tickets" and "M awaiting your review"
                 // stay two distinct, addable-up-in-your-head signals.
-                const proposalCount = key === 'tickets' ? (dashboard?.badge_counts?.ticketProposals ?? 0) : 0;
                 // 'ticketPropose' isn't a real module (no list view/endpoint
                 // of its own) — it's a direct link straight to the Propose
                 // Ticket form, same URL Admin's own Create Ticket flow uses.
@@ -2854,15 +2853,6 @@ function Workspace() {
                     {moduleIcons[key]}
                     <span>{label}</span>
                     {badgeCount > 0 && <span className="module-nav-badge">{badgeCount}</span>}
-                    {proposalCount > 0 && (
-                      <span
-                        className="module-nav-badge"
-                        style={{ background: '#d97706' }}
-                        title={`${proposalCount} ticket proposal${proposalCount === 1 ? '' : 's'} awaiting your review`}
-                      >
-                        {proposalCount}
-                      </span>
-                    )}
                   </button>
                 );
               };
