@@ -225,6 +225,8 @@ class TicketController extends Controller
             'external_contact_person' => ['nullable', 'string', 'max:255'],
             'external_estimated_cost' => ['nullable', 'numeric', 'min:0'],
             // One ticket = one maintenance job; a second problem is a second ticket.
+            // Set when the proposal comes from a due Maintenance Schedule.
+            'schedule_id'         => ['nullable', 'exists:vehicle_maintenance_schedules,schedule_id'],
             'sub_issues'                          => ['required', 'array', 'min:1', 'max:1'],
             'sub_issues.*.title'                  => ['required', 'string', 'max:255'],
             'sub_issues.*.maintenance_type'        => ['nullable', 'string', 'max:150'],
@@ -272,6 +274,11 @@ class TicketController extends Controller
         // Linked records must really belong to this vehicle and not already be
         // in someone's hands — otherwise a proposal could flip another
         // vehicle's report or steal a condition check's ticket link.
+        if (!empty($data['schedule_id'])) {
+            $linkedSchedule = VehicleMaintenanceSchedule::findOrFail($data['schedule_id']);
+            abort_unless((int) $linkedSchedule->vehicle_id === (int) $data['vehicle_id'], 422, 'That schedule belongs to a different vehicle.');
+            abort_unless($linkedSchedule->status === 'Scheduled' && !$linkedSchedule->resulting_ticket_id, 422, 'That schedule already has a ticket or is no longer scheduled.');
+        }
         if (!empty($data['condition_check_id'])) {
             $linkedCheck = VehicleConditionCheck::findOrFail($data['condition_check_id']);
             abort_unless((int) $linkedCheck->vehicle_id === (int) $data['vehicle_id'], 422, 'That condition check belongs to a different vehicle.');
@@ -364,6 +371,12 @@ class TicketController extends Controller
                     'external_estimated_cost' => $repairType === 'external' ? ($data['external_estimated_cost'] ?? null) : null,
                     'status'                 => 'Open',
                 ]);
+            }
+
+            // A schedule is only the reason for this ticket: link it once so
+            // closing the ticket finishes the schedule (and seeds a recurring one).
+            if (!empty($data['schedule_id'])) {
+                VehicleMaintenanceSchedule::where('schedule_id', $data['schedule_id'])->update(['resulting_ticket_id' => $ticket->ticket_id]);
             }
 
             // Set once, never touched again — Condition Monitoring reads the
@@ -543,7 +556,13 @@ class TicketController extends Controller
             return $ticket;
         });
 
-        return response()->json($ticket->load($this->eagerLoads()));
+        $payload = $ticket->load($this->eagerLoads())->toArray();
+        // Non-blocking: work can't start on a vehicle that hasn't come back yet.
+        if (\App\Models\VehicleUsageLog::where('vehicle_id', $ticket->vehicle_id)->whereNull('ended_at')->exists()) {
+            $payload['warning'] = 'This vehicle is currently recorded as Out. Maintenance cannot begin until it is marked returned.';
+        }
+
+        return response()->json($payload);
     }
 
     /**

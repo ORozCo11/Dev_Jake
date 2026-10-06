@@ -13,12 +13,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * App\Console\Commands\ConvertDueSchedulesToTickets — a Scheduled entry
- * whose date has arrived becomes a ticket PROPOSAL automatically (Pending
- * Approval, same as a human Custodian proposal — production-readiness audit
- * finding #1), and completeSchedule() refuses to also complete the schedule
- * directly once that's happened (the ticket is the live process from then
- * on, once Admin approves it).
+ * A due Maintenance Schedule never creates a ticket by itself any more: the
+ * daily command tells the Custodians once, and the Custodian's own Propose
+ * Ticket (carrying schedule_id) is the single way a ticket comes to exist.
+ * Closing that ticket then finishes the schedule it came from.
  */
 class ConvertDueSchedulesToTicketsTest extends TestCase
 {
@@ -26,12 +24,14 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
 
     private User $custodian;
     private User $mechanic;
+    private User $admin;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->custodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian']]);
         $this->mechanic = User::factory()->create(['role' => 'Maintenance Personnel', 'roles' => ['Maintenance Personnel']]);
+        $this->admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
     }
 
     private function vehicle(): Vehicle
@@ -47,219 +47,102 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
         ]);
     }
 
-    #[Test]
-    public function a_due_schedule_becomes_a_pending_approval_proposal_not_an_active_ticket(): void
+    private function schedule(Vehicle $vehicle, array $overrides = []): VehicleMaintenanceSchedule
     {
-        $vehicle = $this->vehicle();
-        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin'], 'barangay_id' => $vehicle->barangay_id]);
-        $schedule = VehicleMaintenanceSchedule::create([
+        return VehicleMaintenanceSchedule::create(array_merge([
             'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
+            'maintenance_type' => 'Brake Inspection',
             'scheduled_date' => now()->toDateString(),
-            'created_by' => $this->custodian->id,
-            'status' => 'Scheduled',
-        ]);
-
-        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
-
-        $schedule->refresh();
-        $this->assertNotNull($schedule->resulting_ticket_id);
-
-        $ticket = MaintenanceTicket::findOrFail($schedule->resulting_ticket_id);
-        // Production-readiness audit finding #1 — this must be a proposal
-        // awaiting Admin review, exactly like a human Custodian's, not an
-        // Active ticket that skipped review entirely.
-        $this->assertSame('Pending Approval', $ticket->status);
-        $this->assertSame($this->custodian->id, $ticket->assigned_custodian_id);
-        $this->assertCount(1, $ticket->subIssues);
-        $this->assertSame('Open', $ticket->subIssues->first()->status);
-        $this->assertNull($ticket->subIssues->first()->assigned_mechanic_id);
-        // Nothing about the vehicle changes until Admin actually approves —
-        // same as any other proposal.
-        $this->assertSame('Available', $vehicle->fresh()->status);
-
-        $this->assertDatabaseHas('notifications', [
-            'user_id' => $this->custodian->id,
-            'type' => 'schedule_due_ticket_created',
-        ]);
-        $this->assertDatabaseHas('notifications', [
-            'user_id' => $admin->id,
-            'type' => 'ticket_proposed',
-        ]);
-    }
-
-    #[Test]
-    public function a_due_schedules_assignee_rides_along_as_a_suggestion_not_a_direct_dispatch(): void
-    {
-        $vehicle = $this->vehicle();
-        $schedule = VehicleMaintenanceSchedule::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Brake Check',
-            'scheduled_date' => now()->subDay()->toDateString(), // overdue, still due
-            'created_by' => $this->custodian->id,
+            'created_by' => $this->admin->id,
             'assigned_to' => $this->mechanic->id,
             'status' => 'Scheduled',
-        ]);
+        ], $overrides));
+    }
 
-        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
+    /** The Custodian opens the pre-filled form from the notification and submits. */
+    private function proposeFrom(VehicleMaintenanceSchedule $schedule)
+    {
+        Sanctum::actingAs($this->custodian, ['*']);
 
-        $ticket = MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id);
-        $subIssue = $ticket->subIssues->first();
-        // Not dispatched yet — a suggestion for Admin to review, same as a
-        // human proposal's suggested_mechanic_id. No direct work order.
-        $this->assertSame('Open', $subIssue->status);
-        $this->assertNull($subIssue->assigned_mechanic_id);
-        $this->assertSame($this->mechanic->id, $subIssue->suggested_mechanic_id);
-        $this->assertDatabaseMissing('notifications', [
-            'user_id' => $this->mechanic->id,
-            'type' => 'work_order_assigned',
-        ]);
-
-        // Admin approves — THIS is what actually dispatches the suggested
-        // mechanic, exactly like any other Custodian proposal.
-        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
-        Sanctum::actingAs($admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
-
-        $subIssue->refresh();
-        $this->assertSame('Under Repair', $subIssue->status);
-        $this->assertSame($this->mechanic->id, $subIssue->assigned_mechanic_id);
-        $this->assertDatabaseHas('notifications', [
-            'user_id' => $this->mechanic->id,
-            'type' => 'work_order_assigned',
+        return $this->postJson('/api/tickets/propose', [
+            'vehicle_id' => $schedule->vehicle_id,
+            'ticket_description' => "Scheduled {$schedule->maintenance_type}.",
+            'priority' => 'Medium',
+            'schedule_id' => $schedule->schedule_id,
+            'sub_issues' => [['title' => 'Scheduled Maintenance', 'maintenance_type' => $schedule->maintenance_type, 'suggested_mechanic_id' => $this->mechanic->id]],
         ]);
     }
 
     #[Test]
-    public function the_auto_proposed_ticket_reads_as_planned_work_not_a_diagnosed_defect(): void
-    {
-        // Final senior system review (2026-10-05, §3) — preventive
-        // maintenance isn't a reported fault; the ticket and sub-issue
-        // titles should say so instead of just repeating the maintenance
-        // type the way a diagnosed-defect proposal's sub-issue title would.
-        $vehicle = $this->vehicle();
-        $schedule = VehicleMaintenanceSchedule::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'scheduled_date' => now()->toDateString(),
-            'created_by' => $this->custodian->id,
-            'status' => 'Scheduled',
-        ]);
-
-        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
-
-        $ticket = MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id);
-        $this->assertSame(sprintf('MT-%04d — %s — Preventive Maintenance - Oil Change', $ticket->ticket_id, $ticket->vehicle->vehicle_name), $ticket->ticket_title);
-        $this->assertSame('Scheduled Maintenance', $ticket->subIssues->first()->title);
-        $this->assertSame('Oil Change', $ticket->subIssues->first()->maintenance_type);
-    }
-
-    #[Test]
-    public function a_future_schedule_is_not_converted(): void
+    public function a_due_schedule_notifies_the_custodians_once_and_creates_nothing(): void
     {
         $vehicle = $this->vehicle();
-        $schedule = VehicleMaintenanceSchedule::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'scheduled_date' => now()->addWeek()->toDateString(),
-            'created_by' => $this->custodian->id,
-            'status' => 'Scheduled',
-        ]);
+        $schedule = $this->schedule($vehicle);
 
         $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
+        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
 
-        $this->assertNull($schedule->fresh()->resulting_ticket_id);
         $this->assertDatabaseCount('maintenance_tickets', 0);
+        $this->assertNotNull($schedule->fresh()->due_notified_at);
+        $this->assertSame(1, \App\Models\Notification::where('user_id', $this->custodian->id)->where('type', 'schedule_due')->where('schedule_id', $schedule->schedule_id)->count());
     }
 
     #[Test]
-    public function running_the_command_twice_does_not_create_a_second_ticket(): void
+    public function a_future_or_retired_vehicle_schedule_is_not_notified(): void
     {
-        $vehicle = $this->vehicle();
-        VehicleMaintenanceSchedule::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'scheduled_date' => now()->toDateString(),
-            'created_by' => $this->custodian->id,
-            'status' => 'Scheduled',
-        ]);
+        $future = $this->schedule($this->vehicle(), ['scheduled_date' => now()->addWeek()->toDateString()]);
+        $retiredVehicle = $this->vehicle();
+        $retiredVehicle->update(['status' => 'Decommissioned']);
+        $retired = $this->schedule($retiredVehicle);
 
         $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
-        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
 
-        $this->assertDatabaseCount('maintenance_tickets', 1);
+        $this->assertNull($future->fresh()->due_notified_at);
+        $this->assertNull($retired->fresh()->due_notified_at);
+        $this->assertDatabaseCount('notifications', 0);
     }
 
     #[Test]
-    public function a_due_schedule_on_a_retired_vehicle_is_skipped_without_failing_the_run(): void
+    public function proposing_from_a_schedule_links_it_and_a_schedule_can_only_become_one_ticket(): void
     {
-        $vehicle = $this->vehicle();
-        $vehicle->update(['status' => 'Decommissioned']);
-        $schedule = VehicleMaintenanceSchedule::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'scheduled_date' => now()->toDateString(),
-            'created_by' => $this->custodian->id,
-            'status' => 'Scheduled',
-        ]);
+        $schedule = $this->schedule($this->vehicle());
 
-        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
+        $id = $this->proposeFrom($schedule)->assertCreated()->json('ticket_id');
+        $this->assertSame($id, $schedule->fresh()->resulting_ticket_id);
+        $this->assertSame('Pending Approval', MaintenanceTicket::find($id)->status);
 
-        $this->assertNull($schedule->fresh()->resulting_ticket_id);
+        $this->proposeFrom($schedule)->assertUnprocessable();
+
+        $other = $this->schedule($this->vehicle());
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets/propose', [
+            'vehicle_id' => $schedule->vehicle_id, 'ticket_description' => 'x', 'priority' => 'Low', 'schedule_id' => $other->schedule_id,
+            'sub_issues' => [['title' => 'x']],
+        ])->assertUnprocessable(); // schedule belongs to a different vehicle
     }
 
     #[Test]
     public function completing_a_schedule_that_already_became_a_ticket_is_blocked(): void
     {
-        $vehicle = $this->vehicle();
-        $schedule = VehicleMaintenanceSchedule::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'scheduled_date' => now()->toDateString(),
-            'created_by' => $this->custodian->id,
-            'assigned_to' => $this->mechanic->id,
-            'status' => 'Scheduled',
-        ]);
-        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
+        $schedule = $this->schedule($this->vehicle());
+        $this->proposeFrom($schedule)->assertCreated();
 
-        // Final senior system review (2026-10-05, §2) — only the assigned
-        // Maintenance Personnel can even reach completeSchedule() now, so
-        // this specifically tests THAT guard (resulting_ticket_id), not the
-        // role check a non-mechanic would trip first.
         Sanctum::actingAs($this->mechanic, ['*']);
-        $response = $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [])
-            ->assertStatus(422);
+        $response = $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}/complete", [])->assertStatus(422);
 
         $this->assertStringContainsString((string) $schedule->fresh()->resulting_ticket_id, $response->json('message'));
     }
 
-    // ---- Ticket end finishes the schedule it came from ----------------------
-
-    private function convertedSchedule(array $overrides = []): array
+    private function approvedTicketFrom(array $overrides = []): array
     {
         $vehicle = $this->vehicle();
-        $schedule = VehicleMaintenanceSchedule::create(array_merge([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Brake Inspection',
-            'scheduled_date' => now()->toDateString(),
-            'created_by' => $this->custodian->id,
-            'assigned_to' => $this->mechanic->id,
-            'status' => 'Scheduled',
-        ], $overrides));
-        $this->artisan('schedules:convert-due-to-tickets')->assertExitCode(0);
+        $schedule = $this->schedule($vehicle, $overrides);
+        $id = $this->proposeFrom($schedule)->assertCreated()->json('ticket_id');
 
-        $ticket = MaintenanceTicket::findOrFail($schedule->fresh()->resulting_ticket_id);
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$id}/approve", ['assigned_mechanic_id' => $this->mechanic->id])->assertOk();
 
-        // The auto-proposal still needs Admin approval before it's Active —
-        // same as any human Custodian proposal (production-readiness audit
-        // finding #1). The tests using this helper are about what happens
-        // once a ticket is live, not about the approval step itself (that's
-        // covered separately above), so approve it here to get there.
-        $approver = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
-        Sanctum::actingAs($approver, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
-
-        return [$vehicle, $schedule->fresh(), $ticket->fresh()];
+        return [$vehicle, $schedule->fresh(), MaintenanceTicket::find($id)];
     }
 
     private function driveToClosed(MaintenanceTicket $ticket): void
@@ -273,24 +156,24 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
             'verification_verdict' => 'Approved', 'test_attested' => true,
             'functional_test' => [['item' => 'Brakes respond properly', 'passed' => true]],
         ])->assertOk();
-        // The Custodian's approving verification closes the ticket.
     }
 
     #[Test]
-    public function closing_the_auto_created_ticket_completes_its_schedule(): void
+    public function closing_the_ticket_completes_its_schedule(): void
     {
-        [, $schedule, $ticket] = $this->convertedSchedule();
+        [, $schedule, $ticket] = $this->approvedTicketFrom();
         $this->assertSame('Scheduled', $schedule->status);
 
         $this->driveToClosed($ticket);
 
+        $this->assertSame('Closed', $ticket->fresh()->status);
         $this->assertSame('Completed', $schedule->fresh()->status);
     }
 
     #[Test]
     public function closing_the_ticket_of_a_recurring_schedule_seeds_the_next_occurrence(): void
     {
-        [$vehicle, , $ticket] = $this->convertedSchedule(['recurrence_months' => 3]);
+        [$vehicle, , $ticket] = $this->approvedTicketFrom(['recurrence_months' => 3]);
 
         $this->driveToClosed($ticket);
 
@@ -305,10 +188,9 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
     #[Test]
     public function a_schedule_being_worked_as_a_ticket_is_not_counted_overdue(): void
     {
-        $this->convertedSchedule(['scheduled_date' => now()->subDays(2)->toDateString()]);
-        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        $this->approvedTicketFrom(['scheduled_date' => now()->subDays(2)->toDateString()]);
 
-        Sanctum::actingAs($admin, ['*']);
+        Sanctum::actingAs($this->admin, ['*']);
         $dash = $this->getJson('/api/dashboard')->assertOk();
 
         $overdue = collect($dash->json('metrics'))->firstWhere('label', 'Overdue Maintenance')['value'];
@@ -319,10 +201,9 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
     #[Test]
     public function cancelling_the_ticket_cancels_its_schedule(): void
     {
-        [, $schedule, $ticket] = $this->convertedSchedule();
-        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        [, $schedule, $ticket] = $this->approvedTicketFrom();
 
-        Sanctum::actingAs($admin, ['*']);
+        Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/cancel", [])->assertOk();
         $this->assertSame('Cancelled', $schedule->fresh()->status);
     }

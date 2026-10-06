@@ -11,9 +11,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Vehicle Usage Log — a trip is opened when a vehicle goes out and closed when
- * it comes back. It records usage only; it never changes the vehicle's
- * status (that stays owned by the maintenance/readiness flow).
+ * Vehicle Usage — a recorded checkout, not dispatch tracking. "Take Out" opens
+ * a record, "Mark Returned" closes it. Usage is its own indicator (At Base /
+ * Currently Out) and never changes the vehicle's fleet status. A vehicle can
+ * only be taken out while it is Available AND verified Ready (a fresh passing
+ * readiness check) — a deferred or repaired vehicle is not ready until a
+ * Custodian has checked it.
  */
 class VehicleUsageController extends Controller
 {
@@ -35,19 +38,21 @@ class VehicleUsageController extends Controller
         $this->requireAbility($request, 'usage.log');
         abort_if(in_array($vehicle->status, ['Inactive', 'Decommissioned'], true), 422, 'This vehicle is archived or decommissioned.');
         abort_unless($vehicle->status === 'Available', 422, "This vehicle is {$vehicle->status} and cannot be taken out right now.");
-        abort_if(VehicleUsageLog::where('vehicle_id', $vehicle->vehicle_id)->whereNull('ended_at')->exists(), 422, 'This vehicle already has an open trip. End it first.');
+        abort_if(VehicleUsageLog::where('vehicle_id', $vehicle->vehicle_id)->whereNull('ended_at')->exists(), 422, 'This vehicle is already out. Mark it returned first.');
+
+        $latest = $vehicle->readinessChecks()->orderByDesc('checked_at')->first();
+        $state = app(FleetController::class)->responseReadinessState($vehicle, $latest);
+        abort_unless($state === 'ready', 422, 'This vehicle is not verified ready. Run a readiness check first.');
 
         $data = $request->validate([
             'purpose' => ['required', 'string', 'max:255'],
             'destination' => ['nullable', 'string', 'max:255'],
             'driver_name' => ['nullable', 'string', 'max:255'],
-            'started_at' => ['nullable', 'date', 'before_or_equal:now'],
-            'odometer_start' => ['nullable', 'integer', 'min:0'],
             'notes' => ['nullable', 'string'],
         ]);
 
         $log = DB::transaction(function () use ($data, $vehicle, $request) {
-            $log = VehicleUsageLog::create($data + ['vehicle_id' => $vehicle->vehicle_id, 'logged_by' => $request->user()->id, 'started_at' => $data['started_at'] ?? now()]);
+            $log = VehicleUsageLog::create($data + ['vehicle_id' => $vehicle->vehicle_id, 'logged_by' => $request->user()->id, 'started_at' => now()]);
             $this->record($request, $vehicle, 'Vehicle Taken Out', "{$vehicle->vehicle_name} went out: {$log->purpose}" . ($log->destination ? " → {$log->destination}" : '') . '.', $log);
 
             return $log;
@@ -61,18 +66,10 @@ class VehicleUsageController extends Controller
         $this->requireAbility($request, 'usage.log');
         abort_if($log->ended_at, 422, 'This trip has already been ended.');
 
-        $data = $request->validate([
-            'ended_at' => ['nullable', 'date', 'before_or_equal:now', 'after_or_equal:' . $log->started_at->toDateTimeString()],
-            'odometer_end' => ['nullable', 'integer', 'min:' . ($log->odometer_start ?? 0)],
-            'notes' => ['nullable', 'string'],
-        ]);
+        $data = $request->validate(['notes' => ['nullable', 'string']]);
 
         DB::transaction(function () use ($log, $data, $request) {
-            $log->update([
-                'ended_at' => $data['ended_at'] ?? now(),
-                'odometer_end' => $data['odometer_end'] ?? null,
-                'notes' => $data['notes'] ?? $log->notes,
-            ]);
+            $log->update(['ended_at' => now(), 'notes' => $data['notes'] ?? $log->notes]);
             $this->record($request, $log->vehicle, 'Vehicle Returned', "{$log->vehicle->vehicle_name} returned from: {$log->purpose}.", $log);
         });
 

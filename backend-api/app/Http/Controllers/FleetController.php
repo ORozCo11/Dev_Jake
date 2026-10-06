@@ -416,7 +416,7 @@ class FleetController extends Controller
      * Gap A — a vehicle's "ready to respond" state. "Available" is necessary
      * but not sufficient: only a recent passing check makes it verified ready.
      */
-    private function responseReadinessState(Vehicle $vehicle, $latest): string
+    public function responseReadinessState(Vehicle $vehicle, $latest): string
     {
         if (in_array($vehicle->status, ['Inactive', 'Decommissioned'], true)) {
             return 'retired';
@@ -909,7 +909,17 @@ class FleetController extends Controller
             ->get()
             ->groupBy('vehicle_id');
 
-        $vehicles->each(function (Vehicle $vehicle) use ($latestChecks, $openTicketsByVehicle) {
+        // Usage (At Base / Currently Out) is its own indicator, never a vehicle status.
+        $usageByVehicle = \App\Models\VehicleUsageLog::orderByDesc('started_at')->get()->groupBy('vehicle_id');
+
+        $vehicles->each(function (Vehicle $vehicle) use ($latestChecks, $openTicketsByVehicle, $usageByVehicle) {
+            $trips = $usageByVehicle->get($vehicle->vehicle_id) ?? collect();
+            $open = $trips->first(fn ($t) => !$t->ended_at);
+            $vehicle->usage_state = $open ? 'out' : 'at_base';
+            $vehicle->usage_since = $open?->started_at;
+            $vehicle->usage_purpose = $open?->purpose;
+            $vehicle->last_used_at = $trips->first(fn ($t) => $t->ended_at)?->ended_at;
+
             $latest = $latestChecks->get($vehicle->vehicle_id);
             $vehicle->readiness_state = $this->responseReadinessState($vehicle, $latest);
             $vehicle->readiness_last_checked = $latest?->checked_at;
