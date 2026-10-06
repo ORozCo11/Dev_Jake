@@ -2094,11 +2094,6 @@ function Workspace() {
     setLocationsTab('map');
   }, []);
 
-  const locationTableColumns = useMemo(
-    () => locationColumns(user, viewVehicleOnMap, (row) => navigate(`${roleRoutes[user.role]}/locations/${row.vehicle_id}/edit`)),
-    [user, viewVehicleOnMap, navigate],
-  );
-
   // "All Vehicles" is the pilot table for the Choose Columns toolbar button
   // (show/hide + drag to reorder, persisted per browser) — see
   // ColumnChooserButton/useColumnChooser below.
@@ -2125,40 +2120,11 @@ function Workspace() {
   );
   const userColumnChooser = useColumnChooser('vms_user_columns', userColumnDefs);
 
-  const locationColumnChooser = useColumnChooser('vms_location_columns', locationTableColumns);
-
-  const conditionColumnDefs = useMemo(
-    () => conditionColumns(
-      user,
-      (row) => navigate(`${roleRoutes[user.role]}/conditions/${row.condition_check_id}/edit`),
-      deleteRecord,
-      handleCreateTicketFromCondition,
-      handleSuggestScheduleFromCondition,
-      canDo(user, 'condition.create') ? () => navigate(`${roleRoutes[user.role]}/conditions/new`) : undefined,
-    ),
-    [user, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition],
-  );
-  const conditionColumnChooser = useColumnChooser('vms_condition_columns', conditionColumnDefs);
-
-  const maintenanceColumnDefs = useMemo(
-    () => maintenanceColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}/edit`), updateRecord, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}`), user),
-    [user, navigate, updateRecord],
-  );
-  const maintenanceColumnChooser = useColumnChooser('vms_maintenance_columns', maintenanceColumnDefs);
-
-  const maintenanceStatusColumnDefs = useMemo(
-    () => maintenanceStatusColumns(setEditTarget, user.id),
-    [user.id],
-  );
-  const maintenanceStatusColumnChooser = useColumnChooser('vms_maintenance_status_columns', maintenanceStatusColumnDefs);
-
   const scheduleColumnDefs = useMemo(
     () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile),
     [navigate, user, deleteRecord, restoreRecord],
   );
   const scheduleColumnChooser = useColumnChooser('vms_schedule_columns', scheduleColumnDefs);
-
-  const vehicleHistoryColumnChooser = useColumnChooser('vms_vehicle_history_columns', historyColumns);
 
   const logColumnDefs = useMemo(
     () => logColumns(lookups.vehicles, openVehicleProfile, openTicketProfile),
@@ -4997,25 +4963,6 @@ function ChartLegend({ rows }) {
   );
 }
 
-function SolidPieLegend({ segments, total }) {
-  const shown = segments.filter((s) => s.value > 0);
-  if (!shown.length) return null;
-  return (
-    <div className="solid-pie-legend">
-      {shown.map((s) => (
-        <div className="solid-pie-legend-item" key={s.label}>
-          <span className="solid-pie-legend-dot" style={{ background: s.color }} />
-          <div>
-            <p className="solid-pie-legend-label" style={{ color: s.color }}>{s.label}</p>
-            <p className="solid-pie-legend-pct">{total ? Math.round((s.value / total) * 100) : 0}%</p>
-            <p className="solid-pie-legend-count">{s.value} issue{s.value === 1 ? '' : 's'}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // The "what this page does" hint banner (blue info callout) was removed from
 // every module per user request — kept as a no-op rather than touched at
 // every call site, so ModulePanel and the 4 ticket-workflow pages that use it
@@ -6426,43 +6373,6 @@ function NewLocationPage({ onBack, boundaryRings, boundaryLabel, onSubmit }) {
   );
 }
 
-// Its own page (.../locations/:vehicleId/edit), reached from the pencil icon
-// on the Location Records table — reassigns a vehicle's current location.
-// Reuses the exact same address/map picker Add Location uses (not just a
-// dropdown of existing hubs) so moving a vehicle to a genuinely new spot
-// doesn't require a separate trip to Add Location first; the parent's
-// onSubmit decides whether the typed name matches an existing hub (reuse
-// it) or not (create it), same as Add Location's own POST /hubs.
-function EditLocationPage({ row, allHubs, boundaryRings, boundaryLabel, onBack, onSubmit }) {
-  if (!row) {
-    return (
-      <ModulePanel description="Update a vehicle's current location.">
-        <p className="empty-state">
-          That vehicle's location record couldn't be found — it may have been removed.{' '}
-          <button type="button" className="link-button" onClick={onBack}>Back to Location Records</button>
-        </p>
-      </ModulePanel>
-    );
-  }
-
-  const currentHub = allHubs.find((h) => h.name === row.current_location);
-
-  return (
-    <LocationAddressMapForm
-      mode="edit"
-      initialName={row.current_location ?? ''}
-      initialAddress={currentHub?.address ?? row.current_location ?? ''}
-      initialMarker={currentHub ? { lat: currentHub.lat, lng: currentHub.lng } : null}
-      initialAddressArea={row.address_area ?? ''}
-      initialRemarks={row.remarks ?? ''}
-      boundaryRings={boundaryRings}
-      boundaryLabel={boundaryLabel}
-      onBack={onBack}
-      onSubmit={onSubmit}
-    />
-  );
-}
-
 function PartsTags({ value }) {
   if (!value) return <span style={{ color: '#94a3b8' }}>-</span>;
   const parts = value.split(',').map((p) => p.trim()).filter(Boolean);
@@ -6710,6 +6620,14 @@ const emptyTicketLookups = {
 
 const CRITICALITY_LEVELS = ['Critical', 'High', 'Normal'];
 
+// Colours for the fleet-condition donut on the dashboard.
+const CONDITION_STAT_CARDS = [
+  { key: 'Good', color: '#16a34a' },
+  { key: 'Needs Inspection', color: '#0284c7' },
+  { key: 'Needs Repair', color: '#d97706' },
+  { key: 'Not Checked', color: '#64748b' },
+];
+
 function defaultCriticalityFor(vehicle, lookups) {
   return (lookups.categories ?? []).find((c) => String(c.category_id) === String(vehicle.category_id))?.default_criticality ?? 'Normal';
 }
@@ -6777,11 +6695,6 @@ function userFields(isEditing, liveValues = EMPTY_OBJ) {
     },
   ];
 }
-
-const verificationFields = [
-  { label: 'Verification Result', name: 'verification_result', options: ['Passed', 'Failed'], required: true, type: 'select' },
-  { label: 'Verification Notes', name: 'verification_notes', type: 'textarea' },
-];
 
 const passwordFields = [
   { label: 'Old Password', name: 'old_password', required: true, type: 'password' },
@@ -7041,50 +6954,6 @@ function formSummaryValue(field, raw) {
     return count ? `${count} file${count === 1 ? '' : 's'} selected` : null;
   }
   return String(raw);
-}
-
-// #7 — non-blocking "this vehicle already has open items" warning, shown on the
-// Report Issue form (and reusable for tickets). Lets a second reporter notice a
-// duplicate before opening another record. Never blocks — two genuinely
-// different problems can be open at once.
-function OpenItemsWarning({ kind, rows, basePath }) {
-  return (
-    <div className="info-callout" style={{ marginBottom: 16, background: 'rgba(245, 158, 11, 0.1)', borderColor: '#f59e0b' }}>
-      <span style={{ marginRight: 8, color: '#b45309', display: 'inline-flex', flexShrink: 0 }}><Icon name="alert" size={16} /></span>
-      <div style={{ flex: 1 }}>
-        <p className="module-description" style={{ color: '#b45309', margin: '0 0 6px', fontWeight: 600 }}>
-          This vehicle already has {rows.length} open {kind}{rows.length !== 1 ? 's' : ''} — check it isn&apos;t the same problem before adding another:
-        </p>
-        <ul style={{ margin: 0, paddingLeft: 18 }}>
-          {rows.map((r) => {
-            const id = r.issue_report_id ?? r.ticket_id;
-            const label = r.issue_report_id
-              ? `#${r.issue_report_id} ${r.issue_type} (${r.severity_level}) — ${r.status}`
-              : `#${r.ticket_id} ${r.ticket_title} — ${r.status}`;
-            const href = basePath ? `${basePath}/${r.issue_report_id ? 'issues' : 'tickets'}/${id}` : null;
-            return (
-              <li key={id} style={{ fontSize: '0.85rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ flex: 1 }}>{label}</span>
-                {/* Opens in a new tab — same reasoning as the ticket duplicate
-                    warning: whoever's filling this form shouldn't lose their
-                    in-progress entry just to go check an existing record. */}
-                {href && (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontSize: '0.8rem', fontWeight: 600, color: '#b45309', textDecoration: 'underline', whiteSpace: 'nowrap' }}
-                  >
-                    View <Icon name="link" size={11} style={{ verticalAlign: 'middle' }} />
-                  </a>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
-  );
 }
 
 // Generic single-form page — used for every simple create/edit flow (Vehicle
@@ -7365,201 +7234,6 @@ function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPhotoUrl 
   ];
 }
 
-function conditionFields(lookups) {
-  return [
-    { label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select' },
-    { label: 'Condition Result', name: 'condition_result', options: lookups.condition_results, required: true, type: 'select' },
-    { label: 'Observations', name: 'observations', type: 'textarea' },
-  ];
-}
-
-// "Repair Type" is a single virtual selector standing in for two genuinely
-// independent backend facts — which vehicle a part came off of, vs. who
-// performed the labor — that used to render as two separate dropdowns next
-// to each other and read as related when they weren't. repairTypeOf derives
-// the selector's value from an existing record (for editing); applyRepairType
-// converts it back to the real is_external/source_vehicle_id fields the
-// backend expects (for submitting). See FleetController::storeMaintenanceRecord.
-function repairTypeOf(record) {
-  if (record?.source_vehicle_id) return 'cannibalized';
-  if (record?.is_external === 1 || record?.is_external === true || record?.is_external === '1') return 'external';
-  return 'in_house';
-}
-
-function withRepairType(record) {
-  if (!record) return EMPTY_OBJ;
-  return { ...record, repair_type: repairTypeOf(record) };
-}
-
-function applyRepairType(payload) {
-  const { repair_type, ...rest } = payload;
-  if (repair_type === 'cannibalized') return { ...rest, is_external: 0 };
-  if (repair_type === 'external') return { ...rest, is_external: 1, source_vehicle_id: null };
-  return { ...rest, is_external: 0, source_vehicle_id: null };
-}
-
-// "Performed By" (Admin-only, select-or-other) shares one field name for two
-// mutually-exclusive backend facts: a registered user's id, or a free-text
-// name for someone outside the system entirely (a volunteer, an outside
-// helper). withPerformedBy seeds the field from whichever the existing
-// record actually has (for editing); applyPerformedBy sorts a submitted
-// value back into the right one of the two real columns — a plain numeric
-// string is treated as a picked user id, anything else as typed "Other"
-// text. See FleetController::storeMaintenanceRecord.
-function withPerformedBy(record) {
-  if (!record) return EMPTY_OBJ;
-  return { ...record, maintenance_personnel_id: record.maintenance_personnel_id ?? record.performed_by_other ?? '' };
-}
-
-function applyPerformedBy(payload) {
-  if (!('maintenance_personnel_id' in payload)) return payload;
-  const raw = payload.maintenance_personnel_id;
-  const isOther = raw !== '' && raw != null && !/^\d+$/.test(String(raw));
-  if (isOther) return { ...payload, maintenance_personnel_id: null, performed_by_other: raw };
-  return { ...payload, performed_by_other: null };
-}
-
-function maintenanceFields(lookups, role, liveValues = EMPTY_OBJ) {
-  const fields = [
-    // Leads the form instead of trailing after Parts/Materials Used — it's
-    // the single choice that decides which other fields even show up (Source
-    // Vehicle for a cannibalized part, vendor/warranty for an external shop),
-    // so it belongs first, not buried past fields that don't depend on it.
-    // In place of the old "Source Vehicle" + "External Repair?" dropdowns
-    // sitting side by side, which read as related when they weren't.
-    // Full-width so its follow-up field(s) clearly read as belonging to it,
-    // on their own row directly underneath, instead of sharing a row side by side.
-    {
-      label: 'Repair Type',
-      name: 'repair_type',
-      type: 'select',
-      fullWidth: true,
-      group: 'Repair Details',
-      options: [
-        { value: 'in_house', label: 'In-House Repair' },
-        { value: 'cannibalized', label: 'Used Cannibalized Part' },
-        { value: 'external', label: 'Sent to External Shop' },
-      ],
-    },
-    { label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select', group: 'Vehicle & Issue' },
-    { label: 'Related Issue Report', name: 'issue_report_id', options: issueOptions(), type: 'select', group: 'Vehicle & Issue' },
-    { label: 'Maintenance Type', name: 'maintenance_type', options: lookups.maintenance_types, required: true, type: 'creatable-select', newItemLabel: 'maintenance type', catalogEndpoint: '/maintenance-types', group: 'Vehicle & Issue' },
-    { label: 'Problem / Reason', name: 'problem_reason', required: true, type: 'textarea', group: 'Work Log' },
-    { label: 'Date Started', name: 'date_started', type: 'date', group: 'Schedule & Personnel' },
-    { label: 'Date Completed', name: 'date_completed', type: 'date', group: 'Schedule & Personnel' },
-    { label: 'Action Taken', name: 'action_taken', type: 'textarea', group: 'Work Log' },
-    {
-      label: 'Parts / Materials Used',
-      name: 'parts_used',
-      type: 'list',
-      group: 'Work Log',
-      placeholder: 'e.g. Brake pads',
-      addLabel: 'Add another part',
-      removeLabel: 'part',
-    },
-    { label: 'Maintenance Cost (PHP)', name: 'maintenance_cost', type: 'number', min: 0, placeholder: 'e.g. 1500', group: 'Cost & Completion' },
-    // Proof-of-completion fast close: what actually justifies skipping
-    // Custodian verification is that something REAL is attached — a receipt
-    // for an external shop repair, or a photo of the finished work for an
-    // in-house fix (e.g. a roadside tire change). Either counts; a typed
-    // note does not, so this isn't gated behind Repair Type — only its
-    // label/hint change to match, so it's obvious which kind of proof is
-    // expected instead of a generic either/or description every time.
-    {
-      label: liveValues?.repair_type === 'external' ? 'Receipt (Proof of Payment)' : 'Photo of Completed Repair',
-      name: 'receipt',
-      type: 'file',
-      accept: 'image/*,.pdf',
-      group: 'Cost & Completion',
-      hint: liveValues?.repair_type === 'external'
-        ? "Attach the shop's receipt, then set Progress Status to Completed — this closes the record immediately with no separate verification step."
-        : 'Attach a photo of the completed repair, then set Progress Status to Completed — this closes the record immediately with no separate verification step.',
-    },
-    { label: 'Progress Status', name: 'progress_status', options: lookups.maintenance_statuses, type: 'select', group: 'Cost & Completion' },
-    { label: 'Remarks', name: 'remarks', type: 'textarea', group: 'Cost & Completion' },
-  ];
-
-  if (role === 'Admin') {
-    fields.splice(fields.findIndex((f) => f.name === 'action_taken'), 0, {
-      label: 'Performed By',
-      name: 'maintenance_personnel_id',
-      options: options(lookups.maintenance_performers, 'id', 'name'),
-      required: true,
-      type: 'select-or-other',
-      otherLabel: 'Other (not in system)',
-      otherPlaceholder: 'e.g. a volunteer or outside helper\'s name',
-      group: 'Schedule & Personnel',
-      hint: 'Whoever actually did the repair — not necessarily Maintenance Personnel; a Custodian or Admin who fixed it themselves belongs here too. Not registered in the system at all? Pick Other and type their name.',
-    });
-  }
-
-  // Only one of these ever applies at a time — that's the whole point of
-  // collapsing them into one selector above instead of two independent
-  // toggles that could (confusingly) both be filled in at once.
-  const repairTypeIndex = fields.findIndex((f) => f.name === 'repair_type');
-  if (liveValues?.repair_type === 'cannibalized') {
-    // Required — "cannibalized" only means something once we know which
-    // vehicle the part actually came from.
-    fields.splice(repairTypeIndex + 1, 0, {
-      label: 'Source Vehicle',
-      name: 'source_vehicle_id',
-      options: vehicleOptions(lookups).filter((v) => String(v.value) !== String(liveValues?.vehicle_id)),
-      type: 'select',
-      required: true,
-      group: 'Repair Details',
-      hint: 'Which vehicle the part was taken from.',
-    }, {
-      label: 'Part Taken From Donor',
-      name: 'part_name',
-      type: 'text',
-      required: true,
-      placeholder: 'e.g. Alternator, Brake caliper',
-      group: 'Repair Details',
-      hint: 'Which specific part was removed from the source vehicle.',
-    });
-  } else if (liveValues?.repair_type === 'external') {
-    // Vendor required — can't log an external repair without knowing which
-    // shop it went to. Warranty stays optional; not every repair carries one.
-    fields.splice(repairTypeIndex + 1, 0,
-      { label: 'External Shop', name: 'external_vendor', type: 'text', placeholder: 'e.g. Bautista Auto Shop', required: true, group: 'Repair Details' },
-      { label: 'Warranty Until', name: 'warranty_until', type: 'date', group: 'Repair Details' },
-    );
-  }
-
-  // No matching Issue Report yet (e.g. a mechanic self-filing a field repair
-  // with nothing on file) — let them create one instead of leaving this
-  // module and losing their in-progress record. Picking "+ Add New Issue…"
-  // pops the modal open immediately and only asks for Issue Type — the new
-  // report's description/severity come from this same form's Problem/Reason
-  // and a default (see submitFormPage), not asked for a second time.
-  if (liveValues?.issue_report_id === NEW_ISSUE_OPTION.value) {
-    const issueReportIndex = fields.findIndex((f) => f.name === 'issue_report_id');
-    fields.splice(issueReportIndex + 1, 0,
-      {
-        label: 'New Issue Type',
-        name: '__new_issue_group__',
-        required: true,
-        type: 'new-issue-modal',
-        issueTypeOptions: lookups.issue_types,
-        fullWidth: true,
-        group: 'Vehicle & Issue',
-      },
-    );
-  }
-
-  return fields;
-
-  function issueOptions() {
-    return [
-      NEW_ISSUE_OPTION,
-      ...(lookups.issue_reports ?? []).map((issue) => ({
-        value: issue.issue_report_id,
-        label: `#${issue.issue_report_id} ${issue.issue_type}`,
-      })),
-    ];
-  }
-}
-
 function scheduleFields(lookups, allHubs = [], isEdit = false, suggestOnly = false) {
   const hubOptions = allHubs.map((hub) => ({ value: hub.name, label: hub.name }));
 
@@ -7775,20 +7449,6 @@ const SCHEDULE_STAT_CARDS = [
 // Only shown to a Maintenance-Personnel-only viewer — "how many vehicles do
 // I still need to do", not the fleet-wide count everyone else also sees.
 const MY_ASSIGNED_SCHEDULE_CARD = { key: 'MyAssigned', label: 'Assigned to You', icon: 'wrench', bg: '#eff6ff', color: '#1d4ed8' };
-
-const CONDITION_STAT_CARDS = [
-  { key: 'Good', label: 'Good', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
-  { key: 'Needs Inspection', label: 'Needs Inspection', icon: 'search', bg: '#e0f2fe', color: '#0284c7' },
-  { key: 'Needs Repair', label: 'Needs Repair', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
-  { key: 'Not Checked', label: 'Not Checked', icon: 'eyeOff', bg: '#f1f5f9', color: '#64748b' },
-];
-
-const MAINTENANCE_RECORD_STAT_CARDS = [
-  { key: 'Assigned', label: 'Assigned', icon: 'clipboard', bg: '#e0f2fe', color: '#0284c7' },
-  { key: 'Under Repair', label: 'Under Repair', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
-  { key: 'For Verification', label: 'For Verification', icon: 'search', bg: '#ede9fe', color: '#7c3aed' },
-  { key: 'Completed', label: 'Completed', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
-];
 
 const TICKET_STAT_CARDS = [
   { key: 'Open', label: 'Open', icon: 'alert', bg: '#e0f2fe', color: '#0284c7' },
@@ -8106,136 +7766,6 @@ function UserCard({ user: person, onClick }) {
   );
 }
 
-function locationColumns(currentUser, onViewOnMap, onEdit) {
-  return [
-  { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.location_record_id ?? 'Current' },
-  { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (row) => row.vehicle?.plate_number ?? '-' },
-  { key: 'status', label: 'Status', className: 'cell-center', render: (row) => <StatusBadge value={row.vehicle?.status ?? '-'} /> },
-  { key: 'current_location', label: 'Current Location', render: (row) => row.current_location ?? '-' },
-  { key: 'address_area', label: 'Address / Area', render: (row) => row.address_area ?? '-' },
-  {
-    key: 'updated_by',
-    label: 'Updated By',
-    className: 'cell-center',
-    render: (row) => <UserAvatarName user={row.is_current_snapshot ? currentUser : row.updated_by} />,
-  },
-  { key: 'date_updated', label: 'Date Updated', className: 'cell-center', render: (row) => <DateBadge value={row.updated_at} /> },
-  { key: 'time', label: 'Time', className: 'cell-center', render: (row) => formatTime(row.updated_at) },
-  {
-    key: 'action',
-    label: 'Action',
-    locked: true,
-    className: 'cell-center',
-    render: (row) => (
-      <div className="row-actions">
-        {hasRole(currentUser, 'Admin') && (
-          <button
-            className="btn-edit-action icon-btn"
-            onClick={() => onEdit(row)}
-            title="Update this vehicle's location"
-            aria-label="Update this vehicle's location"
-            type="button"
-          >
-            <Icon name="edit" size={14} />
-          </button>
-        )}
-        <button
-          className="btn-view-action icon-btn"
-          onClick={() => onViewOnMap(row)}
-          title="View vehicle on map"
-          aria-label="View vehicle on map"
-          type="button"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        </button>
-      </div>
-    ),
-  },
-  ];
-}
-
-function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromCondition, onSuggestScheduleFromCondition, onAddCondition) {
-  const columns = [
-    { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.condition_check_id ?? '-' },
-    { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (row) => row.vehicle?.plate_number ?? '-' },
-    { key: 'result', label: 'Result', className: 'cell-center', render: (row) => <StatusBadge value={row.condition_result} /> },
-    { key: 'checked_by', label: 'Checked By', className: 'cell-center', render: (row) => <UserAvatarName user={row.checked_by} /> },
-    { key: 'date', label: 'Date', className: 'cell-center', render: (row) => <DateBadge value={row.created_at} /> },
-    { key: 'time', label: 'Time', className: 'cell-center', render: (row) => formatTime(row.created_at) },
-  ];
-
-  if (hasRole(user, 'Custodian') || hasRole(user, 'Admin')) {
-    columns.push({
-      key: 'action',
-      label: 'Action',
-      locked: true,
-      className: 'cell-center',
-      render: (row) => {
-        // condition.edit is Custodian-only, and only for the check THEY
-        // performed (backend 403s otherwise); condition.delete is Admin only.
-        const canEdit = canDo(user, 'condition.edit') && String(row.checked_by?.id) === String(user.id);
-        const canDelete = hasRole(user, 'Admin');
-        return (
-        // A synthesized "Not Checked" row has no condition_check_id — there's
-        // no record yet to create a ticket from, suggest a schedule against,
-        // edit, or delete. Its only real action is filing the first check.
-        !row.condition_check_id ? (
-          <div className="row-actions">
-            {onAddCondition && (
-              <button className="btn-confirm-action icon-btn" onClick={onAddCondition} type="button" title="Record Condition" aria-label="Record Condition"><Icon name="plus" size={14} /></button>
-            )}
-          </div>
-        ) : (
-        <div className="row-actions">
-          {/* #2 — Admin can turn a problem-finding condition check (Needs
-              Repair OR Needs Inspection — anything short of Good) into a
-              pre-diagnosed ticket in one click, instead of someone having to
-              redescribe the same problem in a separate Issue Report just to
-              get it in front of Admin. Reserved as its own slot (hidden, not
-              removed) even when this row doesn't qualify — otherwise
-              Edit/Delete shift left on every row that lacks it, and the
-              column stops lining up. */}
-          {(canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && onCreateTicketFromCondition && (
-            row.condition_result !== 'Good' ? (
-              <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromCondition(row)} type="button" title={canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'} aria-label={canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'}><Icon name="ticket" size={14} /></button>
-            ) : (
-              <button
-                className="btn-confirm-action icon-btn"
-                type="button"
-                tabIndex={-1}
-                aria-hidden="true"
-                disabled
-                style={{ visibility: 'hidden', pointerEvents: 'none' }}
-              >
-                <Icon name="ticket" size={14} />
-              </button>
-            )
-          )}
-          {/* Custodian or Admin can propose a preventive schedule from any
-              condition check — not gated to a bad result, since "let's plan
-              a checkup" is a reasonable call even on a Good vehicle. */}
-          {onSuggestScheduleFromCondition && (
-            <button className="btn-view-action icon-btn" onClick={() => onSuggestScheduleFromCondition(row)} type="button" title="Suggest Maintenance Schedule" aria-label="Suggest Maintenance Schedule"><Icon name="calendar" size={14} /></button>
-          )}
-          {canEdit && (
-            <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-          )}
-          {canDelete && (
-            <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/conditions/${row.condition_check_id}`, 'Condition check deleted.', `Delete this "${row.condition_result}" condition check for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? This cannot be undone.`)} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
-          )}
-        </div>
-        )
-        );
-      },
-    });
-  }
-
-  return columns;
-}
-
 // "X ago" — coarse, single-unit relative time (seconds up to years), the
 // same granularity a typical activity-feed timestamp uses.
 function timeAgo(value) {
@@ -8470,419 +8000,6 @@ function TicketFilterPanel({
       </div>
     </div>
   );
-}
-
-function maintenanceColumns(role, setEditTarget, updateRecord, onViewRecord, user) {
-  const columns = [
-    { key: 'id', label: 'ID', width: '4%', locked: true, className: 'cell-center', render: (row) => row.maintenance_id },
-    { key: 'vehicle', label: 'Vehicle', width: '15%', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> },
-    { key: 'plate', label: 'Plate Number', width: '8%', className: 'cell-center', render: (row) => row.vehicle?.plate_number ?? '-' },
-    {
-      key: 'type',
-      label: 'Type',
-      width: '9%',
-      render: (row) => (
-        <div>
-          <div>{row.maintenance_type}</div>
-          {row.is_external && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-              <span className="badge" style={{ fontSize: '0.68rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }} title={row.external_vendor || 'External shop'}>External</span>
-              {row.receipt_url && (
-                <a href={resolvePhotoUrl(row.receipt_url)} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#0369a1', textDecoration: 'underline' }}>
-                  Receipt
-                </a>
-              )}
-            </div>
-          )}
-          {row.source_vehicle && (
-            <div style={{ marginTop: 2 }}>
-              <span className="badge" style={{ fontSize: '0.68rem', background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa' }} title={`${row.part_name ? `${row.part_name} c` : 'C'}annibalized from ${row.source_vehicle.vehicle_name}`}>
-                ⚙ {row.part_name ? `${row.part_name} ` : ''}from {row.source_vehicle.vehicle_name}
-              </span>
-            </div>
-          )}
-        </div>
-      ),
-    },
-    { key: 'source', label: 'Source', width: '9%', className: 'cell-center', render: (row) => <StatusBadge value={row.source} /> },
-    { key: 'personnel', label: 'Personnel', width: '10%', className: 'cell-center', render: (row) => <UserAvatarName user={row.maintenance_personnel} fallback={row.performed_by_other ?? '-'} /> },
-    { key: 'progress', label: 'Progress', width: '8%', className: 'cell-center', render: (row) => <StatusBadge value={row.progress_status} /> },
-    { key: 'verification', label: 'Verification', width: '8%', className: 'cell-center', render: (row) => row.verification_result ? <StatusBadge value={row.verification_result} /> : '-' },
-    { key: 'date_started', label: 'Date Started', width: '5%', className: 'cell-center', render: (row) => <DateBadge value={row.date_started} /> },
-    { key: 'date_completed', label: 'Date Completed', width: '5%', className: 'cell-center', render: (row) => <DateBadge value={row.date_completed} /> },
-    {
-      key: 'action',
-      label: 'Action',
-      width: '8%',
-      locked: true,
-      className: 'cell-center',
-      render: (row) => (
-        <div className="row-actions" style={{ flexWrap: 'wrap' }}>
-          {onViewRecord && (
-            <button className="btn-view-action icon-btn" onClick={() => onViewRecord(row)} type="button" title="View" aria-label="View"><Icon name="eye" size={14} /></button>
-          )}
-          {/* Phase B4 — record.edit narrowed to Admin only (Custodian is
-              read-only here now; Maintenance Personnel never reaches this
-              module at all — see modulesByRole). */}
-          {canDo(user, 'record.edit') && (
-            <button className="btn-edit-action icon-btn" onClick={() => setEditTarget(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-          )}
-          {canDo(user, 'record.confirm') && row.verification_result === 'Passed' && row.progress_status !== 'Completed' ? (
-            <>
-              <button className="btn-confirm-action icon-btn" onClick={() => updateRecord(`/maintenance-records/${row.maintenance_id}/confirm`, { confirmed: true }, 'Maintenance confirmed.')} type="button" title="Confirm" aria-label="Confirm"><Icon name="checkCircle" size={14} /></button>
-              <button className="btn-reopen-action icon-btn" onClick={() => updateRecord(`/maintenance-records/${row.maintenance_id}/confirm`, { confirmed: false }, 'Maintenance reopened.')} type="button" title="Reopen" aria-label="Reopen"><Icon name="undo" size={14} /></button>
-            </>
-          ) : null}
-        </div>
-      ),
-    },
-  ];
-
-  return columns;
-}
-
-const MAINTENANCE_PROGRESS_STAGES = ['Assigned', 'Under Repair', 'For Verification', 'Completed'];
-
-// Where a record sits on the stage trail. Shared by the detail page's stepper
-// and the card view's progress bar so the two can never disagree. "On Hold -
-// Awaiting Parts" isn't its own stage — it's a stalled 'Under Repair'.
-function maintenanceStageIndex(record) {
-  if (record.progress_status === 'On Hold - Awaiting Parts') {
-    return MAINTENANCE_PROGRESS_STAGES.indexOf('Under Repair');
-  }
-  return MAINTENANCE_PROGRESS_STAGES.indexOf(record.progress_status);
-}
-
-// A record that reached Completed with no verification result was closed on an
-// Admin decision, not on verified work (see decisionCloseMaintenance).
-function isClosedUnverified(record) {
-  return record.progress_status === 'Completed' && !record.verification_result;
-}
-
-// Card-view counterpart to the Maintenance Records table — mirrors TicketCard
-// (and reuses its themed .ticket-card-* classes) so both modules read as the
-// same product rather than two different card systems.
-function MaintenanceRecordCard({ record, onClick }) {
-  const stageIndex = maintenanceStageIndex(record);
-  const isDone = record.progress_status === 'Completed';
-  const unverified = isClosedUnverified(record);
-  const stagesDone = stageIndex + 1;
-
-  return (
-    <div className="ticket-card" onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
-      <div className="ticket-card-content-wrapper">
-        <div className="ticket-card-info">
-          <div className="ticket-card-top">
-            <span className="ticket-card-id">#{record.maintenance_id}</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <StatusBadge value={record.source} />
-              <StatusBadge value={record.progress_status} />
-            </div>
-          </div>
-          <p className="ticket-card-title">{record.maintenance_type}</p>
-          <p className="ticket-card-vehicle">
-            {record.vehicle?.vehicle_name}{record.vehicle?.plate_number ? ` · ${record.vehicle.plate_number}` : ''}
-          </p>
-        </div>
-        {record.vehicle?.photo_url && (
-          <div className="ticket-card-photo">
-            <img src={resolvePhotoUrl(record.vehicle.photo_url)} alt={record.vehicle.vehicle_name} />
-          </div>
-        )}
-      </div>
-
-      {/* Same four stages as the detail page, compressed to a single bar —
-          green only once it's genuinely finished. */}
-      <div style={{ margin: '8px 0 2px' }}>
-        <div style={{ height: 6, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
-          <div style={{
-            height: '100%',
-            width: `${(stagesDone / MAINTENANCE_PROGRESS_STAGES.length) * 100}%`,
-            background: isDone ? '#16a34a' : '#d97706',
-            borderRadius: 999,
-          }} />
-        </div>
-        <span className="muted" style={{ fontSize: '0.72rem' }}>
-          {MAINTENANCE_PROGRESS_STAGES[stageIndex] ?? record.progress_status} · stage {stagesDone} of {MAINTENANCE_PROGRESS_STAGES.length}
-        </span>
-      </div>
-
-      {(unverified || record.is_external || record.source_vehicle) && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '6px 0 2px' }}>
-          {unverified && (
-            <span style={{ fontSize: '0.66rem', fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }} title="Closed by Admin without Custodian verification.">
-              UNVERIFIED CLOSE
-            </span>
-          )}
-          {record.is_external && (
-            <span style={{ fontSize: '0.66rem', fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }} title={record.external_vendor || 'External shop'}>
-              EXTERNAL
-            </span>
-          )}
-          {record.source_vehicle && (
-            <span style={{ fontSize: '0.66rem', fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa' }} title={`${record.part_name ? `${record.part_name} c` : 'C'}annibalized from ${record.source_vehicle.vehicle_name}`}>
-              ⚙ {record.part_name ? `${record.part_name} — ` : ''}{record.source_vehicle.vehicle_name}
-            </span>
-          )}
-        </div>
-      )}
-
-      <div className="ticket-card-bottom">
-        {record.verification_result
-          ? <StatusBadge value={record.verification_result} />
-          : <span className="muted" style={{ fontSize: '0.72rem' }}>{record.maintenance_personnel?.name ?? record.performed_by_other ?? '—'}</span>}
-        <span className="ticket-card-date">{formatDate(record.date_completed ?? record.date_started)}</span>
-      </div>
-    </div>
-  );
-}
-
-// Read-rich detail PAGE for a single Maintenance Record — same spirit as the
-// Ticket detail page (a visual progress trail instead of a flat status
-// word), but for the linear Assigned -> ... -> Completed chain a Record
-// follows instead of a ticket's per-sub-issue breakdown. Reachable both from
-// the Maintenance Records table and from a completed Schedule row, so
-// there's one consistent "view what actually happened" experience instead
-// of only ever landing in the plain edit form.
-function MaintenanceRecordDetail({ record, onConfirm, onReopen, onDecisionClose, canManage }) {
-  const [closing, setClosing] = useState(false);
-  const onHold = record.progress_status === 'On Hold - Awaiting Parts';
-  const stageIndex = maintenanceStageIndex(record);
-  const canConfirm = canManage && record.verification_result === 'Passed' && record.progress_status !== 'Completed';
-  // Decision-close is only offered where it's actually meaningful: not
-  // already finished, and not already passed verification (a pass should go
-  // through Confirm so it isn't overwritten as "unverified").
-  const canDecisionClose = canManage && record.progress_status !== 'Completed' && record.verification_result !== 'Passed';
-  // A record that reached Completed with no verification result was closed on
-  // an Admin decision, not on verified work — never let the two look alike.
-  const closedUnverified = isClosedUnverified(record);
-
-  return (
-    <ModulePanel description={`Maintenance #${record.maintenance_id}`}>
-      <div className="maintenance-record-detail">
-        <div className="maintenance-record-hero">
-          <VehicleCell vehicle={record.vehicle} />
-          <span className="muted">{record.maintenance_type}</span>
-          <StatusBadge value={record.source} />
-          {onHold && (
-            <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>ON HOLD — AWAITING PARTS</span>
-          )}
-          {record.is_external && (
-            <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>External{record.external_vendor ? ` — ${record.external_vendor}` : ''}</span>
-          )}
-          {record.source_vehicle && (
-            <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa' }}>⚙ Part from {record.source_vehicle.vehicle_name}</span>
-          )}
-          {closedUnverified && (
-            <span
-              style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}
-              title="Admin closed this without waiting for Custodian verification — nobody independently checked the work."
-            >
-              <Icon name="alert" size={11} /> CLOSED WITHOUT VERIFICATION
-            </span>
-          )}
-        </div>
-
-        {/* Progress trail — where this record actually sits, not just a
-            status word. Filled/checked nodes are stages already passed. */}
-        <div className="maintenance-progress">
-          {MAINTENANCE_PROGRESS_STAGES.map((stage, i) => (
-            <div key={stage} style={{ display: 'flex', alignItems: 'flex-start', flex: i === MAINTENANCE_PROGRESS_STAGES.length - 1 ? '0 0 auto' : 1 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 56 }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  background: i < stageIndex || (i === stageIndex && stage === 'Completed') ? '#16a34a' : i === stageIndex ? '#2563eb' : '#e2e8f0',
-                  color: i <= stageIndex ? '#fff' : '#94a3b8', fontSize: '0.74rem', fontWeight: 700,
-                }}>
-                  {i < stageIndex || (i === stageIndex && stage === 'Completed') ? <Icon name="checkCircle" size={14} /> : i + 1}
-                </div>
-                <span style={{ fontSize: '0.7rem', color: i <= stageIndex ? '#0f172a' : '#94a3b8', fontWeight: i === stageIndex ? 700 : 500, textAlign: 'center' }}>{stage}</span>
-              </div>
-              {i < MAINTENANCE_PROGRESS_STAGES.length - 1 && (
-                <div style={{ flex: 1, height: 2, marginTop: 13, background: i < stageIndex ? '#16a34a' : '#e2e8f0' }} />
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="maintenance-detail-grid">
-          <div>
-            <span className="maintenance-detail-label">Problem / Reason</span>
-            {record.problem_reason || '—'}
-          </div>
-          <div>
-            <span className="maintenance-detail-label">Action Taken</span>
-            {record.action_taken || '—'}
-          </div>
-          <div>
-            <span className="maintenance-detail-label">Parts Used</span>
-            {record.parts_used || '—'}
-          </div>
-          <div>
-            <span className="maintenance-detail-label">Cost</span>
-            {record.maintenance_cost != null ? `₱${Number(record.maintenance_cost).toLocaleString()}` : '—'}
-          </div>
-          <div>
-            <span className="maintenance-detail-label">Personnel</span>
-            <UserAvatarName user={record.maintenance_personnel} fallback={record.performed_by_other ?? '-'} />
-          </div>
-          <div>
-            <span className="maintenance-detail-label">Date Started / Completed</span>
-            {formatDate(record.date_started)} — {formatDate(record.date_completed)}
-          </div>
-        </div>
-
-        {/* Proof shown inline — the whole point of this view over the plain
-            edit form is not having to click away just to see it. */}
-        {record.receipt_url && (
-          <div>
-            <span className="muted" style={{ fontSize: '0.74rem', display: 'block', marginBottom: 6 }}>Proof of Completion</span>
-            <a href={resolvePhotoUrl(record.receipt_url)} target="_blank" rel="noopener noreferrer">
-              <img src={resolvePhotoUrl(record.receipt_url)} alt="Proof of completion" style={{ maxWidth: 360, maxHeight: 280, borderRadius: 8, border: '1px solid #e2e8f0', display: 'block' }} />
-            </a>
-          </div>
-        )}
-
-        {record.verification_result && (
-          <div style={{ padding: '10px 12px', borderRadius: 8, maxWidth: 480, background: record.verification_result === 'Passed' ? '#ecfdf5' : '#fef2f2', border: `1px solid ${record.verification_result === 'Passed' ? '#a7f3d0' : '#fecaca'}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', fontWeight: 700, color: record.verification_result === 'Passed' ? '#065f46' : '#991b1b' }}>
-              <Icon name={record.verification_result === 'Passed' ? 'checkCircle' : 'alert'} size={15} />
-              Verification: {record.verification_result}
-            </div>
-            {record.verification_notes && <p style={{ margin: '4px 0 0', fontSize: '0.82rem' }}>{record.verification_notes}</p>}
-            {record.verified_by && <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.76rem' }}>By {record.verified_by.name} · {formatDate(record.verified_at)}</p>}
-          </div>
-        )}
-
-        {/* Why verification was skipped — mandatory at close time, so it's
-            always here when the badge above is showing. */}
-        {record.closure_reason && (
-          <div style={{ padding: '10px 12px', borderRadius: 8, maxWidth: 480, background: '#fffbeb', border: '1px solid #fde68a' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', fontWeight: 700, color: '#92400e' }}>
-              <Icon name="alert" size={15} /> Reason for closing without verification
-            </div>
-            <p style={{ margin: '4px 0 0', fontSize: '0.82rem' }}>{record.closure_reason}</p>
-          </div>
-        )}
-
-        {record.confirmed_by && (
-          <p className="muted" style={{ fontSize: '0.78rem', margin: 0 }}>
-            {closedUnverified ? 'Closed' : 'Confirmed'} by {record.confirmed_by.name} · {formatDate(record.confirmed_at)}
-          </p>
-        )}
-
-        {canConfirm && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="primary-button" type="button" onClick={() => onConfirm(record)}>Confirm</button>
-            <button className="ghost-button" type="button" onClick={() => onReopen(record)}>Reopen</button>
-          </div>
-        )}
-
-        {canDecisionClose && !closing && (
-          <div>
-            <button className="ghost-button" type="button" onClick={() => setClosing(true)}>
-              Close Without Verification
-            </button>
-            <p className="muted" style={{ fontSize: '0.76rem', margin: '6px 0 0', maxWidth: 480 }}>
-              Ends this record now without waiting for a Custodian to check the work. Requires a reason, and the record stays permanently marked as unverified.
-            </p>
-          </div>
-        )}
-
-        {canDecisionClose && closing && (
-          <div style={{ padding: '14px 16px', borderRadius: 8, maxWidth: 520, background: '#fffbeb', border: '1px solid #fde68a' }}>
-            <h4 style={{ margin: '0 0 4px', fontSize: '0.92rem', color: '#92400e' }}>Close without Custodian verification</h4>
-            <p className="muted" style={{ fontSize: '0.78rem', margin: '0 0 12px' }}>
-              Nobody will have independently checked this work. The record will be permanently flagged as closed unverified, and Custodians will be notified the verification is no longer needed.
-            </p>
-            <SmartForm
-              fields={[
-                { label: 'Reason for closing without verification', name: 'closure_reason', type: 'textarea', rows: 2, required: true, fullWidth: true },
-                {
-                  label: 'Is the vehicle fit to return to service?',
-                  name: 'returned_to_service',
-                  type: 'select',
-                  required: true,
-                  fullWidth: true,
-                  options: [
-                    { value: 1, label: 'Yes — return it to Available' },
-                    { value: 0, label: 'No — keep it Under Maintenance' },
-                  ],
-                },
-              ]}
-              onCancel={() => setClosing(false)}
-              onSubmit={(payload) => onDecisionClose(record, payload)}
-              submitLabel="Close Record"
-              title=""
-            />
-          </div>
-        )}
-      </div>
-    </ModulePanel>
-  );
-}
-
-// Fetch-by-id wrapper — same pattern as TicketProfilePage: load once by the
-// URL's :id, show a loader/not-found state, then hand the fetched record to
-// the read-rich detail view above. Re-fetches after Confirm/Reopen so the
-// progress trail reflects the new state without a manual refresh.
-function MaintenanceRecordProfilePage({ maintenanceId, onConfirm, onReopen, onDecisionClose, canManage }) {
-  const [record, setRecord] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-
-  const loadRecord = useCallback(() => {
-    setLoading(true);
-    api.get(`/maintenance-records/${maintenanceId}`)
-      .then((response) => { setRecord(response.data); setNotFound(false); })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
-  }, [maintenanceId]);
-
-  useEffect(() => { loadRecord(); }, [loadRecord]);
-
-  if (loading) return <ModuleLoader label="Loading maintenance record" />;
-
-  if (notFound || !record) {
-    return <ModulePanel description="This maintenance record could not be found — it may have been deleted." />;
-  }
-
-  return (
-    <MaintenanceRecordDetail
-      record={record}
-      canManage={canManage}
-      onConfirm={(r) => onConfirm(r).then(loadRecord)}
-      onReopen={(r) => onReopen(r).then(loadRecord)}
-      onDecisionClose={(r, payload) => onDecisionClose(r, payload).then(loadRecord)}
-    />
-  );
-}
-
-function maintenanceStatusColumns(setEditTarget, currentUserId) {
-  return [
-    { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.maintenance_id },
-    { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (row) => row.vehicle?.plate_number ?? '-' },
-    { key: 'type', label: 'Type', className: 'cell-center', render: (row) => row.maintenance_type },
-    { key: 'source', label: 'Source', className: 'cell-center', render: (row) => <StatusBadge value={row.source} /> },
-    { key: 'personnel', label: 'Personnel', className: 'cell-center', render: (row) => <UserAvatarName user={row.maintenance_personnel} fallback={row.performed_by_other ?? '-'} /> },
-    { key: 'progress', label: 'Progress', className: 'cell-center', render: (row) => <StatusBadge value={row.progress_status} /> },
-    {
-      key: 'action',
-      label: 'Action',
-      locked: true,
-      className: 'cell-center',
-      render: (row) => {
-        // The backend blocks a Custodian from verifying their own repair
-        // (dual-role Custodian/mechanic accounts can log one) — matching
-        // that here instead of showing a button that just 403s on submit.
-        const isOwnRepair = currentUserId != null && String(row.maintenance_personnel_id) === String(currentUserId);
-        if (isOwnRepair) {
-          return <span className="muted" title="You performed this repair — another Custodian needs to verify it.">Awaiting another Custodian</span>;
-        }
-        return <button className="btn-edit-action icon-btn" onClick={() => setEditTarget(row)} type="button" title="Verify" aria-label="Verify"><Icon name="checkCircle" size={14} /></button>;
-      },
-    },
-  ];
 }
 
 function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord, onReassign, onViewTicket) {
@@ -9166,36 +8283,6 @@ const historyColumns = [
   { key: 'date', label: 'Date', render: (row) => <DateBadge value={row.created_at} /> },
   { key: 'time', label: 'Time', render: (row) => formatTime(row.created_at) },
 ];
-
-const VEHICLE_HISTORY_EXPORT_COLUMNS = [
-  { label: 'ID', value: (r) => r.history_id },
-  { label: 'Vehicle', value: (r) => (r.vehicle ? `${r.vehicle.vehicle_name} (${r.vehicle.plate_number})` : '') },
-  { label: 'Activity', value: (r) => r.activity_type },
-  { label: 'Related Record', value: (r) => r.related_record_id ?? '' },
-  { label: 'Updated By', value: (r) => r.updated_by?.name ?? '' },
-  { label: 'Description', value: (r) => r.description ?? '' },
-  { label: 'Date', value: (r) => r.created_at },
-];
-
-// Card-view counterpart to historyColumns — same fields, laid out for a
-// grid instead of a row.
-function HistoryCard({ row, onClick }) {
-  return (
-    <div className="history-card" onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
-      <div className="history-card-top">
-        <VehicleCell vehicle={row.vehicle} isRowTitle={false} />
-        <span className="history-card-activity">{row.activity_type}</span>
-      </div>
-      {row.description && <p className="history-card-desc">{row.description}</p>}
-      <div className="history-card-bottom">
-        <UserAvatarName user={row.updated_by} />
-        <span className="history-card-date">
-          <DateBadge value={row.created_at} /> {formatTime(row.created_at)}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 // "09/16/26 - 7:05 am" — a single plain-text column combining date and time,
 // in place of the DateBadge/Time column pair every other table uses; the
@@ -9615,21 +8702,6 @@ function ExpandableText({ text, lines = 2, className = '' }) {
         </button>
       )}
     </span>
-  );
-}
-
-// Stacks two or more long-text fields (e.g. Problem/Reason + Action Taken)
-// into one labeled multi-line block for a table's renderSubRow band,
-// skipping whichever fields aren't populated on a given row.
-function subRowFields(pairs) {
-  const present = pairs.filter(([, value]) => value);
-  if (!present.length) return null;
-  return (
-    <div className="table-subrow-lines">
-      {present.map(([label, value]) => (
-        <div key={label}><strong>{label}:</strong> {value}</div>
-      ))}
-    </div>
   );
 }
 
@@ -11753,18 +10825,6 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
     />
   );
 }
-
-// The four ways a ticket can be reported. Everything but 'inspection' means
-// the issue AND its repair type are already known — Repair Type used to
-// only live on the separate Maintenance Record form; it's captured here
-// instead so it isn't asked for twice. Shared with the Log Repairs step,
-// where the same repair type gets confirmed/corrected once work starts.
-const ENTRY_MODE_OPTIONS = [
-  { value: 'inspection', label: 'Needs Inspection' },
-  { value: 'in_house', label: 'In-House Repair' },
-  { value: 'cannibalized', label: 'Used Cannibalized Part' },
-  { value: 'external', label: 'Sent to External Shop' },
-];
 
 // A Custodian's "propose a ticket" form — their own diagnosis, including who
 // they think should do each repair, submitted for an Admin to review before
