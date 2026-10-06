@@ -9,7 +9,7 @@ import Icon from '../components/Icon';
 import TextType from '../components/TextType';
 import WorkspaceFooter from '../components/WorkspaceFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { DonutChart, SolidPieChart, HorizontalBarChart, ColumnChart, StackedBarChart } from '../components/charts';
+import { DonutChart, HorizontalBarChart, ColumnChart } from '../components/charts';
 import { AuthContext } from '../context/AuthContextObject';
 import { groupLocationRowsByHub, PAKNAAN_POLYGON } from '../data/paknaanLocationDensity';
 import { geoJsonToRings, isPointWithinBoundaryRings } from '../utils/boundary';
@@ -464,7 +464,7 @@ function Workspace() {
       || (isVehicleEditPage && !canDo(user, 'vehicle.edit'))
       || (isNewCategoryPage && !canDo(user, 'vehicle_type.create'))
       || (editCategoryId && !canDo(user, 'vehicle_type.edit'))
-      || (isNewSchedulePage && !canDo(user, 'schedule.create') && !canDo(user, 'schedule.suggest'))
+      || (isNewSchedulePage && !canDo(user, 'schedule.create'))
       || (editScheduleId && !canDo(user, 'schedule.edit'))
       || (isNewIssuePage && !canDo(user, 'issue.create'))
       || (editIssueId && !canDo(user, 'issue.edit'))
@@ -654,30 +654,12 @@ function Workspace() {
   // vehicle — offer the Readiness Check right then instead of making them
   // come back for a second visit. Holds the vehicle to check, or null.
   const [readinessPromptTarget, setReadinessPromptTarget] = useState(null);
-  // Card/List toggle for Maintenance Records, remembered per browser the same
-  // way the Tickets module does it (separate key so the two don't clobber
-  // each other). Defaults to the table — these rows carry more columns worth
-  // scanning than a ticket does.
-  const [maintenanceViewMode, setMaintenanceViewMode] = useState(
-    () => localStorage.getItem('vms_maintenance_view') || 'table'
-  );
-  const changeMaintenanceViewMode = (mode) => {
-    setMaintenanceViewMode(mode);
-    localStorage.setItem('vms_maintenance_view', mode);
-  };
   const [scheduleViewMode, setScheduleViewMode] = useState(
     () => localStorage.getItem('vms_schedule_view') || 'table'
   );
   const changeScheduleViewMode = (mode) => {
     setScheduleViewMode(mode);
     localStorage.setItem('vms_schedule_view', mode);
-  };
-  const [historyViewMode, setHistoryViewMode] = useState(
-    () => localStorage.getItem('vms_history_view') || 'table'
-  );
-  const changeHistoryViewMode = (mode) => {
-    setHistoryViewMode(mode);
-    localStorage.setItem('vms_history_view', mode);
   };
   // List/Recent-Activities tab for the Activity Log — not persisted, since
   // "recent activities" is a quick-glance view you'd want defaulting back
@@ -779,8 +761,6 @@ function Workspace() {
   const [filterDateStart, setFilterDateStart] = useState(''); // issues/maintenance/tickets/histories
   const [filterDateEnd, setFilterDateEnd] = useState('');
 
-  // Ticket Archives date/status filters
-  const [archiveDraft, setArchiveDraft] = useState({ start: '', end: '', status: '', quick: '' });
   const [archiveStart, setArchiveStart] = useState('');
   const [archiveEnd, setArchiveEnd] = useState('');
   const [archiveStatusFilter, setArchiveStatusFilter] = useState('');
@@ -788,8 +768,6 @@ function Workspace() {
   // Condition Monitoring Filters
   const [condFilterStartDate, setCondFilterStartDate] = useState('');
   const [condFilterEndDate, setCondFilterEndDate] = useState('');
-  // Draft for the condition filter bar — applied only on "Filter" click.
-  const [condDraft, setCondDraft] = useState({ category: [], status: [], capacity: [], checkedBy: [], start: '', end: '' });
   const [prefilledTicketData, setPrefilledTicketData] = useState(null);
   // A form page that finishes by switching module wants its success notice to
   // survive the module-change reset below.
@@ -801,7 +779,7 @@ function Workspace() {
     if (!isNewTicketPage) setPrefilledTicketData(null);
   }, [isNewTicketPage]);
   const [allHubs, setAllHubs] = useState([]);
-  const [locationsTab, setLocationsTab] = useState('map');
+  const [locationsTab] = useState('map');
   const [selectedMapVehicleId, setSelectedMapVehicleId] = useState(null);
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('theme') || 'light'; } catch { return 'light'; }
@@ -809,8 +787,6 @@ function Workspace() {
   const notificationsRef = useRef(null);
   const profileMenuRef = useRef(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const hasVehicles = (lookups.vehicles ?? []).length > 0;
-
   const loadNotifications = useCallback(async () => {
     try {
       const response = await api.get('/notifications');
@@ -1003,8 +979,6 @@ function Workspace() {
      setFilterDateEnd('');
      setCondFilterStartDate('');
      setCondFilterEndDate('');
-     setCondDraft({ category: [], status: [], capacity: [], checkedBy: [], start: '', end: '' });
-     setArchiveDraft({ start: '', end: '', status: '', quick: '' });
      setArchiveStart('');
      setArchiveEnd('');
      setArchiveStatusFilter('');
@@ -1033,21 +1007,6 @@ function Workspace() {
         const response = await api.get('/reports', { params: cleanPayload(payload) });
         setReport(response.data);
         setNotice({ type: 'success', text: `${payload.report_type} generated.` });
-        return;
-      }
-
-      if (activeModule === 'maintenanceStatus') {
-        await api.put(`/maintenance-records/${editTarget.maintenance_id}/verify`, cleanPayload(payload));
-        // Capture before clearing editTarget — a Pass means the Custodian is
-        // physically at the vehicle right now, which is the cheapest possible
-        // moment to also confirm it's ready to respond (see
-        // readinessPromptTarget). A Fail means the vehicle is going back for
-        // more work, so there's nothing to check yet.
-        const justVerifiedVehicle = payload.verification_result === 'Passed' ? editTarget.vehicle : null;
-        setEditTarget(null);
-        setNotice({ type: 'success', text: 'Verification submitted.' });
-        await refreshCurrent();
-        if (justVerifiedVehicle) setReadinessPromptTarget(justVerifiedVehicle);
         return;
       }
 
@@ -1086,20 +1045,6 @@ function Workspace() {
     }
   };
 
-  const createTicket = async (payload) => {
-    setNotice(null);
-    try {
-      await api.post('/tickets', cleanPayload(payload));
-      setEditTarget(null);
-      setNotice({ type: 'success', text: 'Ticket created & inspection assigned to Custodian.' });
-      await refreshCurrent();
-      return true;
-    } catch (error) {
-      showError(error, setNotice);
-      return false;
-    }
-  };
-
   // Custodian's "propose a ticket" path — a separate endpoint from Admin's
   // createTicket() above (POST /tickets/propose instead of POST /tickets):
   // the backend self-assigns the proposing Custodian and parks it at
@@ -1114,136 +1059,6 @@ function Workspace() {
     } catch (error) {
       showError(error, setNotice);
       return false;
-    }
-  };
-
-  // Admin's one next step on an open issue report that needs no ticket.
-  const [dismissIssueTarget, setDismissIssueTarget] = useState(null);
-  const dismissIssue = async (issue, payload) => {
-    setNotice(null);
-    try {
-      await api.put(`/issues/${issue.issue_report_id}/dismiss`, { dismiss_reason: payload.dismiss_reason });
-      setNotice({ type: 'success', text: 'Issue dismissed.' });
-      setDismissIssueTarget(null);
-      await refreshCurrent();
-    } catch (error) {
-      showError(error, setNotice);
-    }
-  };
-  function renderDismissIssueModal() {
-    return (
-      <FormModal open={!!dismissIssueTarget} title={`Dismiss issue #${dismissIssueTarget?.issue_report_id ?? ''}`} onClose={() => setDismissIssueTarget(null)}>
-        {dismissIssueTarget && (
-          <>
-            <p className="muted" style={{ marginBottom: 10, fontSize: '0.82rem' }}>
-              Closes this report without a ticket — it isn't a real problem, or it's already handled. The reporter is told why.
-            </p>
-            <SmartForm
-              fields={[{ label: 'Reason for dismissing', name: 'dismiss_reason', required: true, type: 'textarea', rows: 3 }]}
-              key={`dismiss-${dismissIssueTarget.issue_report_id}`}
-              onCancel={() => setDismissIssueTarget(null)}
-              onSubmit={(payload) => dismissIssue(dismissIssueTarget, payload)}
-              submitLabel="Dismiss Issue"
-              title=""
-            />
-          </>
-        )}
-      </FormModal>
-    );
-  }
-
-  const handleCreateTicketFromIssue = (issue) => {
-    // The custodian who filed this already told us what's wrong — don't make
-    // someone re-diagnose it. Pre-diagnosed mode skips straight past
-    // inspection to a sub-issue ready for a mechanic; the assigned custodian
-    // only re-enters later, to verify the actual repair.
-    const reporterId = issue.reported_by?.id;
-    const reporterIsCustodian = (ticketLookups.custodians ?? []).some((c) => c.id === reporterId);
-    setPrefilledTicketData({
-      vehicle_id: issue.vehicle_id,
-      ticket_title: `[Issue #${issue.issue_report_id}] ${issue.issue_type}`,
-      // Severity and ticket priority share the same Low / Medium / High scale.
-      priority: issue.severity_level,
-      ticket_description: `Original Reported Issue: ${issue.issue_description}\nSeverity: ${issue.severity_level}`,
-      issue_report_id: issue.issue_report_id,
-      // In-house repair is by far the usual case — preselected so it's one
-      // click less; the Custodian can switch to cannibalized / external.
-      entry_mode: canDo(user, 'ticket.propose') ? 'in_house' : 'prediagnosed',
-      // The custodian's report is now a list of distinct problems (one per
-      // line, see issueFields' 'list' field) — carry each one over as its
-      // own sub-issue instead of dumping the whole report into a single line.
-      sub_issues_text: (issue.issue_description ?? '').split('\n').map((s) => s.trim()).filter(Boolean)
-        .map((line) => `${issue.issue_type}: ${line}`).join('\n'),
-      // Defaulted, not locked — Admin can still pick someone else (workload,
-      // availability), but the person who already knows this is the sane
-      // starting point instead of a blank "Select."
-      ...(reporterIsCustodian ? { assigned_custodian_id: reporterId } : {}),
-    });
-    navigate(`${roleRoutes[user.role]}/tickets/new`);
-  };
-
-  // #2 (Mode C) — a "Needs Repair"/"Needs Inspection" condition check
-  // already IS the inspection, so spawn a pre-diagnosed ticket carrying the
-  // custodian's findings straight in instead of making someone re-describe
-  // the same problem all over again via a separate Issue Report. Observations
-  // seed the sub-issues. Needs Repair is a confirmed problem (High); Needs
-  // Inspection is still just "take a closer look" (Medium) until it is one.
-  const handleCreateTicketFromCondition = (cond) => {
-    setPrefilledTicketData({
-      vehicle_id: cond.vehicle_id,
-      ticket_title: `Condition Check: ${cond.condition_result}`,
-      ticket_description: `From condition check #${cond.condition_check_id} by ${cond.checked_by?.name ?? 'custodian'}.\nObservations: ${cond.observations ?? '—'}`,
-      entry_mode: canDo(user, 'ticket.propose') ? 'in_house' : 'prediagnosed',
-      sub_issues_text: cond.observations || cond.condition_result,
-      priority: cond.condition_result === 'Needs Repair' ? 'High' : 'Medium',
-      condition_check_id: cond.condition_check_id,
-    });
-    navigate(`${roleRoutes[user.role]}/tickets/new`);
-  };
-
-  // The Custodian has daily eyes on the vehicle and is the one most likely
-  // to notice "this is due for a checkup soon" — and, since Custodian can
-  // book a schedule directly again, this hands off straight to the real Add
-  // Schedule form with the vehicle and a note already filled in; nothing is
-  // booked until the form is actually submitted.
-  const handleSuggestScheduleFromCondition = (cond) => {
-    setPrefilledScheduleData({
-      vehicle_id: cond.vehicle_id,
-      notes: `Suggested from condition check #${cond.condition_check_id} (${cond.condition_result})${cond.observations ? `: ${cond.observations}` : ''}`,
-    });
-    navigate(`${roleRoutes[user.role]}/schedules/new`);
-  };
-
-  // Maintenance Personnel can't open a ticket — this points the Custodians at
-  // the exact issue so they can propose one with everything already filled in.
-  const recommendTicketForIssue = async (issue) => {
-    setNotice(null);
-    try {
-      await api.post(`/issues/${issue.issue_report_id}/recommend-ticket`);
-      setNotice({ type: 'success', text: 'Custodians notified — they can open the ticket from this issue.' });
-    } catch (error) {
-      showError(error, setNotice);
-    }
-  };
-
-  const deleteTicket = async (ticket) => {
-    setNotice(null);
-    try {
-      await api.delete(`/tickets/${ticket.ticket_id}`);
-      setNotice({ type: 'success', text: 'Ticket deleted successfully.' });
-      await refreshCurrent();
-    } catch (error) {
-      showError(error, setNotice);
-    }
-  };
-
-  const updateRecord = async (path, payload, success) => {
-    try {
-      await api.put(path, payload);
-      setNotice({ type: 'success', text: success });
-      await refreshCurrent();
-    } catch (error) {
-      showError(error, setNotice);
     }
   };
 
@@ -1514,46 +1329,8 @@ function Workspace() {
         finalPayload = { ...payload, can_register_vehicles: payload.can_register_vehicles.includes('Allow vehicle registration') };
       }
 
-      // Admin owns the maintenance calendar — a Custodian filling in this same
-      // form is sending a suggestion, which books nothing.
-      if (moduleKey === 'schedules' && !existing && !canDo(user, 'schedule.create') && canDo(user, 'schedule.suggest')) {
-        await api.post('/maintenance-schedules/suggest', {
-          vehicle_id: payload.vehicle_id,
-          maintenance_type: payload.maintenance_type,
-          scheduled_date: payload.scheduled_date || undefined,
-          notes: payload.notes || undefined,
-        });
-        await finishFormPageSuccess(moduleKey, existing, 'Suggestion sent to Admin.');
-        return true;
-      }
-
-      if (moduleKey === 'maintenance' && payload.issue_report_id === '__new_issue__') {
-        const { data: newIssue } = await api.post('/issues', {
-          vehicle_id: payload.vehicle_id,
-          issue_type: payload.new_issue_type,
-          issue_description: payload.problem_reason,
-          severity_level: 'Medium',
-        });
-        finalPayload = {
-          ...payload,
-          issue_report_id: newIssue.issue_report_id,
-          new_issue_type: undefined,
-          __new_issue_group__: undefined,
-        };
-      }
-
       request = moduleRequest(moduleKey, existing, finalPayload);
-      const response = await sendPayload(request.method, request.path, finalPayload);
-
-      // Land on the report just filed — with its own [Create Maintenance
-      // Ticket] action right there — instead of back on the list, which
-      // would make the reporter search for what they just submitted.
-      if (moduleKey === 'issues' && !existing && response?.data?.issue_report_id) {
-        await refreshCurrent();
-        setNotice({ type: 'success', text: request.success });
-        navigate(`${roleRoutes[user.role]}/issues/${response.data.issue_report_id}`);
-        return true;
-      }
+      await sendPayload(request.method, request.path, finalPayload);
 
       await finishFormPageSuccess(moduleKey, existing, request.success);
       return true;
@@ -1909,15 +1686,6 @@ function Workspace() {
     return counts;
   };
 
-  const issueStats = useMemo(
-    () => countByValues(records.issues ?? [], (r) => r.status, ['Pending', 'Under Review', 'In Maintenance', 'Resolved']),
-    [records.issues]
-  );
-  const issueSeverityStats = useMemo(
-    () => countByValues(records.issues ?? [], (r) => r.severity_level, ['High', 'Medium', 'Low']),
-    [records.issues]
-  );
-
   const scheduleStats = useMemo(() => {
     const base = countByValues(records.schedules ?? [], (r) => r.status, ['Scheduled', 'Completed', 'Cancelled']);
     // A schedule marked "Completed" only means the calendar task is done —
@@ -1942,28 +1710,6 @@ function Workspace() {
     return { ...base, ...urgency, AwaitingVerification: awaitingVerification, MyAssigned: myAssigned };
   }, [records.schedules, user.id]);
 
-  // A vehicle with no check on file yet is its own bucket ("Not Checked"),
-  // not just an absence from the list — so the stat cards (and the list
-  // below) reflect the whole fleet's coverage, not only vehicles someone
-  // has gotten around to inspecting.
-  const conditionRowsForStats = useMemo(() => {
-    const vehiclesWithRecord = new Set((records.conditions ?? []).map((r) => r.vehicle_id));
-    const uncheckedRows = (lookups.vehicles ?? [])
-      .filter((vehicle) => !vehiclesWithRecord.has(vehicle.vehicle_id))
-      .map(() => ({ condition_result: 'Not Checked' }));
-    return [...(records.conditions ?? []), ...uncheckedRows];
-  }, [records.conditions, lookups.vehicles]);
-
-  const conditionStats = useMemo(
-    () => countByValues(conditionRowsForStats, (r) => r.condition_result, ['Good', 'Needs Inspection', 'Needs Repair', 'Not Checked']),
-    [conditionRowsForStats]
-  );
-
-  const maintenanceRecordStats = useMemo(
-    () => countByValues(records.maintenance ?? [], (r) => r.progress_status, ['Assigned', 'Under Repair', 'For Verification', 'Completed']),
-    [records.maintenance]
-  );
-
   const userStats = useMemo(
     () => countByValues(records.users ?? [], (r) => r.role, ['Admin', 'Custodian', 'Maintenance Personnel']),
     [records.users]
@@ -1972,12 +1718,6 @@ function Workspace() {
     () => countByValues(records.users ?? [], (r) => (r.is_active ? 'Active' : 'Inactive'), ['Active', 'Inactive']),
     [records.users]
   );
-
-  const inspectionStats = useMemo(() => {
-    const rows = records.ticketInspections ?? [];
-    const pending = rows.filter((r) => r.status === 'Open').length;
-    return { total: rows.length, Pending: pending, Inspected: rows.length - pending };
-  }, [records.ticketInspections]);
 
   const workOrderStats = useMemo(() => {
     const rows = flattenSubIssueRows(records.ticketWorkOrders, user.id);
@@ -2008,91 +1748,6 @@ function Workspace() {
       NotReady: inServiceRows.filter((row) => row.readiness_state !== 'ready').length,
     };
   }, [records.vehicles]);
-
-  // For the Vehicle Location module, every vehicle shown on the map should also
-  // appear in the records list. We merge the saved location records (history)
-  // with a synthesized "current" row for each vehicle that has no record yet,
-  // so the list always mirrors the map.
-  const locationRows = useMemo(() => {
-    if (activeModule !== 'locations') {
-      return visibleRows;
-    }
-
-    const vehiclesWithRecord = new Set(visibleRows.map((row) => row.vehicle_id));
-    const query = searchQuery.toLowerCase().trim();
-
-    const syntheticRows = (lookups.vehicles ?? [])
-      .filter((vehicle) => !vehiclesWithRecord.has(vehicle.vehicle_id))
-      .filter((vehicle) => {
-        if (!query) return true;
-        return [vehicle.vehicle_name, vehicle.plate_number, vehicle.current_location]
-          .some((val) => val && String(val).toLowerCase().includes(query));
-      })
-      .map((vehicle) => ({
-        location_record_id: null,
-        vehicle_id: vehicle.vehicle_id,
-        vehicle,
-        current_location: vehicle.current_location,
-        address_area: null,
-        updated_by: null,
-        updated_at: vehicle.updated_at ?? null,
-        is_current_snapshot: true,
-      }));
-
-    return [...visibleRows, ...syntheticRows];
-  }, [activeModule, visibleRows, lookups.vehicles, searchQuery]);
-
-  // Same reasoning as locationRows above: Condition Monitoring should mirror
-  // the whole fleet, not just vehicles that happen to have a check on file.
-  // Merge the (already-filtered) check records with a synthesized "Not
-  // Checked" row for every vehicle missing one — subject to the same active
-  // filters, so a vehicle only appears here when it'd also match a real row.
-  const conditionRows = useMemo(() => {
-    if (activeModule !== 'conditions') {
-      return visibleRows;
-    }
-
-    // A synthetic row has no checker or date to filter on, so it only
-    // belongs in the merged list when none of those filters are narrowing
-    // the results — otherwise "checked by Juan" or a date range would be
-    // showing vehicles that were never checked at all.
-    if (filterCheckedBy.length || condFilterStartDate || condFilterEndDate) {
-      return visibleRows;
-    }
-    if (filterStatus.length && !filterStatus.includes('Not Checked')) {
-      return visibleRows;
-    }
-
-    const vehiclesWithRecord = new Set((records.conditions ?? []).map((r) => r.vehicle_id));
-    const query = searchQuery.toLowerCase().trim();
-
-    const syntheticRows = (lookups.vehicles ?? [])
-      .filter((vehicle) => !vehiclesWithRecord.has(vehicle.vehicle_id))
-      .filter((vehicle) => !filterCategory.length || filterCategory.includes(String(vehicle.category_id)))
-      .filter((vehicle) => !filterCapacity.length || filterCapacity.includes(vehicle.capacity))
-      .filter((vehicle) => {
-        if (!query) return true;
-        return [vehicle.vehicle_name, vehicle.plate_number].some((val) => val && String(val).toLowerCase().includes(query));
-      })
-      .map((vehicle) => ({
-        condition_check_id: null,
-        vehicle_id: vehicle.vehicle_id,
-        vehicle,
-        condition_result: 'Not Checked',
-        checked_by: null,
-        observations: null,
-        created_at: null,
-      }));
-
-    return [...visibleRows, ...syntheticRows];
-  }, [activeModule, visibleRows, records.conditions, lookups.vehicles, searchQuery, filterCategory, filterCapacity, filterCheckedBy, filterStatus, condFilterStartDate, condFilterEndDate]);
-
-  const viewVehicleOnMap = useCallback((row) => {
-    const vehicleId = row.vehicle_id ?? row.vehicle?.vehicle_id;
-    if (!vehicleId) return;
-    setSelectedMapVehicleId(vehicleId);
-    setLocationsTab('map');
-  }, []);
 
   // "All Vehicles" is the pilot table for the Choose Columns toolbar button
   // (show/hide + drag to reorder, persisted per browser) — see
@@ -2131,61 +1786,6 @@ function Workspace() {
     [lookups.vehicles, openVehicleProfile, openTicketProfile],
   );
   const logColumnChooser = useColumnChooser('vms_activity_log_columns', logColumnDefs);
-
-  const archiveColumnDefs = useMemo(() => [
-    ...ticketArchiveColumns,
-    {
-      key: 'actions',
-      label: 'Actions',
-      locked: true,
-      className: 'cell-center',
-      render: (row) => {
-        if (row.final_status === 'Deleted') {
-          return (
-            <div className="row-actions">
-              <button
-                className="btn-reopen-action icon-btn"
-                type="button"
-                title="Reopen Ticket"
-                aria-label="Reopen Ticket"
-                onClick={() => {
-                  setConfirmDialog({
-                    title: 'Reopen Deleted Ticket',
-                    message: `Are you sure you want to reopen Ticket #${row.ticket_id} for ${row.vehicle_name}? It will be restored with all its sub-issues to how they were before it was deleted.`,
-                    confirmLabel: 'Reopen Ticket',
-                    variant: 'primary',
-                    onConfirm: () => ticketAction(`/ticket-archives/${row.archive_id}/reopen`, {}, 'Ticket successfully reopened.'),
-                  });
-                }}
-              >
-                <Icon name="undo" size={14} />
-              </button>
-            </div>
-          );
-        }
-        // A Closed ticket is permanently locked (no Reopen), but its
-        // record still exists — the Admin can still open it read-only
-        // to see the full history of what was done.
-        if (row.final_status === 'Closed') {
-          return (
-            <div className="row-actions">
-              <button
-                className="btn-view-action icon-btn"
-                type="button"
-                title="View Ticket"
-                aria-label="View Ticket"
-                onClick={() => openTicketProfile({ ticket_id: row.ticket_id })}
-              >
-                <Icon name="eye" size={14} />
-              </button>
-            </div>
-          );
-        }
-        return <span className="muted">—</span>;
-      },
-    },
-  ], [setConfirmDialog, openTicketProfile]);
-  const archiveColumnChooser = useColumnChooser('vms_ticket_archive_columns', archiveColumnDefs);
 
   const unreadCount = notifications.filter((n) => !n.read_at).length;
 
@@ -2861,7 +2461,7 @@ function Workspace() {
                   // Back to where proposals start (the Issue Reports list, which
                   // now shows this report's ticket), keeping the success notice.
                   keepNoticeRef.current = true;
-                  returnToModule(hasReportOrProposeNav ? 'issues' : 'workTracker');
+                  returnToModule('workTracker');
                 }}
                 ticketLookups={ticketLookups}
                 prefilledTicketData={prefilledTicketData}
@@ -2912,7 +2512,6 @@ function Workspace() {
               userId={user.id}
               ticketLookups={ticketLookups}
               onBack={() => returnToModule('tickets')}
-              onDeleteTicket={deleteTicket}
               onRequestConfirmation={setConfirmDialog}
               ticketAction={ticketAction}
             />
@@ -3157,35 +2756,6 @@ function Workspace() {
             <Icon name="plus" size={14} /> Propose Ticket
           </button>
         )}
-      </div>
-    );
-
-    // Same thin-wrapper approach as My Tasks above — `activeModule` is
-    // still literally 'maintenanceStatus'/'maintenance', this only decides
-    // whether to also show the tab bar above that unchanged module.
-    const showMaintenanceLedgerContainer = hasMaintenanceLedgerNav && (
-      activeModule === 'maintenanceStatus' || activeModule === 'maintenance'
-    );
-    const maintenanceLedgerTabBar = showMaintenanceLedgerContainer && (
-      <div className="locations-tab-bar" role="tablist" aria-label="Maintenance Records">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeModule === 'maintenanceStatus'}
-          className={`locations-tab-button ${activeModule === 'maintenanceStatus' ? 'active' : ''}`}
-          onClick={() => setMaintenanceLedgerTab('maintenanceStatus')}
-        >
-          Needs Verification
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeModule === 'maintenance'}
-          className={`locations-tab-button ${activeModule === 'maintenance' ? 'active' : ''}`}
-          onClick={() => setMaintenanceLedgerTab('maintenance')}
-        >
-          All Records
-        </button>
       </div>
     );
 
@@ -3507,10 +3077,10 @@ function Workspace() {
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search schedules..."
-                onAdd={(canDo(user, 'schedule.create') || canDo(user, 'schedule.suggest'))
+                onAdd={canDo(user, 'schedule.create')
                   ? () => navigate(`${roleRoutes[user.role]}/schedules/new`)
                   : undefined}
-                addLabel={canDo(user, 'schedule.create') ? 'Add Schedule' : 'Suggest Schedule'}
+                addLabel="Add Schedule"
                 onExport={() => exportRowsToCsv('maintenance-schedules.csv', SCHEDULE_EXPORT_COLUMNS, visibleRows)}
                 columnChooser={scheduleViewMode === 'card' ? undefined : scheduleColumnChooser}
               />
@@ -5785,7 +5355,6 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
                 <option
                   key={option?.value != null ? option.value : `opt-${i}`}
                   value={option?.value ?? option ?? ''}
-                  style={option?.value === NEW_ISSUE_OPTION.value ? { color: '#2563eb', fontWeight: 700 } : undefined}
                 >
                   {option?.label ?? option}
                 </option>
@@ -5839,17 +5408,6 @@ function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelLabel = 
               required={field.required}
               placeholder={field.placeholder}
               otherNoteLabel={field.otherNoteLabel}
-            />
-          ) : null}
-          {field.type === 'new-issue-modal' ? (
-            <NewIssueModalField
-              value={{ new_issue_type: values.new_issue_type }}
-              onChange={(patch) => {
-                const next = { ...values, ...patch };
-                setValues(next);
-                onValuesChange?.(next);
-              }}
-              issueTypeOptions={field.issueTypeOptions ?? []}
             />
           ) : null}
           {field.type === 'checkboxes' ? (
@@ -6481,23 +6039,6 @@ function DataTable({ columns, rows, compact = false, onRowClick, onReorderColumn
         </tbody>
       </table>
     </div>
-  );
-}
-
-// Centered modal overlay for a submit-in-progress state — used where a
-// small in-button spinner isn't noticeable enough (e.g. Create Ticket,
-// which stays on a long scrolled form while it saves). Portaled to <body>
-// like FormModal, so it sits above everything regardless of where it's
-// rendered from.
-function SubmitLoadingOverlay({ label = 'Saving…' }) {
-  return createPortal(
-    <div className="modal-overlay submit-loading-overlay" role="status" aria-live="polite">
-      <div className="submit-loading-card">
-        <Icon name="gear" size={48} className="submit-loading-gear" filled />
-        <p className="submit-loading-label">{label}</p>
-      </div>
-    </div>,
-    document.body
   );
 }
 
@@ -8274,16 +7815,6 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
   );
 }
 
-const historyColumns = [
-  { key: 'id', label: 'ID', locked: true, render: (row) => row.history_id },
-  { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { key: 'plate', label: 'Plate Number', render: (row) => row.vehicle?.plate_number ?? '-' },
-  { key: 'activity', label: 'Activity', render: (row) => row.activity_type },
-  { key: 'related_record', label: 'Related Record', render: (row) => row.related_record_id ?? '-' },
-  { key: 'updated_by', label: 'Updated By', render: (row) => <UserAvatarName user={row.updated_by} /> },
-  { key: 'date', label: 'Date', render: (row) => <DateBadge value={row.created_at} /> },
-  { key: 'time', label: 'Time', render: (row) => formatTime(row.created_at) },
-];
-
 // "09/16/26 - 7:05 am" — a single plain-text column combining date and time,
 // in place of the DateBadge/Time column pair every other table uses; the
 // activity log reads as a dense audit trail, not a dashboard, so the chunky
@@ -8905,18 +8436,6 @@ function moduleRequest(moduleKey, editTarget, payload) {
     return (editTarget && editTarget.condition_check_id)
       ? { method: 'put', path: `/conditions/${editTarget.condition_check_id}`, success: 'Condition check updated.' }
       : { method: 'post', path: '/conditions', success: 'Condition check recorded.' };
-  }
-
-  if (moduleKey === 'issues') {
-    return (editTarget && editTarget.issue_report_id)
-      ? { method: 'put', path: `/issues/${editTarget.issue_report_id}`, success: 'Issue updated.' }
-      : { method: 'post', path: '/issues', success: 'Issue report submitted.' };
-  }
-
-  if (moduleKey === 'maintenance') {
-    return (editTarget && editTarget.maintenance_id)
-      ? { method: 'put', path: `/maintenance-records/${editTarget.maintenance_id}`, success: 'Maintenance record updated.' }
-      : { method: 'post', path: '/maintenance-records', success: 'Maintenance record added.' };
   }
 
   if (moduleKey === 'schedules') {
@@ -10748,7 +10267,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAssignMechanic, on
   );
 }
 
-function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDeleteTicket, onRequestConfirmation, ticketAction: sendTicketAction }) {
+function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onRequestConfirmation, ticketAction: sendTicketAction }) {
   const navigate = useNavigate();
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10813,7 +10332,6 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
       onVerify={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/verify`, payload, 'Repair verification submitted.').then(afterAction)}
       onApproveCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/approve-cannibalization`, payload, 'Cannibalized repair approved — a donor-vehicle issue report was opened.').then(afterAction)}
       onRejectCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reject-cannibalization`, payload, 'Cannibalized repair rejected.').then(afterAction)}
-      onViewIssue={(id) => navigate(`${roleRoutes[user.role]}/issues/${id}`)}
       onLogRepairs={(t, si) => navigate(`${roleRoutes[user.role]}/work-orders/${t.ticket_id}/${si.sub_issue_id}/log-repairs`)}
       onCancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/cancel`, {}, 'Ticket cancelled.').then(afterAction)}
       onApproveProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/approve`, payload, 'Ticket proposal approved.').then(afterAction)}
@@ -13058,19 +12576,6 @@ function ticketTableColumns(unreadByTicket = {}) {
 // =========================================================================
 // PHASE 5: TICKET ARCHIVE COLUMNS
 // =========================================================================
-
-const ticketArchiveColumns = [
-  { key: 'archive_id', label: 'Archive ID', locked: true, className: 'cell-center', render: (r) => r.archive_id },
-  { key: 'ticket_id', label: 'Ticket ID', className: 'cell-center', render: (r) => r.ticket_id },
-  { key: 'title', label: 'Title', render: (r) => r.ticket_title },
-  { key: 'vehicle', label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle ?? { vehicle_name: r.vehicle_name, plate_number: r.plate_number }} /> },
-  { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (r) => (r.vehicle?.plate_number ?? r.plate_number) ?? '-' },
-  { key: 'expenses', label: 'Expenses', className: 'cell-center', render: (r) => r.maintenance_cost ? `₱${Number(r.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00' },
-  { key: 'final_status', label: 'Final Status', className: 'cell-center', render: (r) => <TicketStatusBadge value={r.final_status} /> },
-  { key: 'archived_by', label: 'Archived By', className: 'cell-center', render: (r) => <UserAvatarName user={r.archived_by} fallback="—" /> },
-  { key: 'archived_at', label: 'Archived At', className: 'cell-center', render: (r) => <DateBadge value={r.archived_at} /> },
-  { key: 'time', label: 'Time', className: 'cell-center', render: (r) => formatTime(r.archived_at) },
-];
 
 // =========================================================================
 // TICKET PHASE HELPERS
