@@ -3990,15 +3990,6 @@ function Workspace() {
                 Needs a ticket ({(records.issues ?? []).filter(issueNeedsTicket).length})
               </label>
             )}
-            {canDo(user, 'issue.create') && (
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => navigate(`${roleRoutes[user.role]}/issues/new`)}
-              >
-                <Icon name="alert" size={14} /> Report {hasRole(user, 'Maintenance Personnel') && !hasRole(user, 'Custodian') ? 'Technical Issue' : 'Vehicle Issue'}
-              </button>
-            )}
             <LocalSearchInput
               value={searchQuery}
               onChange={setSearchQuery}
@@ -9124,10 +9115,10 @@ const MAINTENANCE_RECORD_STAT_CARDS = [
   { key: 'Completed', label: 'Completed', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
 ];
 
+// 'Open' removed — no new ticket ever reaches that status (propose goes
+// straight to Pending Approval); it only ever existed on tickets created
+// before the one-mechanic-per-ticket redesign.
 const TICKET_STAT_CARDS = [
-  { key: 'Open', label: 'Open', icon: 'alert', bg: '#e0f2fe', color: '#0284c7' },
-  // Custodian-proposed tickets awaiting Admin approve/decline — a distinct
-  // bucket from 'Open' (Admin-created, already dispatched for inspection).
   { key: 'Pending Approval', label: 'Proposals', icon: 'clipboard', bg: '#fef9c3', color: '#a16207' },
   { key: 'Active', label: 'Active', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
   { key: 'For Verification', label: 'For Verification', icon: 'search', bg: '#ede9fe', color: '#7c3aed' },
@@ -9490,7 +9481,7 @@ function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromConditio
     { key: 'time', label: 'Time', className: 'cell-center', render: (row) => formatTime(row.created_at) },
   ];
 
-  if (hasRole(user, 'Custodian') || hasRole(user, 'Admin')) {
+  if (hasRole(user, 'Custodian')) {
     columns.push({
       key: 'action',
       label: 'Action',
@@ -9498,9 +9489,11 @@ function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromConditio
       className: 'cell-center',
       render: (row) => {
         // condition.edit is Custodian-only, and only for the check THEY
-        // performed (backend 403s otherwise); condition.delete is Admin only.
+        // performed (backend 403s otherwise). Admin no longer gets this
+        // column at all — Condition Monitoring is the Custodian's own data
+        // to manage, not something Admin takes row-level action on.
         const canEdit = canDo(user, 'condition.edit') && String(row.checked_by?.id) === String(user.id);
-        const canDelete = hasRole(user, 'Admin');
+        const canDelete = false;
         return (
         // A synthesized "Not Checked" row has no condition_check_id — there's
         // no record yet to create a ticket from, suggest a schedule against,
@@ -10796,7 +10789,12 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
         </div>
       )}
 
-      <div className="row-actions" style={{ justifyContent: 'flex-start' }}>
+      {/* ticket-card-bottom pins this to the bottom of the card (margin-top:
+          auto) the same way TicketCard's own footer does, so action buttons
+          line up across a row of cards regardless of how much optional
+          content (overdue flag, location, verification badge) a given card
+          has above it. */}
+      <div className="row-actions ticket-card-bottom" style={{ justifyContent: 'flex-start' }}>
         {canComplete && (
           <button className="btn-confirm-action icon-btn" onClick={() => onComplete(row)} type="button" title="Mark as Done" aria-label="Mark as Done"><Icon name="checkCircle" size={14} /></button>
         )}
@@ -12469,10 +12467,13 @@ function RepairContextDetails({ si }) {
 }
 
 function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
+  // Pre-fill from whatever the Custodian suggested when adding sub-issues
+  // (if any) — Admin can still change it before approving.
+  const suggestedMechanicId = (ticket.sub_issues ?? []).map((si) => si.suggested_mechanic_id).find(Boolean) ?? '';
   const [fields, setFields] = useState({
     ticket_description: ticket.ticket_description ?? '',
     priority: ticket.priority ?? '',
-    assigned_mechanic_id: '',
+    assigned_mechanic_id: suggestedMechanicId ? String(suggestedMechanicId) : '',
   });
   const [subRows, setSubRows] = useState(() => (ticket.sub_issues ?? []).map((si) => ({
     sub_issue_id: si.sub_issue_id,
@@ -12621,17 +12622,22 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
 // never both at once, which is what makes Edit/Delete on the right
 // unambiguous. Shared by the Custodian's Propose form and the ticket's own
 // "Add Sub-issue" panel so both look and behave the same way.
-function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, minItems = 1 }) {
-  const [draft, setDraft] = useState({ index: null, title: '', maintenance_type: '' });
+function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, mechanicOptions, minItems = 1 }) {
+  const [draft, setDraft] = useState({ index: null, title: '', maintenance_type: '', suggested_mechanic_id: '' });
   const isEditing = draft.index !== null;
 
-  const startEdit = (index) => setDraft({ index, title: items[index].title ?? '', maintenance_type: items[index].maintenance_type ?? '' });
-  const resetDraft = () => setDraft({ index: null, title: '', maintenance_type: '' });
+  const startEdit = (index) => setDraft({
+    index,
+    title: items[index].title ?? '',
+    maintenance_type: items[index].maintenance_type ?? '',
+    suggested_mechanic_id: items[index].suggested_mechanic_id ?? '',
+  });
+  const resetDraft = () => setDraft({ index: null, title: '', maintenance_type: '', suggested_mechanic_id: '' });
 
   const save = () => {
     const title = draft.title.trim();
     if (!title) return;
-    const row = { title, maintenance_type: draft.maintenance_type || null };
+    const row = { title, maintenance_type: draft.maintenance_type || null, suggested_mechanic_id: draft.suggested_mechanic_id || null };
     if (isEditing) {
       onChange(items.map((it, i) => (i === draft.index ? { ...it, ...row } : it)));
     } else {
@@ -12669,6 +12675,18 @@ function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, minI
             catalogEndpoint="/maintenance-types"
           />
         </label>
+        {mechanicOptions && (
+          <label style={{ marginTop: 10 }}>
+            <span>Maintenance Personnel <span className="muted" style={{ fontWeight: 400 }}>(optional — Admin can change this)</span></span>
+            <select
+              value={draft.suggested_mechanic_id}
+              onChange={(e) => setDraft((d) => ({ ...d, suggested_mechanic_id: e.target.value }))}
+            >
+              <option value="">Unassigned — Admin will decide</option>
+              {mechanicOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </label>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <button type="button" className="primary-button" disabled={!draft.title.trim()} onClick={save}>
             <Icon name="plus" size={13} /> {isEditing ? 'Save' : 'Add Subissue'}
@@ -12689,6 +12707,9 @@ function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, minI
                 <span style={{ flex: 1, fontSize: '0.85rem' }}>
                   {it.title}
                   {it.maintenance_type && <span className="muted"> — {it.maintenance_type}</span>}
+                  {mechanicOptions && it.suggested_mechanic_id && (
+                    <span className="muted"> · suggested: {mechanicOptions.find((m) => String(m.id) === String(it.suggested_mechanic_id))?.name ?? '—'}</span>
+                  )}
                 </span>
                 <button type="button" className="icon-btn" title="Edit" aria-label="Edit" onClick={() => startEdit(index)}><Icon name="edit" size={13} /></button>
                 <button type="button" className="icon-btn btn-delete-action" title="Delete" aria-label="Delete" disabled={items.length <= minItems} onClick={() => remove(index)}><Icon name="trash" size={13} /></button>
@@ -14086,6 +14107,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
         out.sub_issues = cleanedRows.map((row) => ({
           title: row.title.trim(),
           maintenance_type: row.maintenance_type || null,
+          suggested_mechanic_id: row.suggested_mechanic_id || null,
         }));
       }
       // Cannibalized/External are one repair each — their single work item
@@ -14435,6 +14457,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
               items={subIssueRows}
               onChange={setSubIssueRowsDirty}
               maintenanceTypeOptions={ticketLookups?.maintenance_types ?? []}
+              mechanicOptions={ticketLookups?.maintenance_personnel ?? []}
               minItems={0}
             />
           </div>
@@ -14536,7 +14559,7 @@ function TicketModule({
   // including Total, would collapse to 0 along with it.
   const ticketStats = useMemo(() => {
     const counts = { total: statSourceTickets.length };
-    ['Open', 'Pending Approval', 'Active', 'For Verification', 'Closed', 'Cancelled'].forEach((s) => {
+    ['Pending Approval', 'Active', 'For Verification', 'Closed', 'Cancelled'].forEach((s) => {
       counts[s] = statSourceTickets.filter((t) => t.status === s).length;
     });
     return counts;
@@ -15478,8 +15501,6 @@ function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage =
               {canViewDocuments && <VehicleFiles vehicleId={vehicle.vehicle_id} canManage={canManageDocuments} onRequestConfirmation={onRequestConfirmation} />}
 
               {canViewReliability && <VehicleReliabilityCard vehicleId={vehicle.vehicle_id} />}
-
-              {canViewUsage && <VehicleUsageCard vehicleId={vehicle.vehicle_id} canLog={canLogUsage} vehicleStatus={vehicle.status} />}
             </div>
           </div>
 
@@ -16585,18 +16606,20 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
 
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
           <h4 style={{ margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', fontSize: '0.85rem' }}><Icon name="wrench" size={14} /> Repair Type</h4>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <select
               required
+              disabled
               value={repairType}
-              onChange={(e) => { setRepairType(e.target.value); onDirty?.(); }}
-              style={{ maxWidth: 260 }}
+              style={{ maxWidth: 260, background: '#f1f5f9', color: '#475569', cursor: 'not-allowed' }}
+              title="Set when this ticket was proposed — it isn't changed here."
             >
               <option value="">Select</option>
               <option value="in_house">In-House Repair</option>
               <option value="cannibalized">Used Cannibalized Part</option>
               <option value="external">Sent to External Shop</option>
             </select>
+            <span className="muted" style={{ fontSize: '0.78rem' }}>Set when this ticket was proposed.</span>
             {repairType === 'cannibalized' && (
               <select
                 required

@@ -577,9 +577,33 @@ class TicketController extends Controller
                 "This vehicle already has an open ticket for \"{$data['ticket_title']}\" (Ticket #{$duplicateMainIssue?->ticket_id}). Add this as a sub-issue on that ticket instead of proposing a new one."
             );
 
+            // A Custodian no longer files a separate Issue Report before
+            // proposing a ticket — proposing IS the report now. Auto-create
+            // one (unless this proposal already links an existing report)
+            // so every problem being tracked still shows up in Issue
+            // Reports, not just the ones filed through that older, now
+            // de-emphasized entry point.
+            $issueReportId = $data['issue_report_id'] ?? null;
+            if (!$issueReportId) {
+                $severity = match ($data['priority']) {
+                    'Critical', 'High' => 'High',
+                    'Medium' => 'Medium',
+                    default => 'Low',
+                };
+                $issueReportId = VehicleIssueReport::create([
+                    'vehicle_id'        => $data['vehicle_id'],
+                    'issue_type'        => 'Other',
+                    'issue_description' => $data['ticket_description'],
+                    'severity_level'    => $severity,
+                    'reported_by'       => $request->user()->id,
+                    'status'            => 'In Maintenance',
+                    'remarks'           => 'Auto-created from a maintenance ticket proposal.',
+                ])->issue_report_id;
+            }
+
             $ticket = MaintenanceTicket::create([
                 'vehicle_id'              => $data['vehicle_id'],
-                'issue_report_id'         => $data['issue_report_id'] ?? null,
+                'issue_report_id'         => $issueReportId,
                 'created_by'              => $request->user()->id,
                 'ticket_title'            => $data['ticket_title'],
                 'ticket_description'      => $data['ticket_description'],
