@@ -187,16 +187,24 @@ class TicketProposalWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_approve_a_proposal_which_dispatches_the_suggested_mechanic(): void
+    public function admin_can_approve_a_proposal_which_dispatches_the_chosen_mechanic(): void
     {
+        // Streamlined workflow (2026-10-12) — approval no longer
+        // auto-dispatches a sub-issue's suggested_mechanic_id (that legacy
+        // dispatch is deliberately skipped now); approveTicket() REQUIRES an
+        // explicit assigned_mechanic_id and bulk-dispatches that ONE
+        // mechanic to every sub-issue on the ticket.
         $vehicle = $this->vehicle();
         $ticket = $this->propose($vehicle);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
         $ticket->refresh();
         $this->assertSame('Active', $ticket->status);
+        $this->assertSame($this->mechanic->id, $ticket->assigned_mechanic_id);
         $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
 
         $subIssue = $ticket->subIssues->first();
@@ -206,12 +214,16 @@ class TicketProposalWorkflowTest extends TestCase
         $this->assertSame($this->admin->id, $subIssue->mechanic_assigned_by);
 
         $this->assertDatabaseHas('notifications', ['user_id' => $this->custodian->id, 'type' => 'ticket_approved']);
-        $this->assertDatabaseHas('notifications', ['user_id' => $this->mechanic->id, 'type' => 'work_order_assigned']);
+        $this->assertDatabaseHas('notifications', ['user_id' => $this->mechanic->id, 'type' => 'ticket_assigned']);
     }
 
     #[Test]
-    public function a_sub_issue_with_no_suggested_mechanic_stays_open_after_approval(): void
+    public function every_sub_issue_is_dispatched_to_the_one_chosen_mechanic_regardless_of_any_suggestion(): void
     {
+        // A sub-issue proposed with NO suggested_mechanic_id used to stay
+        // Open after approval. Under the streamlined, one-mechanic-per-ticket
+        // model there's no such thing any more — approveTicket() bulk-
+        // dispatches every sub-issue to the single mechanic the Admin picks.
         $vehicle = $this->vehicle();
         Sanctum::actingAs($this->custodian, ['*']);
         $response = $this->postJson('/api/tickets/propose', [
@@ -224,9 +236,13 @@ class TicketProposalWorkflowTest extends TestCase
         $ticket = MaintenanceTicket::findOrFail($response->json('ticket_id'));
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
-        $this->assertSame('Open', $ticket->subIssues->first()->fresh()->status);
+        $fresh = $ticket->subIssues->first()->fresh();
+        $this->assertSame('Under Repair', $fresh->status);
+        $this->assertSame($this->mechanic->id, $fresh->assigned_mechanic_id);
     }
 
     #[Test]
@@ -236,10 +252,12 @@ class TicketProposalWorkflowTest extends TestCase
         $ticket = $this->propose($vehicle);
         $subIssue = $ticket->subIssues->first();
         $otherMechanic = $this->user('Maintenance Personnel');
+        $assignedMechanic = $this->user('Maintenance Personnel');
 
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
             'priority' => 'Medium',
+            'assigned_mechanic_id' => $assignedMechanic->id,
             'sub_issues' => [
                 ['sub_issue_id' => $subIssue->sub_issue_id, 'suggested_mechanic_id' => $otherMechanic->id],
             ],
@@ -249,7 +267,14 @@ class TicketProposalWorkflowTest extends TestCase
         // Titles are server-composed and not editable at approval (spec §7).
         $this->assertSame(sprintf('MT-%04d — %s — Worn belt', $ticket->ticket_id, $vehicle->vehicle_name), $ticket->ticket_title);
         $this->assertSame('Medium', $ticket->priority);
-        $this->assertSame($otherMechanic->id, $ticket->subIssues->first()->assigned_mechanic_id);
+
+        $fresh = $ticket->subIssues->first()->fresh();
+        // Every sub-issue is dispatched to the ticket-level assigned
+        // mechanic chosen at approval...
+        $this->assertSame($assignedMechanic->id, $fresh->assigned_mechanic_id);
+        // ...independently of the per-sub-issue field edits approveTicket()
+        // still applies (a metadata patch only, no dispatch effect of its own).
+        $this->assertSame($otherMechanic->id, $fresh->suggested_mechanic_id);
     }
 
 
@@ -265,7 +290,10 @@ class TicketProposalWorkflowTest extends TestCase
         $this->assertSame($expected, $ticket->ticket_title);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", ['ticket_title' => 'Admin override attempt'])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'ticket_title' => 'Admin override attempt',
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
         $this->assertSame($expected, $ticket->fresh()->ticket_title);
     }
@@ -337,9 +365,13 @@ class TicketProposalWorkflowTest extends TestCase
     {
         $ticket = $this->propose($this->vehicle());
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertStatus(422);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertStatus(422);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/decline", ['decline_reason' => 'x'])->assertStatus(422);
     }
 
@@ -422,7 +454,9 @@ class TicketProposalWorkflowTest extends TestCase
         $this->assertSame('ACME Repair Shop', $sub->external_vendor);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
         $this->assertSame('Active', $ticket->fresh()->status);
     }
 }

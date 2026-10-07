@@ -206,10 +206,13 @@ class FleetController extends Controller
                 'ticketInspections' => MaintenanceTicket::where('assigned_custodian_id', $request->user()->id)
                     ->where('status', 'Open')
                     ->count(),
-                // Verification/work-order badges now count SUB-ISSUES, not
-                // tickets — assignment and verification happen per line item.
-                'ticketVerifications' => TicketSubIssue::where('status', 'For Inspection')
-                    ->whereHas('ticket', fn ($q) => $q->where('assigned_custodian_id', $request->user()->id))
+                // Verification is now a ticket-level step (one Custodian
+                // attestation closes the whole job) — the badge counts
+                // TICKETS at For Verification, not sub-issues. Work-order
+                // assignment is still per line item, so that badge is
+                // unchanged below.
+                'ticketVerifications' => MaintenanceTicket::where('status', 'For Verification')
+                    ->where('assigned_custodian_id', $request->user()->id)
                     ->count(),
                 'ticketWorkOrders' => TicketSubIssue::where('assigned_mechanic_id', $request->user()->id)
                     ->where('status', 'Under Repair')
@@ -1161,37 +1164,39 @@ class FleetController extends Controller
             'This vehicle is out of the fleet and cannot be readiness-checked.'
         );
 
+        // Simplified per product direction: the readiness check is a plain
+        // attestation ("I confirm I personally checked and operated this
+        // vehicle"), not a checklist to fill in — if something's actually
+        // wrong, the Custodian proposes a maintenance ticket instead of
+        // confirming readiness. The checklist/all_passed columns stay (both
+        // for historical pre-simplification checks and because other code
+        // reads them, e.g. responseReadinessState()) — a new check just
+        // always writes one synthetic, passed item.
         $data = $request->validate([
-            'checklist'          => ['required', 'array', 'min:1'],
-            'checklist.*.item'   => ['required', 'string', 'max:255'],
-            'checklist.*.passed' => ['required', 'boolean'],
-            'notes'              => ['nullable', 'string'],
+            'confirmed' => ['required', 'accepted'],
+            'notes'     => ['nullable', 'string'],
         ]);
-
-        $allPassed = collect($data['checklist'])->every(fn ($i) => $i['passed']);
 
         $check = VehicleReadinessCheck::create([
             'vehicle_id' => $vehicle->vehicle_id,
             'checked_by' => $request->user()->id,
-            'checklist'  => $data['checklist'],
-            'all_passed' => $allPassed,
+            'checklist'  => [['item' => 'Personally operated and confirmed ready to respond', 'passed' => true]],
+            'all_passed' => true,
             'notes'      => $data['notes'] ?? null,
             'checked_at' => now(),
         ]);
 
-        $verb = $allPassed ? 'passed' : 'failed';
-        $this->history($vehicle, 'Readiness Check', ucfirst($verb) . " a readiness check.", 'vehicle_readiness_checks', $check->readiness_check_id, $request);
-        $this->log($request, 'Readiness Check', 'Vehicle Management', $vehicle->vehicle_id, "Readiness check {$verb} for {$vehicle->vehicle_name}");
+        $this->history($vehicle, 'Readiness Check', 'Confirmed ready to respond.', 'vehicle_readiness_checks', $check->readiness_check_id, $request);
+        $this->log($request, 'Readiness Check', 'Vehicle Management', $vehicle->vehicle_id, "Readiness confirmed for {$vehicle->vehicle_name}");
 
-        // Offer the "mark Available now" shortcut only when it's actually
-        // safe: every item passed, the vehicle isn't already Available, and
-        // — critically — it has no open ticket. A vehicle with an open
+        // Offer the "mark Available now" shortcut unless the vehicle is
+        // already Available or has an open ticket — a vehicle with an open
         // ticket must go back to Available through that ticket closing, not
-        // through a generic checklist that never looked at the actual repair.
+        // through a readiness confirmation that never looked at the repair.
         $hasOpenTicket = MaintenanceTicket::where('vehicle_id', $vehicle->vehicle_id)
             ->whereNotIn('status', ['Closed', 'Cancelled'])
             ->exists();
-        $canMarkAvailable = $allPassed && $vehicle->status !== 'Available' && !$hasOpenTicket;
+        $canMarkAvailable = $vehicle->status !== 'Available' && !$hasOpenTicket;
 
         return response()->json([
             'check' => $check,

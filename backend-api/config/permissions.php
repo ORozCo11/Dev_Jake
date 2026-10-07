@@ -49,7 +49,9 @@ return [
     'vehicle.view_history' => ['Admin', 'Custodian'],
     // Admin who suspects a problem can't report an issue or open a ticket
     // themselves — they ask the Custodian to physically inspect instead.
-    'vehicle.request_inspection' => ['Admin'],
+    // Deprecated workflow: condition history remains readable, but no role
+    // can start a standalone inspection from the live application.
+    'vehicle.request_inspection' => [],
 
     // Hubs
     'hub.create' => ['Admin'],
@@ -117,11 +119,11 @@ return [
     // (schedule.suggest notifies Admin, books nothing — see
     // FleetController::suggestSchedule()). This reverses an earlier,
     // now-superseded Custodian-owned-creation model.
-    'schedule.create' => ['Admin'],
-    'schedule.suggest' => ['Custodian'],
+    'schedule.create' => ['Custodian'],
+    'schedule.suggest' => [],
     // Admin-only, per the same 2026-10-06 reversal above — a Custodian no
     // longer edits schedules directly, only suggests one.
-    'schedule.edit' => ['Admin'],
+    'schedule.edit' => ['Custodian'],
     'schedule.reassign' => ['Admin'],
     // Final senior system review (2026-10-05, §2/§12) — Admin no longer
     // completes a schedule directly. "Complete" means physically performed
@@ -135,8 +137,8 @@ return [
     // (schedule.reassign) to the Maintenance Personnel who'll actually do
     // the work, exactly like reassigning a ticket's mechanic.
     'schedule.complete' => ['Maintenance Personnel'],
-    'schedule.delete' => ['Admin'],
-    'schedule.restore' => ['Admin'],
+    'schedule.delete' => ['Custodian'],
+    'schedule.restore' => ['Custodian'],
 
     // Reports & fleet-operational activity log
     'report.generate' => ['Admin'],
@@ -156,28 +158,31 @@ return [
     'ticket.propose' => ['Custodian'],
     'ticket.approve' => ['Admin'],
     'ticket.decline' => ['Admin'],
-    'ticket.inspect' => ['Custodian'],
+    'ticket.inspect' => [],
     'ticket.reassign_custodian' => ['Admin'],
-    'ticket.close' => ['Admin'],
+    'ticket.close' => [],
     'ticket.cancel' => ['Admin'],
     'ticket.uncancel' => ['Admin'],
     'ticket.delete' => ['Admin'],
     'ticket.reopen_archived' => ['Admin'],
+    'ticket.assign_mechanic' => ['Admin'],
+    'ticket.submit_for_verification' => ['Maintenance Personnel'],
+    'ticket.verify' => ['Custodian'],
 
     // Sub-issues
     // Add / rename / remove a not-yet-dispatched sub-issue (Custodian: own ticket only).
     'subissue.manage' => ['Admin', 'Custodian'],
-    'subissue.assign_mechanic' => ['Admin'],
-    'subissue.reassign_mechanic' => ['Admin'],
+    'subissue.assign_mechanic' => [],
+    'subissue.reassign_mechanic' => [],
     'subissue.log_repair' => ['Maintenance Personnel'],
     // Production-readiness audit finding #2 — Admin was a general Tier-1
     // verification fallback; removed. Verification is a Custodian-only
     // action now. An unavailable Custodian is handled by reassigning the
     // ticket (ticket.reassign_custodian), not by Admin standing in.
-    'subissue.verify' => ['Custodian'],
-    'subissue.confirm' => ['Admin'],
+    'subissue.verify' => [],
+    'subissue.confirm' => [],
     'subissue.reopen_confirmed' => ['Admin'],
-    'subissue.defer' => ['Admin'],
+    'subissue.defer' => [],
 
     // Cannibalized-repair approval
     'repair.approve_cannibalized' => ['Admin'],

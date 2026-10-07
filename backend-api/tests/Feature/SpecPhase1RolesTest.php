@@ -113,19 +113,21 @@ class SpecPhase1RolesTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_request_a_custodian_inspection_which_opens_the_vehicle(): void
+    public function requesting_an_inspection_is_now_a_dead_endpoint_for_everyone(): void
     {
+        // vehicle.request_inspection's ability grant is now [] (deprecated
+        // workflow, config/permissions.php) — an Admin who suspects a
+        // problem can no longer start a standalone inspection from the live
+        // application; condition history remains readable, but nothing can
+        // reach this endpoint any more, including Admin.
         $vehicle = $this->vehicle();
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->postJson("/api/vehicles/{$vehicle->vehicle_id}/request-inspection", ['note' => 'Smells like fuel.'])->assertCreated();
+        foreach ([$this->admin, $this->custodian, $this->mechanic] as $user) {
+            Sanctum::actingAs($user, ['*']);
+            $this->postJson("/api/vehicles/{$vehicle->vehicle_id}/request-inspection", ['note' => 'Smells like fuel.'])->assertForbidden();
+        }
 
-        $this->assertDatabaseHas('notifications', [
-            'user_id' => $this->custodian->id,
-            'type' => 'inspection_requested',
-            'vehicle_id' => $vehicle->vehicle_id,
-        ]);
-        // It asks for an inspection — it must not open an issue or a ticket on the Custodian's behalf.
+        $this->assertDatabaseCount('notifications', 0);
         $this->assertDatabaseCount('vehicle_issue_reports', 0);
         $this->assertDatabaseCount('maintenance_tickets', 0);
     }
@@ -150,16 +152,20 @@ class SpecPhase1RolesTest extends TestCase
     }
 
     #[Test]
-    public function a_custodian_can_suggest_a_schedule_but_maintenance_cannot(): void
+    public function suggesting_a_schedule_is_now_a_dead_endpoint_for_everyone(): void
     {
+        // schedule.suggest's ability grant is now [] (config/permissions.php,
+        // streamlined-workflow spec 2026-10-12) — creating a schedule
+        // directly is a standard Custodian duty now (schedule.create), so
+        // the old "propose, Admin books it" detour no longer exists.
         $vehicle = $this->vehicle();
         $payload = ['vehicle_id' => $vehicle->vehicle_id, 'maintenance_type' => 'Brake Inspection'];
 
-        Sanctum::actingAs($this->mechanic, ['*']);
-        $this->postJson('/api/maintenance-schedules/suggest', $payload)->assertForbidden();
+        foreach ([$this->mechanic, $this->custodian, $this->admin] as $user) {
+            Sanctum::actingAs($user, ['*']);
+            $this->postJson('/api/maintenance-schedules/suggest', $payload)->assertForbidden();
+        }
 
-        Sanctum::actingAs($this->custodian, ['*']);
-        $this->postJson('/api/maintenance-schedules/suggest', $payload)->assertCreated();
-        $this->assertDatabaseHas('notifications', ['user_id' => $this->admin->id, 'type' => 'schedule_suggested']);
+        $this->assertDatabaseCount('vehicle_maintenance_schedules', 0);
     }
 }

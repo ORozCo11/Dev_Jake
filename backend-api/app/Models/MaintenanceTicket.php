@@ -29,6 +29,7 @@ class MaintenanceTicket extends Model
         'status',
         'down_since',
         'assigned_custodian_id',
+        'assigned_mechanic_id',
         'assigned_at',
         'inspection_notes',
         'inspection_result',
@@ -71,6 +72,12 @@ class MaintenanceTicket extends Model
     public function assignedCustodian()
     {
         return $this->belongsTo(User::class, 'assigned_custodian_id');
+    }
+
+    /** The current workflow assigns one mechanic to the whole ticket. */
+    public function assignedMechanic()
+    {
+        return $this->belongsTo(User::class, 'assigned_mechanic_id');
     }
 
     public function inspectedBy()

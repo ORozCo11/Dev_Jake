@@ -115,18 +115,23 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
             'type' => 'work_order_assigned',
         ]);
 
-        // Admin approves — THIS is what actually dispatches the suggested
-        // mechanic, exactly like any other Custodian proposal.
+        // Admin approves — the streamlined workflow (2026-10-12) no longer
+        // auto-dispatches a sub-issue's suggested_mechanic_id on approval;
+        // approveTicket() now REQUIRES an explicit assigned_mechanic_id and
+        // dispatches that one mechanic to every sub-issue on the ticket.
+        // Here the Admin picks the same person the schedule suggested.
         $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
         Sanctum::actingAs($admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
         $subIssue->refresh();
         $this->assertSame('Under Repair', $subIssue->status);
         $this->assertSame($this->mechanic->id, $subIssue->assigned_mechanic_id);
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->mechanic->id,
-            'type' => 'work_order_assigned',
+            'type' => 'ticket_assigned',
         ]);
     }
 
@@ -257,26 +262,30 @@ class ConvertDueSchedulesToTicketsTest extends TestCase
         // covered separately above), so approve it here to get there.
         $approver = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
         Sanctum::actingAs($approver, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
         return [$vehicle, $schedule->fresh(), $ticket->fresh()];
     }
 
+    /**
+     * Full happy path under the streamlined workflow (2026-10-12): the
+     * ticket's one assigned mechanic logs the repair and submits the ticket
+     * for verification, then the assigned Custodian's single attestation
+     * closes it — there's no more per-sub-issue verify/confirm or a
+     * separate Admin close step.
+     */
     private function driveToClosed(MaintenanceTicket $ticket): void
     {
-        $admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
         $sub = $ticket->subIssues->first();
 
         Sanctum::actingAs($this->mechanic, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$sub->sub_issue_id}/log-repairs", ['repair_logs' => 'Done.'])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/submit-for-verification", [])->assertOk();
+
         Sanctum::actingAs($this->custodian, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$sub->sub_issue_id}/verify", [
-            'verification_verdict' => 'Approved', 'test_attested' => true,
-            'functional_test' => [['item' => 'Brakes respond properly', 'passed' => true]],
-        ])->assertOk();
-        Sanctum::actingAs($admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/sub-issues/{$sub->sub_issue_id}/confirm", ['confirmation_verdict' => 'Confirmed'])->assertOk();
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/close", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/verify", ['test_attested' => true])->assertOk();
     }
 
     #[Test]
