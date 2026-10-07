@@ -28,6 +28,7 @@ class ScheduleConflictWarningTest extends TestCase
 
     private int $barangayId;
     private User $admin;
+    private User $custodian;
 
     protected function setUp(): void
     {
@@ -37,6 +38,13 @@ class ScheduleConflictWarningTest extends TestCase
         $this->barangayId = Barangay::create(['name' => 'Test Barangay', 'city_id' => $city->id])->id;
         $this->admin = User::factory()->create([
             'role' => 'Admin', 'roles' => ['Admin'], 'barangay_id' => $this->barangayId,
+        ]);
+        // schedule.create/edit are Custodian-only now (config/permissions.php,
+        // streamlined-workflow spec 2026-10-12) — this file is about the
+        // conflict-warning mechanism itself, not role-gating, so the actor
+        // making the actual schedule calls below is a Custodian.
+        $this->custodian = User::factory()->create([
+            'role' => 'Custodian', 'roles' => ['Custodian'], 'barangay_id' => $this->barangayId,
         ]);
     }
 
@@ -57,7 +65,7 @@ class ScheduleConflictWarningTest extends TestCase
     #[Test]
     public function a_quiet_day_has_no_warning_at_all(): void
     {
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $this->vehicle()->vehicle_id,
             'maintenance_type' => 'Oil Change',
@@ -83,7 +91,7 @@ class ScheduleConflictWarningTest extends TestCase
             ]);
         }
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $newVehicle = $this->vehicle();
 
         $warned = $this->postJson('/api/maintenance-schedules', [
@@ -131,7 +139,7 @@ class ScheduleConflictWarningTest extends TestCase
             ]);
         }
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $this->vehicle()->vehicle_id,
             'maintenance_type' => 'Tire Rotation',
@@ -154,15 +162,17 @@ class ScheduleConflictWarningTest extends TestCase
             ]);
         }
 
+        // Owned by the Custodian doing the edit below — schedule.edit still
+        // restricts a non-Admin to a schedule they themselves created.
         $schedule = VehicleMaintenanceSchedule::create([
             'vehicle_id' => $this->vehicle()->vehicle_id,
             'maintenance_type' => 'Brake Check',
             'scheduled_date' => '2026-09-01',
-            'created_by' => $this->admin->id,
+            'created_by' => $this->custodian->id,
             'status' => 'Scheduled',
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
             'scheduled_date' => '2026-08-01',
         ])->assertStatus(409);

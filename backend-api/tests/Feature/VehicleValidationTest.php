@@ -262,14 +262,20 @@ class VehicleValidationTest extends TestCase
     }
 
     #[Test]
-    public function a_custodian_without_delegation_cannot_register_a_vehicle(): void
+    public function a_custodian_can_register_a_vehicle_even_without_the_legacy_delegation_flag(): void
     {
+        // User::canRegisterVehicles() no longer requires the extra
+        // can_register_vehicles flag on top of the role (production-
+        // readiness audit finding #6 was reversed) — vehicle registration is
+        // now a standard Custodian duty for ANY Custodian account. The
+        // can_register_vehicles column is kept for account history, but
+        // this proves a Custodian WITHOUT it still succeeds.
         $this->actingAsCustodian();
 
         $response = $this->postJson('/api/vehicles', $this->validPayload());
 
-        $response->assertForbidden();
-        $this->assertDatabaseCount('vehicles', 0);
+        $response->assertCreated();
+        $this->assertDatabaseHas('vehicles', ['plate_number' => 'ABC-1234']);
     }
 
     #[Test]

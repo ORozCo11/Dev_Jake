@@ -89,7 +89,8 @@ class TicketController extends Controller
                     $scoped->orWhere('assigned_custodian_id', $user->id);
                 }
                 if ($user->hasRole('Maintenance Personnel')) {
-                    $scoped->orWhereHas('subIssues', fn ($q) => $q->where('assigned_mechanic_id', $user->id));
+                    $scoped->orWhere('assigned_mechanic_id', $user->id)
+                        ->orWhereHas('subIssues', fn ($q) => $q->where('assigned_mechanic_id', $user->id));
                 }
             });
         }
@@ -124,7 +125,8 @@ class TicketController extends Controller
         if (!$user->hasRole('Admin')) {
             $isAssignedCustodian = $user->hasRole('Custodian') && $ticket->assigned_custodian_id === $user->id;
             $isAssignedMechanic = $user->hasRole('Maintenance Personnel')
-                && $ticket->subIssues()->where('assigned_mechanic_id', $user->id)->exists();
+                && ((int) $ticket->assigned_mechanic_id === (int) $user->id
+                    || $ticket->subIssues()->where('assigned_mechanic_id', $user->id)->exists());
 
             abort_unless($isAssignedCustodian || $isAssignedMechanic, 403, 'You are not assigned to this ticket.');
         }
@@ -150,7 +152,7 @@ class TicketController extends Controller
             // used to have none, so narrowing by any of the other 4 statuses
             // silently hid every pending proposal with no way to bring it
             // back except clicking the "Proposals" stat card specifically.
-            'ticket_statuses'       => ['Open', 'Pending Approval', 'Active', 'Closed', 'Cancelled'],
+            'ticket_statuses'       => ['Pending Approval', 'Active', 'For Verification', 'Closed', 'Cancelled'],
             'sub_issue_statuses'    => ['Open', 'Under Repair', 'Pending Approval', 'For Inspection', 'For Confirmation', 'Done', 'Deferred'],
             'external_reasons'      => self::EXTERNAL_REASONS,
         ]);
@@ -679,6 +681,7 @@ class TicketController extends Controller
             'ticket_description'    => ['sometimes', 'string'],
             'priority'              => ['sometimes', Rule::in($this->priorities)],
             'assigned_custodian_id' => ['sometimes', 'exists:users,id'],
+            'assigned_mechanic_id'  => ['required', 'exists:users,id'],
             'sub_issues'                        => ['nullable', 'array'],
             'sub_issues.*.sub_issue_id'          => ['required_with:sub_issues', 'exists:ticket_sub_issues,sub_issue_id'],
             'sub_issues.*.title'                 => ['nullable', 'string', 'max:255'],
@@ -692,6 +695,10 @@ class TicketController extends Controller
             abort_unless($newCustodian->barangay_id === $ticket->vehicle->barangay_id, 422, 'The selected Custodian does not belong to this barangay.');
         }
 
+        $assignedMechanic = User::findOrFail($data['assigned_mechanic_id']);
+        abort_unless($assignedMechanic->hasRole('Maintenance Personnel'), 422, 'The selected user is not Maintenance Personnel.');
+        abort_unless($assignedMechanic->barangay_id === $ticket->vehicle->barangay_id, 422, 'The selected mechanic does not belong to this barangay.');
+
         abort_if(
             in_array($ticket->vehicle->status, ['Inactive', 'Decommissioned'], true),
             422,
@@ -699,13 +706,13 @@ class TicketController extends Controller
         );
         abort_if($ticket->subIssues()->count() === 0, 422, 'A proposal needs at least one sub-issue before it can be approved.');
 
-        $ticket = DB::transaction(function () use ($ticket, $data, $request) {
+        $ticket = DB::transaction(function () use ($ticket, $data, $request, $assignedMechanic) {
             // Serialize against a concurrent approve/decline of the same proposal.
             $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
             abort_unless($locked && $locked->status === 'Pending Approval', 422, 'This proposal was already approved or declined.');
 
             $ticket->update(array_intersect_key($data, array_flip([
-                'ticket_description', 'priority', 'assigned_custodian_id',
+                'ticket_description', 'priority', 'assigned_custodian_id', 'assigned_mechanic_id',
             ])));
 
             foreach ($data['sub_issues'] ?? [] as $subData) {
@@ -742,6 +749,18 @@ class TicketController extends Controller
             $this->history($vehicle, 'Ticket Approved', "Ticket #{$ticket->ticket_id} (\"{$ticket->ticket_title}\") was approved — {$vehicle->vehicle_name} moved to Under Maintenance.", 'maintenance_tickets', $ticket->ticket_id, $request);
 
             $dispatchedMechanics = [];
+            $ticket->subIssues()->update([
+                'status'               => 'Under Repair',
+                'assigned_mechanic_id' => $assignedMechanic->id,
+                'mechanic_assigned_at' => now(),
+                'mechanic_assigned_by' => $request->user()->id,
+            ]);
+            $dispatchedMechanics[] = $assignedMechanic;
+            /* Legacy suggested-mechanic dispatch is deliberately skipped:
+             * approval now assigns the ticket, and all of its line items,
+             * to the one mechanic selected above.
+             */
+            /*
             foreach ($ticket->subIssues()->get() as $subIssue) {
                 if (!$subIssue->suggested_mechanic_id) {
                     continue;
@@ -764,7 +783,8 @@ class TicketController extends Controller
                 $dispatchedMechanics[] = $mechanic;
             }
 
-            $this->log($request, 'Approve Ticket', "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) proposal approved.", $ticket->ticket_id);
+            */
+            $this->log($request, 'Approve Ticket', "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) proposal approved and assigned to {$assignedMechanic->name}.", $ticket->ticket_id);
 
             $this->notifyUser(
                 $ticket->assigned_custodian_id,
@@ -776,9 +796,9 @@ class TicketController extends Controller
             foreach ($dispatchedMechanics as $mechanic) {
                 $this->notifyUser(
                     $mechanic->id,
-                    'New Work Order Assigned',
-                    "You have been assigned to work on Ticket #{$ticket->ticket_id} ({$vehicle->vehicle_name}).",
-                    'work_order_assigned',
+                    'Maintenance Ticket Assigned',
+                    "You have been assigned Ticket #{$ticket->ticket_id} ({$vehicle->vehicle_name}).",
+                    'ticket_assigned',
                     $ticket->ticket_id
                 );
             }
@@ -787,6 +807,247 @@ class TicketController extends Controller
         });
 
         return response()->json($ticket->load($this->eagerLoads()));
+    }
+
+    /**
+     * Admin hands the whole ticket (all of its sub-issues) to a different
+     * mechanic — e.g. the originally assigned one is out sick. Mirrors the
+     * old per-sub-issue reassignMechanic(), applied to every line item at
+     * once, so each sub-issue's own prior_mechanic_ids keeps carrying the
+     * self-verification guarantee even though the ticket is now one job.
+     */
+    public function assignTicketMechanic(Request $request, MaintenanceTicket $ticket)
+    {
+        $this->requireAbility($request, 'ticket.assign_mechanic');
+
+        abort_unless(
+            in_array($ticket->status, ['Active', 'For Verification'], true),
+            422,
+            "The mechanic can only be reassigned while the ticket is Active or For Verification. Current: {$ticket->status}."
+        );
+
+        $data = $request->validate([
+            'assigned_mechanic_id' => ['required', 'exists:users,id'],
+            'reassign_reason'      => ['required', 'string'],
+        ]);
+
+        $newMechanic = User::findOrFail($data['assigned_mechanic_id']);
+        abort_unless($newMechanic->hasRole('Maintenance Personnel'), 422, 'The selected user is not Maintenance Personnel.');
+        abort_unless($newMechanic->barangay_id === $ticket->vehicle->barangay_id, 422, 'The selected mechanic does not belong to this barangay.');
+        abort_if((int) $newMechanic->id === (int) $ticket->assigned_mechanic_id, 422, 'That mechanic is already assigned to this ticket.');
+
+        DB::transaction(function () use ($ticket, $newMechanic, $data, $request) {
+            $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
+            abort_unless(in_array($locked->status, ['Active', 'For Verification'], true), 422, 'This ticket was already changed.');
+
+            $previousMechanicId = $locked->assigned_mechanic_id;
+            $previousName = $previousMechanicId ? (User::find($previousMechanicId)?->name ?? 'the previous mechanic') : 'the previous mechanic';
+
+            $locked->update(['assigned_mechanic_id' => $newMechanic->id]);
+
+            foreach ($ticket->subIssues()->get() as $subIssue) {
+                $priorIds = $subIssue->prior_mechanic_ids ?? [];
+                if ($subIssue->assigned_mechanic_id && !in_array($subIssue->assigned_mechanic_id, $priorIds, true)) {
+                    $priorIds[] = $subIssue->assigned_mechanic_id;
+                }
+                $subIssue->update([
+                    'assigned_mechanic_id' => $newMechanic->id,
+                    'mechanic_assigned_at' => now(),
+                    'mechanic_assigned_by' => $request->user()->id,
+                    'prior_mechanic_ids'   => $priorIds,
+                ]);
+            }
+
+            // A mechanic swap after repairs were already submitted means the
+            // attribution changed — back the ticket up to Active so the new
+            // mechanic's own work is what actually gets verified.
+            if ($locked->status === 'For Verification') {
+                $locked->update(['status' => 'Active']);
+            }
+
+            $vehicleName = $ticket->vehicle->vehicle_name;
+            $this->log(
+                $request,
+                'Ticket Mechanic Reassigned',
+                "Ticket #{$ticket->ticket_id} reassigned from {$previousName} to {$newMechanic->name}. Reason: {$data['reassign_reason']}",
+                $ticket->ticket_id
+            );
+
+            $this->notifyUser(
+                $newMechanic->id,
+                'Ticket Reassigned to You',
+                "You have been assigned Ticket #{$ticket->ticket_id} ({$vehicleName}).",
+                'ticket_assigned',
+                $ticket->ticket_id
+            );
+            if ($previousMechanicId) {
+                $this->notifyUser(
+                    $previousMechanicId,
+                    'Ticket Reassigned',
+                    "Ticket #{$ticket->ticket_id} ({$vehicleName}) was reassigned to {$newMechanic->name}.",
+                    'ticket_reassigned',
+                    $ticket->ticket_id
+                );
+            }
+        });
+
+        return response()->json($ticket->fresh($this->eagerLoads()));
+    }
+
+    /**
+     * The ticket's one assigned mechanic submits the whole job for
+     * verification once every sub-issue's repair has been logged
+     * (For Inspection). A cannibalized line item still awaiting Admin
+     * approval blocks this exactly as it blocked the old per-sub-issue
+     * flow, since it won't be at For Inspection yet.
+     */
+    public function submitForVerification(Request $request, MaintenanceTicket $ticket)
+    {
+        $this->requireAbility($request, 'ticket.submit_for_verification');
+
+        abort_unless(
+            (int) $ticket->assigned_mechanic_id === (int) $request->user()->id,
+            403,
+            'This ticket is not assigned to you.'
+        );
+        abort_unless($ticket->status === 'Active', 422, "A ticket can only be submitted for verification while Active. Current status: {$ticket->status}.");
+
+        $ticket->load('subIssues');
+        $notReady = $ticket->subIssues->reject(fn ($s) => $s->status === 'For Inspection');
+        abort_if(
+            $notReady->isNotEmpty(),
+            422,
+            'Every sub-issue needs its repair logged before the ticket can go to verification: ' . $notReady->pluck('title')->implode(', ')
+        );
+
+        DB::transaction(function () use ($ticket, $request) {
+            $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
+            abort_unless($locked && $locked->status === 'Active', 422, 'This ticket was already submitted or changed.');
+
+            $locked->update(['status' => 'For Verification']);
+
+            $this->log(
+                $request,
+                'Submitted for Verification',
+                "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) submitted for Custodian verification.",
+                $ticket->ticket_id
+            );
+
+            $mechanicName = $request->user()->name;
+            $vehicleName = $ticket->vehicle->vehicle_name;
+            $this->notifyUser(
+                $ticket->assigned_custodian_id,
+                'Verification Required: Repairs Completed',
+                "Mechanic {$mechanicName} completed repairs for Ticket #{$ticket->ticket_id} ({$vehicleName}). Please verify.",
+                'repairs_completed',
+                $ticket->ticket_id
+            );
+        });
+
+        return response()->json($ticket->fresh($this->eagerLoads()));
+    }
+
+    /**
+     * The ticket's assigned Custodian gives one plain attestation for the
+     * whole job ("I confirm I personally operated and tested this vehicle")
+     * and the ticket closes — no checklist, no notes, no separate
+     * reject-and-rework step. Internally this finalizes every sub-issue the
+     * same way an Admin Tier-2 confirm used to (finalizeConfirmedSubIssue()),
+     * so the maintenance ledger is written exactly as before.
+     */
+    public function verifyTicket(Request $request, MaintenanceTicket $ticket)
+    {
+        $this->requireAbility($request, 'ticket.verify');
+
+        abort_unless(
+            (int) $ticket->assigned_custodian_id === (int) $request->user()->id,
+            403,
+            "This verification is assigned to {$ticket->assignedCustodian?->name}."
+        );
+
+        $ticket->load('subIssues');
+        $priorMechanicIds = $ticket->subIssues
+            ->flatMap(fn ($s) => $s->prior_mechanic_ids ?? [])
+            ->push($ticket->assigned_mechanic_id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        abort_if(
+            in_array($request->user()->id, $priorMechanicIds, true),
+            403,
+            'You performed repair work on this ticket — it must be verified by a different Custodian. Reassign this ticket to another Custodian.'
+        );
+
+        abort_unless($ticket->status === 'For Verification', 422, "Verification can only be submitted when the ticket is For Verification. Current: {$ticket->status}.");
+
+        $request->validate([
+            'test_attested' => ['required', 'accepted'],
+        ]);
+
+        DB::transaction(function () use ($ticket, $request) {
+            $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
+            abort_unless($locked && $locked->status === 'For Verification', 422, 'This ticket was already verified or changed.');
+
+            $ticket->load('subIssues');
+            foreach ($ticket->subIssues as $subIssue) {
+                if ($subIssue->status === 'Done') {
+                    continue;
+                }
+                $subIssue->update([
+                    'verification_verdict' => 'Approved',
+                    'verified_by'           => $request->user()->id,
+                    'verified_at'           => now(),
+                ]);
+                $this->finalizeConfirmedSubIssue($ticket, $subIssue, $request->user()->id, null);
+            }
+
+            $locked->update([
+                'status'              => 'Closed',
+                'closed_by'           => $request->user()->id,
+                'closed_at'           => now(),
+                'returned_to_service' => true,
+                'archived_at'         => now(),
+            ]);
+
+            if ($ticket->issue_report_id) {
+                VehicleIssueReport::where('issue_report_id', $ticket->issue_report_id)->update(['status' => 'Resolved']);
+            }
+
+            // Same permanent audit trail the old closeTicket() always wrote —
+            // without this, a ticket closed through this endpoint would
+            // silently vanish from the Ticket Archive Log / "View Archives"
+            // screen (TicketController::archives()) that every other closed
+            // ticket appears in.
+            $ticket->refresh()->load('subIssues');
+            $this->archiveCompleted($ticket, $request->user()->id, 'Closed');
+
+            // A ticket auto-created from a due Maintenance Schedule finishes
+            // that schedule too — otherwise it stays "Scheduled" forever
+            // (counted overdue) and a recurring service never seeds its next
+            // occurrence. Same call the old closeTicket() always made.
+            $this->completeLinkedSchedule($ticket, $request->user()->id);
+
+            $this->recomputeVehicleStatus($ticket->vehicle_id, $request);
+
+            $this->log(
+                $request,
+                'Ticket Verified & Closed',
+                "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) verified by Custodian and closed.",
+                $ticket->ticket_id
+            );
+
+            $vehicleName = $ticket->vehicle->vehicle_name;
+            $this->notifyUser(
+                $ticket->assigned_mechanic_id,
+                'Repair Verified & Closed',
+                "Your repair work on Ticket #{$ticket->ticket_id} ({$vehicleName}) was verified and the ticket is now closed.",
+                'ticket_verified',
+                $ticket->ticket_id
+            );
+        });
+
+        return response()->json($ticket->fresh($this->eagerLoads()));
     }
 
     /**
@@ -1216,12 +1477,20 @@ class TicketController extends Controller
             'maintenance_type' => ['nullable', 'string', 'max:150'],
         ]);
 
+        // The ticket is already dispatched to one mechanic by the time it's
+        // Active (approveTicket() bulk-assigns every sub-issue at approval) —
+        // a line item added afterwards is simply more work for that same
+        // mechanic, not a fresh "Open, needs dispatching" item nobody can
+        // ever pick up now that per-sub-issue assignment is gone.
         $subIssue = TicketSubIssue::create([
             'ticket_id' => $ticket->ticket_id,
             'created_by' => $request->user()->id,
             'title' => $data['title'],
             'maintenance_type' => !empty($data['maintenance_type']) ? MaintenanceType::resolve($data['maintenance_type']) : null,
-            'status' => 'Open',
+            'status' => $ticket->assigned_mechanic_id ? 'Under Repair' : 'Open',
+            'assigned_mechanic_id' => $ticket->assigned_mechanic_id,
+            'mechanic_assigned_at' => $ticket->assigned_mechanic_id ? now() : null,
+            'mechanic_assigned_by' => $ticket->assigned_mechanic_id ? $request->user()->id : null,
         ]);
         $this->log($request, 'Sub-issue Added', "Ticket #{$ticket->ticket_id} — added sub-issue \"{$subIssue->title}\".", $ticket->ticket_id);
 
@@ -1232,7 +1501,7 @@ class TicketController extends Controller
     {
         $this->authorizeSubIssueEdit($request, $ticket);
         $this->assertBelongsToTicket($ticket, $subIssue);
-        abort_unless($subIssue->status === 'Open' && !$subIssue->assigned_mechanic_id, 422, 'Only a sub-issue that has not been dispatched yet can be edited.');
+        abort_unless(in_array($subIssue->status, ['Open', 'Under Repair'], true), 422, 'Only a sub-issue that has not had repairs logged yet can be edited.');
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -1253,7 +1522,7 @@ class TicketController extends Controller
     {
         $this->authorizeSubIssueEdit($request, $ticket);
         $this->assertBelongsToTicket($ticket, $subIssue);
-        abort_unless($subIssue->status === 'Open' && !$subIssue->assigned_mechanic_id, 422, 'Only a sub-issue that has not been dispatched yet can be removed.');
+        abort_unless(in_array($subIssue->status, ['Open', 'Under Repair'], true), 422, 'Only a sub-issue that has not had repairs logged yet can be removed.');
         abort_if(TicketSubIssue::where('ticket_id', $ticket->ticket_id)->count() <= 1, 422, 'A ticket needs at least one sub-issue. Cancel the ticket instead.');
 
         $this->log($request, 'Sub-issue Removed', "Ticket #{$ticket->ticket_id} — removed sub-issue \"{$subIssue->title}\".", $ticket->ticket_id);
@@ -2290,7 +2559,7 @@ class TicketController extends Controller
         // not put the vehicle out of service yet (approveTicket() and
         // submitInspection() are what do that), so they must not either.
         $stillOpen = MaintenanceTicket::where('vehicle_id', $vehicleId)
-            ->where('status', 'Active')
+            ->whereIn('status', ['Active', 'For Verification'])
             ->exists();
 
         $vehicle = Vehicle::where('vehicle_id', $vehicleId)->first();
@@ -2463,6 +2732,7 @@ class TicketController extends Controller
             'issueReport',
             'createdBy',
             'assignedCustodian',
+            'assignedMechanic',
             'inspectedBy',
             'closedBy',
             'recurrenceOf:ticket_id,ticket_title,closed_at',

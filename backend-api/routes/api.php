@@ -232,6 +232,12 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::put('/tickets/{ticket}/approve', [TicketController::class, 'approveTicket']);
     Route::put('/tickets/{ticket}/decline', [TicketController::class, 'declineTicket']);
 
+    // Ticket-level workflow. Sub-issues remain work-line details and audit
+    // evidence, never separate user-facing work orders.
+    Route::put('/tickets/{ticket}/assign-mechanic', [TicketController::class, 'assignTicketMechanic']);
+    Route::put('/tickets/{ticket}/submit-for-verification', [TicketController::class, 'submitForVerification']);
+    Route::put('/tickets/{ticket}/verify', [TicketController::class, 'verifyTicket']);
+
     // Phase 2 — Custodian: Submit inspection, populate the sub-issue list
     Route::put('/tickets/{ticket}/inspect', [TicketController::class, 'submitInspection']);
 

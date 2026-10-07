@@ -167,7 +167,9 @@ class User extends Authenticatable
             return true;
         }
 
-        return $this->hasRole('Custodian') && (bool) $this->can_register_vehicles;
+        // Vehicle registration is now a standard Custodian duty. Keep the
+        // old database flag for account history, but do not require it.
+        return $this->hasRole('Custodian');
     }
 
     public function canDo(string $ability): bool

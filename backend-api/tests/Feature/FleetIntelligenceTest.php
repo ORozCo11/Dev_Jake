@@ -364,11 +364,7 @@ class FleetIntelligenceTest extends TestCase
 
         Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", [
-            'checklist' => [
-                ['item' => 'Fuel full', 'passed' => true],
-                ['item' => 'Oxygen present', 'passed' => true],
-                ['item' => 'Lights & siren work', 'passed' => true],
-            ],
+            'confirmed' => true,
         ])->assertCreated();
 
         Sanctum::actingAs($this->admin, ['*']);
@@ -386,7 +382,7 @@ class FleetIntelligenceTest extends TestCase
     public function only_a_custodian_can_record_a_readiness_check(): void
     {
         $ambulance = $this->vehicle('Ambulance');
-        $payload = ['checklist' => [['item' => 'Fuel full', 'passed' => true]]];
+        $payload = ['confirmed' => true];
 
         Sanctum::actingAs($this->admin, ['*']);
         $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", $payload)->assertForbidden();
@@ -396,18 +392,40 @@ class FleetIntelligenceTest extends TestCase
     }
 
     #[Test]
-    public function a_failed_readiness_check_flags_the_vehicle_not_ready(): void
+    public function readiness_check_is_a_plain_confirmation_not_a_checklist(): void
     {
         $ambulance = $this->vehicle('Ambulance');
 
         Sanctum::actingAs($this->custodian, ['*']);
-        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", [
-            'checklist' => [
-                ['item' => 'Fuel full', 'passed' => false], // empty tank
-                ['item' => 'Oxygen present', 'passed' => true],
-            ],
-        ])->assertCreated();
+        // No "confirmed" flag at all — simplified per product direction to a
+        // single attestation; there is no longer a "failed check" path
+        // through this endpoint (see a_readiness_check_record_made_directly_
+        // with_all_passed_false_still_flags_not_ready below for how a vehicle
+        // still ends up not_ready: a direct historical record, not this form).
+        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", [])
+            ->assertUnprocessable();
 
+        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", ['confirmed' => false])
+            ->assertUnprocessable();
+    }
+
+    #[Test]
+    public function a_readiness_check_record_with_all_passed_false_still_flags_the_vehicle_not_ready(): void
+    {
+        $ambulance = $this->vehicle('Ambulance');
+
+        // The endpoint itself is approve-only now, but older/historical
+        // records (or direct data fixes) can still carry all_passed=false —
+        // the readiness STATE computation must still honour that.
+        VehicleReadinessCheck::create([
+            'vehicle_id' => $ambulance->vehicle_id,
+            'checked_by' => $this->custodian->id,
+            'checklist'  => [['item' => 'Fuel full', 'passed' => false]],
+            'all_passed' => false,
+            'checked_at' => now(),
+        ]);
+
+        Sanctum::actingAs($this->admin, ['*']);
         $state = $this->getJson("/api/vehicles/{$ambulance->vehicle_id}/readiness")->assertOk()->json('state');
         $this->assertSame('not_ready', $state);
     }
