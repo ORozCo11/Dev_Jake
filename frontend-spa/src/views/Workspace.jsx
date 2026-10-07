@@ -715,6 +715,16 @@ function Workspace() {
       // saves a click for the common case; still fully editable.
       : { scheduled_date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), ...(prefilledScheduleData ?? {}) }
   ), [editScheduleId, records.schedules, prefilledScheduleData]);
+  // Set right before navigating to /conditions/new from the "+" on a
+  // specific "Not Checked" vehicle row — same pattern as prefilledScheduleData
+  // above, so that vehicle is already selected instead of asking the
+  // Custodian to pick it again from a vehicle they just clicked.
+  const [prefilledConditionVehicleId, setPrefilledConditionVehicleId] = useState(null);
+  const conditionInitialValues = useMemo(() => (
+    editConditionId
+      ? (records.conditions ?? []).find((c) => String(c.condition_check_id) === String(editConditionId))
+      : (prefilledConditionVehicleId ? { vehicle_id: prefilledConditionVehicleId } : EMPTY_OBJ)
+  ), [editConditionId, records.conditions, prefilledConditionVehicleId]);
   // Legacy rows may have no `roles` list yet — seed it from the primary role.
   // Memoized (not an inline IIFE) for the same reason as scheduleInitialValues
   // above — otherwise this object gets a new reference on every render and
@@ -1689,14 +1699,16 @@ function Workspace() {
   // status filters below (which check row.status) keep working unchanged.
   // Verification is now a ticket-level step (one Custodian attestation
   // closes the whole job), so its rows are the tickets themselves —
-  // narrowed to this Custodian's own tickets that have reached (or passed)
-  // the verification stage, same scoping the old per-sub-issue queue used.
+  // narrowed to this Custodian's own tickets. Once a ticket is approved it
+  // graduates out of "Issue Reports" (still a pre-ticket proposal) and into
+  // this "My Tickets" queue so the Custodian can trace its progress —
+  // Active tickets are included here too, not just the verification stage.
   const rawRows = activeModule === 'ticketWorkOrders'
     ? flattenSubIssueRows(records[activeModule], user.id)
     : activeModule === 'ticketVerifications'
       ? (records[activeModule] ?? []).filter((t) => (
           String(t.assigned_custodian_id) === String(user.id)
-          && (t.status === 'For Verification' || t.status === 'Closed')
+          && ['Active', 'For Verification', 'Closed'].includes(t.status)
         ))
       : records[activeModule] ?? [];
   const visibleRows = useMemo(() => {
@@ -1774,12 +1786,16 @@ function Workspace() {
         filterStatus.includes('Submitted') ? row.status !== 'Under Repair' : row.status === 'Under Repair'
       ));
     } else if (activeModule === 'ticketVerifications') {
-      // Rows are now tickets, not sub-issues — pending means the whole
-      // ticket is still waiting at For Verification; verified means it's
-      // already Closed (rawRows already excludes every other status).
-      result = result.filter((row) => (
-        filterStatus.includes('Verified') ? row.status !== 'For Verification' : row.status === 'For Verification'
-      ));
+      // Rows are now tickets, not sub-issues — Active means still being
+      // repaired, Pending means waiting at For Verification, Verified means
+      // already Closed. No filter selected (Total) shows every one.
+      if (filterStatus.includes('Active')) {
+        result = result.filter((row) => row.status === 'Active');
+      } else if (filterStatus.includes('Verified')) {
+        result = result.filter((row) => row.status === 'Closed');
+      } else if (filterStatus.includes('Pending')) {
+        result = result.filter((row) => row.status === 'For Verification');
+      }
     } else if (activeModule === 'vehicles' && (filterStatus.includes('ReadyToRespond') || filterStatus.includes('NotReady'))) {
       // Retired vehicles are excluded from both buckets up in vehicleStats —
       // match that here too, or "Not Ready" would list units the card's own
@@ -1847,6 +1863,12 @@ function Workspace() {
 
     if (activeModule === 'issues' && filterIssueType.length) {
       result = result.filter((row) => filterIssueType.includes(row.issue_type));
+    }
+
+    // Issue Reports only ever shows pre-ticket reports — once a proposal is
+    // approved it graduates into "My Tickets" instead (see issueIsPreTicket).
+    if (activeModule === 'issues') {
+      result = result.filter((row) => issueIsPreTicket(row));
     }
 
     // "Needs a ticket" — reports nobody has turned into a ticket yet.
@@ -2109,13 +2131,15 @@ function Workspace() {
 
   const verificationStats = useMemo(() => {
     // Mirrors rawRows' own scoping above — one row per ticket, restricted to
-    // this Custodian's own tickets that have reached (or passed) verification.
+    // this Custodian's own tickets ("My Tickets": Active through Closed).
     const rows = (records.ticketVerifications ?? []).filter((t) => (
       String(t.assigned_custodian_id) === String(user.id)
-      && (t.status === 'For Verification' || t.status === 'Closed')
+      && ['Active', 'For Verification', 'Closed'].includes(t.status)
     ));
+    const active = rows.filter((r) => r.status === 'Active').length;
     const pending = rows.filter((r) => r.status === 'For Verification').length;
-    return { total: rows.length, Pending: pending, Verified: rows.length - pending };
+    const verified = rows.filter((r) => r.status === 'Closed').length;
+    return { total: rows.length, Active: active, Pending: pending, Verified: verified };
   }, [records.ticketVerifications, user.id]);
 
   const vehicleStats = useMemo(() => {
@@ -2261,7 +2285,10 @@ function Workspace() {
       deleteRecord,
       handleCreateTicketFromCondition,
       handleSuggestScheduleFromCondition,
-      canDo(user, 'condition.create') ? () => navigate(`${roleRoutes[user.role]}/conditions/new`) : undefined,
+      canDo(user, 'condition.create') ? (row) => {
+        setPrefilledConditionVehicleId(row.vehicle_id);
+        navigate(`${roleRoutes[user.role]}/conditions/new`);
+      } : undefined,
     ),
     [user, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition],
   );
@@ -3176,9 +3203,9 @@ function Workspace() {
           ) : (isNewConditionPage || editConditionId) ? (
             <FormPage
               description="Periodic inspection log — a Custodian's routine check-in on a vehicle's physical condition."
-              onBack={() => returnToModule('conditions')}
+              onBack={() => { setPrefilledConditionVehicleId(null); returnToModule('conditions'); }}
               fields={conditionFields(lookups)}
-              initialValues={editConditionId ? (records.conditions ?? []).find((c) => String(c.condition_check_id) === String(editConditionId)) : EMPTY_OBJ}
+              initialValues={conditionInitialValues}
               onSubmit={(payload) => submitFormPage('conditions', editConditionId ? { condition_check_id: editConditionId } : null, payload)}
               submitLabel={editConditionId ? 'Update Condition' : 'Record Condition'}
               contextVehicles={lookups.vehicles}
@@ -3395,7 +3422,7 @@ function Workspace() {
           className={`locations-tab-button ${activeModule === 'ticketVerifications' ? 'active' : ''}`}
           onClick={() => setMyTasksTab('ticketVerifications')}
         >
-          To Verify
+          My Tickets
           {(dashboard?.badge_counts?.ticketVerifications ?? 0) > 0 && (
             <span className="count-badge">{dashboard.badge_counts.ticketVerifications}</span>
           )}
@@ -3893,7 +3920,7 @@ function Workspace() {
                 onChange={setSearchQuery}
                 placeholder="Search conditions..."
                 columnChooser={conditionColumnChooser}
-                onAdd={canDo(user, 'condition.create') ? () => navigate(`${roleRoutes[user.role]}/conditions/new`) : undefined}
+                onAdd={canDo(user, 'condition.create') ? () => { setPrefilledConditionVehicleId(null); navigate(`${roleRoutes[user.role]}/conditions/new`); } : undefined}
                 addLabel="Add Condition Check"
               />
             </div>
@@ -4266,6 +4293,7 @@ function Workspace() {
                   onViewRecord={(r) => navigate(`${roleRoutes[user.role]}/maintenance/${r.resulting_maintenance_id}`)}
                   onReassign={setReassignScheduleTarget}
                   onViewTicket={openTicketProfile}
+                  onViewVehicle={openVehicleProfile}
                 />
               )}
             />
@@ -4730,6 +4758,7 @@ function Workspace() {
             filterVerdict={filterVerdict}
             setFilterVerdict={setFilterVerdict}
             onViewVehicle={openVehicleProfile}
+            onViewTicket={openTicketProfile}
             stats={verificationStats}
             activeFilter={filterStatus}
             onFilterChange={setFilterStatus}
@@ -9120,10 +9149,13 @@ const MAINTENANCE_RECORD_STAT_CARDS = [
 // before the one-mechanic-per-ticket redesign.
 const TICKET_STAT_CARDS = [
   { key: 'Pending Approval', label: 'Proposals', icon: 'clipboard', bg: '#fef9c3', color: '#a16207' },
+  // "For Verification" was here, but that's a Custodian action, not
+  // something Admin does anything with — Declined is the one Admin needs a
+  // quick count of, since those proposals are waiting on a reconsider.
+  { key: 'Declined', label: 'Declined', icon: 'close', bg: '#fee2e2', color: '#dc2626' },
   { key: 'Active', label: 'Active', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
-  { key: 'For Verification', label: 'For Verification', icon: 'search', bg: '#ede9fe', color: '#7c3aed' },
   { key: 'Closed', label: 'Closed', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
-  { key: 'Cancelled', label: 'Cancelled', icon: 'close', bg: '#fee2e2', color: '#dc2626' },
+  { key: 'Cancelled', label: 'Cancelled', icon: 'close', bg: '#f1f5f9', color: '#64748b' },
 ];
 
 const TICKET_INSPECTION_STAT_CARDS = [
@@ -9141,6 +9173,7 @@ const TICKET_WORK_ORDER_STAT_CARDS = [
 ];
 
 const TICKET_VERIFICATION_STAT_CARDS = [
+  { key: 'Active', label: 'Active', icon: 'wrench', bg: '#fef9c3', color: '#a16207' },
   { key: 'Pending', label: 'Pending', icon: 'checkCircle', bg: '#fef3c7', color: '#d97706' },
   { key: 'Verified', label: 'Verified', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
 ];
@@ -9501,7 +9534,7 @@ function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromConditio
         !row.condition_check_id ? (
           <div className="row-actions">
             {onAddCondition && (
-              <button className="btn-confirm-action icon-btn" onClick={onAddCondition} type="button" title="Record Condition" aria-label="Record Condition"><Icon name="plus" size={14} /></button>
+              <button className="btn-confirm-action icon-btn" onClick={() => onAddCondition(row)} type="button" title="Record Condition" aria-label="Record Condition"><Icon name="plus" size={14} /></button>
             )}
           </div>
         ) : (
@@ -10010,6 +10043,14 @@ function TicketFilterPanel({
 // An unresolved report that no ticket has been started from yet.
 function issueNeedsTicket(row) {
   return ['Pending', 'Under Review'].includes(row.status) && !row.maintenance_ticket;
+}
+
+// A "pre-ticket" report — either no ticket yet, or one still awaiting Admin
+// review. Once a proposal is approved it graduates into a trackable ticket
+// (see the Custodian's "My Tickets" tab) and drops out of this list, so the
+// Issue Reports table only ever shows what's still a plain report.
+function issueIsPreTicket(row) {
+  return !row.maintenance_ticket || ['Pending Approval', 'Declined'].includes(row.maintenance_ticket.status);
 }
 
 function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, onView, deleteRecord, user, onViewTicket, onDismiss) {
@@ -10706,7 +10747,7 @@ function scheduleUrgencyBucket(row) {
 // Deliberately NOT one big click target: unlike a Maintenance Record, a
 // schedule has no detail page to open, and a whole-card click would fight
 // with the action buttons it needs to carry.
-function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign, onViewTicket }) {
+function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign, onViewTicket, onViewVehicle }) {
   const isAdmin = hasRole(currentUser, 'Admin');
   const currentUserId = currentUser?.id;
   const isMine = currentUserId != null && String(row.assigned_to) === String(currentUserId);
@@ -10720,8 +10761,17 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
   const canComplete = row.status === 'Scheduled' && !row.resulting_ticket_id && onComplete && isMine;
   const becameTicket = row.status === 'Scheduled' && row.resulting_ticket_id && onViewTicket;
 
+  const canView = Boolean(onViewVehicle && row.vehicle);
+
   return (
-    <div className="ticket-card" style={{ cursor: 'default' }}>
+    <div
+      className="ticket-card"
+      style={{ cursor: canView ? 'pointer' : 'default' }}
+      onClick={canView ? () => onViewVehicle(row.vehicle) : undefined}
+      role={canView ? 'button' : undefined}
+      tabIndex={canView ? 0 : undefined}
+      onKeyDown={canView ? (e) => { if (e.key === 'Enter') onViewVehicle(row.vehicle); } : undefined}
+    >
       <div className="ticket-card-content-wrapper">
         <div className="ticket-card-info">
           <div className="ticket-card-top">
@@ -10794,7 +10844,7 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
           line up across a row of cards regardless of how much optional
           content (overdue flag, location, verification badge) a given card
           has above it. */}
-      <div className="row-actions ticket-card-bottom" style={{ justifyContent: 'flex-start' }}>
+      <div className="row-actions ticket-card-bottom" style={{ justifyContent: 'flex-start' }} onClick={(e) => e.stopPropagation()}>
         {canComplete && (
           <button className="btn-confirm-action icon-btn" onClick={() => onComplete(row)} type="button" title="Mark as Done" aria-label="Mark as Done"><Icon name="checkCircle" size={14} /></button>
         )}
@@ -12384,6 +12434,7 @@ function TicketStatusBadge({ value, size = 'normal' }) {
     'For Maintenance': 'ticket-formaint',
     'Under Repair': 'ticket-repair',
     'Pending Approval': 'ticket-formaint',
+    'Declined': 'ticket-cancelled',
     'For Verification': 'ticket-forinspect',
     'For Inspection': 'ticket-forinspect',
     'For Confirmation': 'ticket-forconfirm',
@@ -12417,8 +12468,18 @@ function TicketStatusBadge({ value, size = 'normal' }) {
 // anyone viewing it without ticket.approve (i.e. the proposing Custodian).
 // =========================================================================
 
-function TicketProposalReview({ user, ticket, lookups, onApprove, onDecline }) {
+function TicketProposalReview({ user, ticket, lookups, onApprove, onDecline, onUndecline }) {
   if (!canDo(user, 'ticket.approve')) {
+    if (ticket.status === 'Declined') {
+      return (
+        <section className="ticket-section">
+          <h4><Icon name="clipboard" size={14} /> Proposal Status</h4>
+          <div className="notice danger" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon name="alert" size={15} /> Declined{ticket.decline_reason ? ` — ${ticket.decline_reason}` : '.'}
+          </div>
+        </section>
+      );
+    }
     return (
       <section className="ticket-section">
         <h4><Icon name="clipboard" size={14} /> Proposal Status</h4>
@@ -12431,7 +12492,7 @@ function TicketProposalReview({ user, ticket, lookups, onApprove, onDecline }) {
 
   // Keyed by ticket id so a fresh mount (a different ticket) always starts
   // from that ticket's own values instead of whatever was last typed here.
-  return <TicketProposalReviewForm key={ticket.ticket_id} ticket={ticket} lookups={lookups} onApprove={onApprove} onDecline={onDecline} />;
+  return <TicketProposalReviewForm key={ticket.ticket_id} ticket={ticket} lookups={lookups} onApprove={onApprove} onDecline={onDecline} onUndecline={onUndecline} />;
 }
 
 // What a cannibalized / external-shop sub-issue actually involves — the
@@ -12466,7 +12527,8 @@ function RepairContextDetails({ si }) {
   );
 }
 
-function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
+function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline, onUndecline }) {
+  const isDeclined = ticket.status === 'Declined';
   // Pre-fill from whatever the Custodian suggested when adding sub-issues
   // (if any) — Admin can still change it before approving.
   const suggestedMechanicId = (ticket.sub_issues ?? []).map((si) => si.suggested_mechanic_id).find(Boolean) ?? '';
@@ -12523,8 +12585,14 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
           <h4>Review Proposal</h4>
           <p>Proposed by <strong>{custodianName}</strong></p>
         </div>
-        <span className="proposal-review-pill">Pending Approval</span>
+        <span className={`proposal-review-pill${isDeclined ? ' is-declined' : ''}`}>{isDeclined ? 'Declined' : 'Pending Approval'}</span>
       </div>
+
+      {isDeclined && (
+        <div className="notice danger" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 12px' }}>
+          <Icon name="alert" size={15} /> You declined this proposal{ticket.decline_reason ? `: ${ticket.decline_reason}` : '.'} Undecline to send it back to the Custodian, or approve it as-is below.
+        </div>
+      )}
 
       <div className="proposal-review-body">
         <div className="proposal-review-group">
@@ -12601,11 +12669,21 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline }) {
         </div>
       ) : (
         <div className="proposal-review-actions">
-          <p className="proposal-review-hint">Edit anything above before approving. Declining permanently deletes this proposal.</p>
+          <p className="proposal-review-hint">
+            {isDeclined
+              ? 'Undecline to send this back to the Custodian as-is, or approve it directly below.'
+              : 'Edit anything above before approving or declining.'}
+          </p>
           <div className="proposal-review-buttons">
-            <button className="btn-sm danger-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
-              <Icon name="close" size={14} /> Decline
-            </button>
+            {isDeclined ? (
+              <button className="btn-sm ghost-button" type="button" onClick={onUndecline} disabled={submitting}>
+                <Icon name="undo" size={14} /> Undecline
+              </button>
+            ) : (
+              <button className="btn-sm danger-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
+                <Icon name="close" size={14} /> Decline
+              </button>
+            )}
             <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
               <Icon name="checkCircle" size={14} /> Approve & Assign
             </button>
@@ -12634,10 +12712,15 @@ function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, mech
   });
   const resetDraft = () => setDraft({ index: null, title: '', maintenance_type: '', suggested_mechanic_id: '' });
 
+  const draftRow = () => ({ title: draft.title.trim(), maintenance_type: draft.maintenance_type || null, suggested_mechanic_id: draft.suggested_mechanic_id || null });
+
+  // "Save" commits whatever's currently typed — appends it as a new
+  // sub-issue, or updates the one being edited if a row's pencil icon was
+  // clicked. "+ Add" doesn't commit anything; it just clears the fields
+  // (and drops out of edit mode) so a fresh sub-issue can be typed next.
   const save = () => {
-    const title = draft.title.trim();
-    if (!title) return;
-    const row = { title, maintenance_type: draft.maintenance_type || null, suggested_mechanic_id: draft.suggested_mechanic_id || null };
+    if (!draft.title.trim()) return;
+    const row = draftRow();
     if (isEditing) {
       onChange(items.map((it, i) => (i === draft.index ? { ...it, ...row } : it)));
     } else {
@@ -12689,9 +12772,8 @@ function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, mech
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <button type="button" className="primary-button" disabled={!draft.title.trim()} onClick={save}>
-            <Icon name="plus" size={13} /> {isEditing ? 'Save' : 'Add Subissue'}
+            <Icon name="plus" size={13} /> Add
           </button>
-          {isEditing && <button type="button" className="ghost-button" onClick={resetDraft}>Cancel</button>}
         </div>
       </div>
 
@@ -12726,7 +12808,7 @@ function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, mech
 // TICKET DETAIL PANEL — shown when admin clicks a ticket row
 // =========================================================================
 
-function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEditSubIssue, onDeleteSubIssue, onAssignTicketMechanic, onReassignCustodian, onReopenDone, onLogRepairs, onSubmitForVerification, onVerifyTicket, onViewIssue, onCancel, onUncancel, onDelete, onRequestConfirmation, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onClose, asPage = false }) {
+function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEditSubIssue, onDeleteSubIssue, onAssignTicketMechanic, onReassignCustodian, onReopenDone, onLogRepairs, onSubmitForVerification, onVerifyTicket, onViewIssue, onCancel, onUncancel, onDelete, onRequestConfirmation, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onUndeclineProposal, onClose, asPage = false }) {
   const [subDraft, setSubDraft] = useState(null); // { id|null, title, maintenance_type }
   // Cannibalization approval — tracks which sub-issue's reject form is
   // open; Approve has no form of its own (it needs no input beyond the
@@ -12771,6 +12853,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
   const nextSignal = (() => {
     if (ticket.status === 'Cancelled') return { tone: 'alert', label: 'Ticket cancelled', detail: 'Restore it only if work needs to resume.' };
     if (ticket.status === 'Closed') return { tone: 'ok', label: 'Closed', detail: 'All recorded work is complete.' };
+    if (ticket.status === 'Declined') return { tone: 'alert', label: 'Declined', detail: 'Undecline to revise and resubmit it, or approve it as-is below.' };
     if (ticket.status === 'Pending Approval') return { tone: 'warn', label: 'Review proposal', detail: 'A Custodian proposed this ticket — review and approve or decline it below.' };
     if (ticket.status === 'For Verification') return isAssignedCustodian
       ? { tone: 'warn', label: 'Verify repair', detail: 'The mechanic says this is done — confirm it before the ticket closes.' }
@@ -12877,6 +12960,10 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
 
         {ticket.status === 'Cancelled' ? (
           <p className="notice danger ticket-process-cancelled"><Icon name="alert" size={15} /> This ticket was cancelled.</p>
+        ) : ticket.status === 'Declined' ? (
+          <p className="notice danger ticket-process-cancelled">
+            <Icon name="alert" size={15} /> This proposal was declined.{ticket.decline_reason ? ` Reason: ${ticket.decline_reason}` : ''}
+          </p>
         ) : (
           <div className="ticket-process-flow" role="list" aria-label="Ticket progress">
             {phaseOrder.map((s, i) => {
@@ -13056,16 +13143,17 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
               (which are explicitly excluded for this one status right
               after), so nothing about how every other status renders
               changes. */}
-          {ticket.status === 'Pending Approval' && (
+          {(ticket.status === 'Pending Approval' || ticket.status === 'Declined') && (
             <TicketProposalReview
               user={user}
               ticket={ticket}
               lookups={lookups}
               onApprove={(payload) => onApproveProposal(ticket, payload)}
               onDecline={(payload) => onDeclineProposal(ticket, payload)}
+              onUndecline={() => onUndeclineProposal(ticket)}
             />
           )}
-          {ticket.status !== 'Open' && ticket.status !== 'Pending Approval' && (
+          {ticket.status !== 'Open' && ticket.status !== 'Pending Approval' && ticket.status !== 'Declined' && (
             <section className="ticket-section">
               <h4>
                 <Icon name="wrench" size={14} /> Sub-Issues
@@ -13405,11 +13493,11 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
             {canDo(user, 'ticket.uncancel') && ticket.status === 'Cancelled' && onUncancel && (
               <button className="primary-button" type="button" onClick={() => onUncancel(ticket)}>Restore Ticket</button>
             )}
-            {/* A Pending Approval proposal isn't a live ticket yet — Approve/
-                Decline in the Review Proposal block above are its real
-                actions; Cancel/Delete here are for already-live tickets and
-                would just bypass the decline notification. */}
-            {canDo(user, 'ticket.cancel') && ticket.status !== 'Closed' && ticket.status !== 'Cancelled' && ticket.status !== 'Pending Approval' && (
+            {/* A Pending Approval or Declined proposal isn't a live ticket
+                yet — Approve/Decline/Undecline in the Review Proposal block
+                above are its real actions; Cancel/Delete here are for
+                already-live tickets. */}
+            {canDo(user, 'ticket.cancel') && ticket.status !== 'Closed' && ticket.status !== 'Cancelled' && ticket.status !== 'Pending Approval' && ticket.status !== 'Declined' && (
               <button className="ghost-button" type="button" onClick={requestCancel}>Cancel Ticket</button>
             )}
             {/* Once a ticket is Closed there's real, confirmed work on
@@ -13507,9 +13595,11 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
       onUncancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/uncancel`, {}, 'Ticket restored.').then(afterAction)}
       onDelete={(t) => onDeleteTicket(t).then(onBack)}
       onApproveProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/approve`, payload, 'Ticket proposal approved.').then(afterAction)}
-      // Declining deletes the ticket server-side — nothing left to reload,
-      // so this navigates away instead, same as onDelete just above.
-      onDeclineProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/decline`, payload, 'Ticket proposal declined.').then((ok) => { if (ok) onBack(); return ok; })}
+      // Declining no longer deletes the ticket — it becomes a visible,
+      // reversible Declined status, so this stays on the page and refreshes
+      // in place, same as every other action here.
+      onDeclineProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/decline`, payload, 'Ticket proposal declined.').then(afterAction)}
+      onUndeclineProposal={(t) => sendTicketAction(`/tickets/${t.ticket_id}/undecline`, {}, 'Proposal restored to Pending Approval.').then(afterAction)}
       onRequestConfirmation={onRequestConfirmation}
       onClose={onBack}
     />
@@ -14559,7 +14649,7 @@ function TicketModule({
   // including Total, would collapse to 0 along with it.
   const ticketStats = useMemo(() => {
     const counts = { total: statSourceTickets.length };
-    ['Pending Approval', 'Active', 'For Verification', 'Closed', 'Cancelled'].forEach((s) => {
+    ['Pending Approval', 'Declined', 'Active', 'For Verification', 'Closed', 'Cancelled'].forEach((s) => {
       counts[s] = statSourceTickets.filter((t) => t.status === s).length;
     });
     return counts;
@@ -16049,13 +16139,27 @@ function CustodianVerificationModule({
   filterVerdict,
   setFilterVerdict,
   onViewVehicle,
+  onViewTicket,
   stats,
   activeFilter,
   onFilterChange,
   tabBar
 }) {
   const [viewLogsTarget, setViewLogsTarget] = useState(null);
-  const isPendingView = activeFilter !== 'Verified';
+  const panelTitle = activeFilter.includes('Active')
+    ? 'Active Tickets'
+    : activeFilter.includes('Verified')
+      ? 'Verified Repairs'
+      : activeFilter.includes('Pending')
+        ? 'Pending Verifications'
+        : 'My Tickets';
+  const emptyStateText = activeFilter.includes('Active')
+    ? 'No tickets currently active.'
+    : activeFilter.includes('Verified')
+      ? 'No repairs verified yet.'
+      : activeFilter.includes('Pending')
+        ? 'No repairs pending your verification.'
+        : 'No tickets yet — once the Admin approves a proposal, it will show up here.';
 
   const verificationColumnDefs = useMemo(() => [
     { key: 'ticket_id', label: 'Ticket ID', locked: true, className: 'cell-center', render: (r) => r.ticket_id },
@@ -16170,18 +16274,18 @@ function CustodianVerificationModule({
       </section>
       <section className="panel">
         <div className="panel-header-bar">
-          <h3>{isPendingView ? 'Pending Verifications' : 'Verified Repairs'} <span className="count-badge">{tickets.length}</span></h3>
+          <h3>{panelTitle} <span className="count-badge">{tickets.length}</span></h3>
           <ColumnChooserButton {...verificationColumnChooser} />
         </div>
         <div style={{ height: '16px' }} />
         {tickets.length === 0
-          ? <p className="empty-state">{isPendingView ? 'No repairs pending your verification.' : 'No repairs verified yet.'}</p>
+          ? <p className="empty-state">{emptyStateText}</p>
           : (
             <DataTable
               columns={verificationColumnChooser.visibleColumns}
               onReorderColumn={verificationColumnChooser.reorderColumn}
               rows={tickets}
-              onRowClick={(row) => row.vehicle && onViewVehicle(row.vehicle)}
+              onRowClick={(row) => (onViewTicket ? onViewTicket(row) : (row.vehicle && onViewVehicle(row.vehicle)))}
             />
           )
         }
@@ -16306,6 +16410,7 @@ function MechanicWorkOrderModule({
   mySchedules = null,
   onCompleteSchedule,
   currentUser,
+  onViewVehicle,
 }) {
   const isPendingView = activeFilter !== 'Submitted';
   // Merge 2 — "Work Tracker" is no longer its own sidebar entry; it's this
@@ -16498,6 +16603,7 @@ function MechanicWorkOrderModule({
                   currentUser={currentUser}
                   onComplete={onCompleteSchedule}
                   onViewTicket={onViewTicket}
+                  onViewVehicle={onViewVehicle}
                 />
               ))
             )}

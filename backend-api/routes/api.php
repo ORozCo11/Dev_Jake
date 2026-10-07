@@ -231,6 +231,7 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/tickets/propose', [TicketController::class, 'proposeTicket']);
     Route::put('/tickets/{ticket}/approve', [TicketController::class, 'approveTicket']);
     Route::put('/tickets/{ticket}/decline', [TicketController::class, 'declineTicket']);
+    Route::put('/tickets/{ticket}/undecline', [TicketController::class, 'undeclineTicket']);
 
     // Ticket-level workflow. Sub-issues remain work-line details and audit
     // evidence, never separate user-facing work orders.

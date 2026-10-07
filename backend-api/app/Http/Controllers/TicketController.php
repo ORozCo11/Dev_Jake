@@ -152,7 +152,7 @@ class TicketController extends Controller
             // used to have none, so narrowing by any of the other 4 statuses
             // silently hid every pending proposal with no way to bring it
             // back except clicking the "Proposals" stat card specifically.
-            'ticket_statuses'       => ['Pending Approval', 'Active', 'For Verification', 'Closed', 'Cancelled'],
+            'ticket_statuses'       => ['Pending Approval', 'Declined', 'Active', 'For Verification', 'Closed', 'Cancelled'],
             'sub_issue_statuses'    => ['Open', 'Under Repair', 'Pending Approval', 'For Inspection', 'For Confirmation', 'Done', 'Deferred'],
             'external_reasons'      => self::EXTERNAL_REASONS,
         ]);
@@ -699,7 +699,13 @@ class TicketController extends Controller
     {
         $this->requireAbility($request, 'ticket.approve');
 
-        abort_unless($ticket->status === 'Pending Approval', 422, "Only a Pending Approval ticket can be approved. Current: {$ticket->status}.");
+        // A previously Declined proposal can be approved directly — Admin
+        // doesn't have to undecline it first.
+        abort_unless(
+            in_array($ticket->status, ['Pending Approval', 'Declined'], true),
+            422,
+            "Only a Pending Approval or Declined ticket can be approved. Current: {$ticket->status}."
+        );
 
         $data = $request->validate([
             'ticket_description'    => ['sometimes', 'string'],
@@ -733,7 +739,7 @@ class TicketController extends Controller
         $ticket = DB::transaction(function () use ($ticket, $data, $request, $assignedMechanic) {
             // Serialize against a concurrent approve/decline of the same proposal.
             $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
-            abort_unless($locked && $locked->status === 'Pending Approval', 422, 'This proposal was already approved or declined.');
+            abort_unless($locked && in_array($locked->status, ['Pending Approval', 'Declined'], true), 422, 'This proposal was already approved.');
 
             $ticket->update(array_intersect_key($data, array_flip([
                 'ticket_description', 'priority', 'assigned_custodian_id', 'assigned_mechanic_id',
@@ -763,12 +769,17 @@ class TicketController extends Controller
 
             $ticket->update([
                 'status'            => 'Active',
+                'decline_reason'    => null,
                 'down_since'        => $ticket->down_since ?? now(),
                 'inspection_result' => 'Needs Maintenance',
                 'inspection_notes'  => 'Proposed by Custodian, reviewed and approved by Admin — inspection skipped.',
                 'inspected_by'      => $ticket->assigned_custodian_id,
                 'inspected_at'      => $ticket->created_at,
             ]);
+            // Covers approving directly from Declined (declineTicket() reset
+            // this to Pending while nothing was happening) — a no-op for the
+            // normal fresh-proposal path, where it's already In Maintenance.
+            $this->resetLinkedIssueReports($ticket, 'In Maintenance');
             $vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
             $this->history($vehicle, 'Ticket Approved', "Ticket #{$ticket->ticket_id} (\"{$ticket->ticket_title}\") was approved — {$vehicle->vehicle_name} moved to Under Maintenance.", 'maintenance_tickets', $ticket->ticket_id, $request);
 
@@ -1075,10 +1086,11 @@ class TicketController extends Controller
     }
 
     /**
-     * Admin declines a proposal outright — no partial/soft state, the row
-     * is gone (sub-issues cascade with it). The reason lives only in the
-     * notification sent to the Custodian who proposed it; there is
-     * deliberately no other trace once this returns.
+     * Admin declines a proposal — it stays as a visible, reversible status
+     * (not deleted) so the Custodian who proposed it sees exactly what
+     * happened, and Admin can change their mind later: undecline() puts it
+     * back to Pending Approval, or approveTicket() can approve it directly
+     * from Declined without undeclining first.
      */
     public function declineTicket(Request $request, MaintenanceTicket $ticket)
     {
@@ -1090,38 +1102,65 @@ class TicketController extends Controller
             'decline_reason' => ['required', 'string'],
         ]);
 
-        $custodianId = $ticket->assigned_custodian_id;
-        $custodianName = $ticket->assignedCustodian?->name ?? "user #{$custodianId}";
-        $ticketId = $ticket->ticket_id;
-        $ticketTitle = $ticket->ticket_title;
-        $vehicleName = $ticket->vehicle->vehicle_name;
-
-        DB::transaction(function () use ($ticket) {
+        DB::transaction(function () use ($ticket, $data) {
             // The proposal flipped its linked Issue Report to In Maintenance;
-            // put it back so the report doesn't look handled with no ticket.
+            // put it back so the report doesn't look handled while nothing
+            // is actually happening with it.
             $this->resetLinkedIssueReports($ticket, 'Pending');
-            $ticket->delete();
+            $ticket->update([
+                'status' => 'Declined',
+                'decline_reason' => $data['decline_reason'],
+            ]);
         });
 
-        // The ticket row itself is gone after this — this is the only
-        // place its decline is ever recorded, so it has to carry everything
-        // a reader would otherwise have looked up on the ticket itself.
         $this->log(
             $request,
             'Decline Ticket',
-            "Ticket #{$ticketId} (\"{$ticketTitle}\" for {$vehicleName}, proposed by {$custodianName}) declined. Reason: {$data['decline_reason']}",
-            $ticketId
+            "Ticket #{$ticket->ticket_id} (\"{$ticket->ticket_title}\") declined. Reason: {$data['decline_reason']}",
+            $ticket->ticket_id
         );
 
         $this->notifyUser(
-            $custodianId,
+            $ticket->assigned_custodian_id,
             'Ticket Proposal Declined',
-            "Your proposed ticket \"{$ticketTitle}\" for {$vehicleName} was declined. Reason: {$data['decline_reason']}",
+            "Your proposed ticket \"{$ticket->ticket_title}\" for {$ticket->vehicle->vehicle_name} was declined. Reason: {$data['decline_reason']}",
             'ticket_declined',
-            null
+            $ticket->ticket_id
         );
 
-        return response()->json(['message' => 'Ticket proposal declined.']);
+        return response()->json($ticket->fresh($this->eagerLoads()));
+    }
+
+    /**
+     * Admin changes their mind about a decline — puts the proposal back
+     * exactly where it was (Pending Approval), for the Custodian to see
+     * it's live again or for Admin to revise and approve it properly.
+     */
+    public function undeclineTicket(Request $request, MaintenanceTicket $ticket)
+    {
+        $this->requireAbility($request, 'ticket.decline');
+
+        abort_unless($ticket->status === 'Declined', 422, "Only a Declined ticket can be undeclined. Current: {$ticket->status}.");
+
+        DB::transaction(function () use ($ticket) {
+            $this->resetLinkedIssueReports($ticket, 'In Maintenance');
+            $ticket->update([
+                'status' => 'Pending Approval',
+                'decline_reason' => null,
+            ]);
+        });
+
+        $this->log($request, 'Undecline Ticket', "Ticket #{$ticket->ticket_id} (\"{$ticket->ticket_title}\") restored to Pending Approval.", $ticket->ticket_id);
+
+        $this->notifyUser(
+            $ticket->assigned_custodian_id,
+            'Ticket Proposal Reconsidered',
+            "Your proposed ticket \"{$ticket->ticket_title}\" for {$ticket->vehicle->vehicle_name} is back under review.",
+            'ticket_proposed',
+            $ticket->ticket_id
+        );
+
+        return response()->json($ticket->fresh($this->eagerLoads()));
     }
 
     // ===================================================================
@@ -2367,7 +2406,7 @@ class TicketController extends Controller
         $this->requireAbility($request, 'ticket.cancel');
 
         abort_unless(!in_array($ticket->status, ['Closed', 'Cancelled'], true), 422, 'This ticket is already closed and cannot be cancelled.');
-        abort_if($ticket->status === 'Pending Approval', 422, 'A proposal awaiting approval cannot be cancelled — approve or decline it instead.');
+        abort_if(in_array($ticket->status, ['Pending Approval', 'Declined'], true), 422, 'A proposal awaiting review cannot be cancelled — approve, decline, or undecline it instead.');
 
         // Every sub-issue already resolved (fixed or deferred) — this is
         // real, confirmed repair work on record, not something to void.

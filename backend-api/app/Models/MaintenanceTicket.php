@@ -27,6 +27,7 @@ class MaintenanceTicket extends Model
         'ticket_description',
         'priority',
         'status',
+        'decline_reason',
         'down_since',
         'assigned_custodian_id',
         'assigned_mechanic_id',

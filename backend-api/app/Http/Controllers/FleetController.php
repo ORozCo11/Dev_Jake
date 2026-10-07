@@ -80,7 +80,11 @@ class FleetController extends Controller
             // 'In Use' exists in the DB enum but is intentionally not offered —
             // this system tracks availability only; nothing ever sets In Use.
             'vehicle_statuses' => ['Available', 'Under Maintenance', 'Inactive', 'Decommissioned'],
-            'condition_results' => ['Good', 'Needs Inspection', 'Needs Repair'],
+            // "Needs Inspection" removed per product direction — a Custodian
+            // filing a condition check now records either Good or Needs
+            // Repair, nothing in between. Historical checks already
+            // recorded as Needs Inspection are untouched.
+            'condition_results' => ['Good', 'Needs Repair'],
             'issue_statuses' => ['Pending', 'Under Review', 'In Maintenance', 'Resolved'],
             'maintenance_statuses' => ['Assigned', 'Under Repair', 'On Hold - Awaiting Parts', 'For Verification', 'Completed'],
             'schedule_statuses' => ['Scheduled', 'Completed', 'Cancelled'],
@@ -1351,7 +1355,7 @@ class FleetController extends Controller
 
         $data = $request->validate([
             'vehicle_id' => ['required', 'exists:vehicles,vehicle_id'],
-            'condition_result' => ['required', Rule::in(['Good', 'Needs Inspection', 'Needs Repair'])],
+            'condition_result' => ['required', Rule::in(['Good', 'Needs Repair'])],
             'observations' => ['nullable', 'string'],
         ]);
 
@@ -1391,7 +1395,7 @@ class FleetController extends Controller
 
         $data = $request->validate([
             'vehicle_id' => ['sometimes', 'exists:vehicles,vehicle_id'],
-            'condition_result' => ['sometimes', Rule::in(['Good', 'Needs Inspection', 'Needs Repair'])],
+            'condition_result' => ['sometimes', Rule::in(['Good', 'Needs Repair'])],
             'observations' => ['nullable', 'string'],
         ]);
 
