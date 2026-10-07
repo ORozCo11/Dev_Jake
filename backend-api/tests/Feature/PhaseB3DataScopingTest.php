@@ -158,6 +158,64 @@ class PhaseB3DataScopingTest extends TestCase
     // — that stays a Custodian/Admin concern).
     // =======================================================================
 
+    #[Test]
+    public function custodian_and_maintenance_personnel_can_both_file_an_issue_report(): void
+    {
+        $vehicle = $this->vehicle();
+
+        foreach ([$this->custodian, $this->mechanic] as $reporter) {
+            Sanctum::actingAs($reporter, ['*']);
+            $this->postJson('/api/issues', [
+                'vehicle_id' => $vehicle->vehicle_id,
+                'issue_type' => 'Flat tire',
+                'issue_description' => 'Reported via final-validation regression check.',
+                'severity_level' => 'Low',
+            ])->assertCreated();
+        }
+
+        $this->assertDatabaseHas('vehicle_issue_reports', ['reported_by' => $this->custodian->id]);
+        $this->assertDatabaseHas('vehicle_issue_reports', ['reported_by' => $this->mechanic->id]);
+    }
+
+    #[Test]
+    public function custodian_sees_every_issue_report_in_the_barangay_not_just_their_own(): void
+    {
+        $vehicle = $this->vehicle();
+        VehicleIssueReport::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'issue_type' => 'Flat tire',
+            'issue_description' => 'Front-left tire flat.',
+            'reported_by' => $this->admin->id,
+        ]);
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $response = $this->getJson('/api/issues')->assertOk();
+        $this->assertCount(1, $response->json());
+    }
+
+    #[Test]
+    public function maintenance_personnel_sees_only_their_own_issue_reports(): void
+    {
+        $vehicle = $this->vehicle();
+        VehicleIssueReport::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'issue_type' => 'Flat tire',
+            'issue_description' => 'Front-left tire flat.',
+            'reported_by' => $this->mechanic->id,
+        ]);
+        VehicleIssueReport::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'issue_type' => 'Overheating',
+            'issue_description' => 'Reported by someone else entirely.',
+            'reported_by' => $this->custodian->id,
+        ]);
+
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $response = $this->getJson('/api/issues')->assertOk();
+        $this->assertCount(1, $response->json());
+        $this->assertSame('Flat tire', $response->json()[0]['issue_type']);
+    }
+
     // =======================================================================
     // GET /maintenance-schedules — Maintenance scoped to assigned_to = me
     // =======================================================================

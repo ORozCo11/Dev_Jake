@@ -101,6 +101,28 @@ class TicketProposalWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function proposing_a_ticket_from_an_issue_report_links_it_without_re_entering_its_data(): void
+    {
+        $vehicle = $this->vehicle();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $issue = $this->postJson('/api/issues', [
+            'vehicle_id' => $vehicle->vehicle_id,
+            'issue_type' => 'Overheating',
+            'issue_description' => 'Runs hot after 10 minutes.',
+            'severity_level' => 'High',
+        ])->assertCreated()->json();
+
+        $ticket = $this->propose($vehicle, ['issue_report_id' => $issue['issue_report_id']]);
+
+        $this->assertSame($issue['issue_report_id'], $ticket->issue_report_id);
+        $this->assertDatabaseHas('vehicle_issue_reports', [
+            'issue_report_id' => $issue['issue_report_id'],
+            'status' => 'In Maintenance',
+        ]);
+    }
+
+    #[Test]
     public function admin_and_maintenance_personnel_cannot_propose_a_ticket(): void
     {
         $vehicle = $this->vehicle();
@@ -188,7 +210,7 @@ class TicketProposalWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function approving_requires_a_mechanic_and_naming_one_dispatches_the_job(): void
+    public function a_sub_issue_with_no_suggested_mechanic_stays_open_after_approval(): void
     {
         $vehicle = $this->vehicle();
         Sanctum::actingAs($this->custodian, ['*']);
@@ -202,14 +224,9 @@ class TicketProposalWorkflowTest extends TestCase
         $ticket = MaintenanceTicket::findOrFail($response->json('ticket_id'));
 
         Sanctum::actingAs($this->admin, ['*']);
-        // No mechanic named anywhere: approval is refused and the proposal stays pending.
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertUnprocessable();
-        $this->assertSame('Pending Approval', $ticket->fresh()->status);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
 
-        // Approve and assign in one step.
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", ['assigned_mechanic_id' => $this->mechanic->id])->assertOk();
-        $this->assertSame('Under Repair', $ticket->subIssues->first()->fresh()->status);
-        $this->assertSame($this->mechanic->id, $ticket->subIssues->first()->fresh()->assigned_mechanic_id);
+        $this->assertSame('Open', $ticket->subIssues->first()->fresh()->status);
     }
 
     #[Test]
@@ -248,7 +265,7 @@ class TicketProposalWorkflowTest extends TestCase
         $this->assertSame($expected, $ticket->ticket_title);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", ['ticket_title' => 'Admin override attempt', 'assigned_mechanic_id' => $this->mechanic->id])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", ['ticket_title' => 'Admin override attempt'])->assertOk();
 
         $this->assertSame($expected, $ticket->fresh()->ticket_title);
     }
@@ -405,7 +422,7 @@ class TicketProposalWorkflowTest extends TestCase
         $this->assertSame('ACME Repair Shop', $sub->external_vendor);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", ['assigned_mechanic_id' => $this->mechanic->id])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
         $this->assertSame('Active', $ticket->fresh()->status);
     }
 }

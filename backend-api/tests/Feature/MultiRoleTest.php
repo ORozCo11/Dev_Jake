@@ -103,11 +103,13 @@ class MultiRoleTest extends TestCase
             'assigned_at' => now(),
         ])->ticket_id;
 
-        // The approved ticket's single job (proposal + approval no longer need an inspection).
-        $mt = MaintenanceTicket::find($ticketId);
-        $mt->update(['status' => 'Active', 'inspection_result' => 'Needs Maintenance']);
-        $mt->vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
-        \App\Models\TicketSubIssue::create(['ticket_id' => $ticketId, 'created_by' => $mt->assigned_custodian_id, 'title' => 'Low coolant level', 'status' => 'Open']);
+        // Juan (as Custodian) inspects and logs a sub-issue.
+        Sanctum::actingAs($juan, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/inspect", [
+            'inspection_result' => 'Needs Maintenance',
+            'inspection_notes' => 'Confirmed.',
+            'sub_issues' => [['title' => 'Low coolant level']],
+        ])->assertOk();
 
         $subIssue = MaintenanceTicket::find($ticketId)->subIssues->first();
 
@@ -155,7 +157,13 @@ class MultiRoleTest extends TestCase
             'functional_test' => [['item' => 'Reported issue no longer occurs', 'passed' => true]],
         ])->assertOk();
 
-        // The verifying Custodian's approval is the final sign-off and closes the ticket.
+        // Admin gives the final verdict and closes.
+        Sanctum::actingAs($admin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
+            'confirmation_verdict' => 'Confirmed',
+        ])->assertOk();
+        $this->putJson("/api/tickets/{$ticketId}/close", [])->assertOk();
+
         $this->assertSame('Closed', MaintenanceTicket::find($ticketId)->status);
         $this->assertSame('Available', $vehicle->fresh()->status);
     }
@@ -182,10 +190,11 @@ class MultiRoleTest extends TestCase
         ])->ticket_id;
 
         Sanctum::actingAs($juan, ['*']);
-        $mt = MaintenanceTicket::find($ticketId);
-        $mt->update(['status' => 'Active', 'inspection_result' => 'Needs Maintenance']);
-        $mt->vehicle->update(['condition' => 'Needs Repair', 'status' => 'Under Maintenance']);
-        \App\Models\TicketSubIssue::create(['ticket_id' => $ticketId, 'created_by' => $mt->assigned_custodian_id, 'title' => 'Low coolant level', 'status' => 'Open']);
+        $this->putJson("/api/tickets/{$ticketId}/inspect", [
+            'inspection_result' => 'Needs Maintenance',
+            'inspection_notes' => 'Confirmed.',
+            'sub_issues' => [['title' => 'Low coolant level']],
+        ])->assertOk();
         $subIssue = MaintenanceTicket::find($ticketId)->subIssues->first();
 
         Sanctum::actingAs($admin, ['*']);
@@ -204,6 +213,68 @@ class MultiRoleTest extends TestCase
             'role' => 'Maintenance Personnel',
             'action' => 'Repairs Logged',
         ]);
+    }
+
+    #[Test]
+    public function an_admin_who_also_performed_the_repair_cannot_give_its_final_confirmation_either(): void
+    {
+        // Juan here holds Admin AND Maintenance Personnel — a different
+        // Custodian (not Juan) verifies the repair, clearing Tier 1, but
+        // Juan (acting as Admin) still cannot be the one to confirm it:
+        // "don't grade your own homework" applies at both confirmation
+        // tiers, not just the first.
+        $otherAdmin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        $juan = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin', 'Maintenance Personnel']]);
+        $custodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian']]);
+        $vehicle = $this->vehicle();
+
+        $ticketId = MaintenanceTicket::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'created_by' => $otherAdmin->id,
+            'ticket_title' => 'Overheating',
+            'ticket_description' => 'Runs hot.',
+            'priority' => 'High',
+            'status' => 'Open',
+            'assigned_custodian_id' => $custodian->id,
+            'assigned_at' => now(),
+        ])->ticket_id;
+
+        Sanctum::actingAs($custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/inspect", [
+            'inspection_result' => 'Needs Maintenance',
+            'inspection_notes' => 'Confirmed.',
+            'sub_issues' => [['title' => 'Low coolant level']],
+        ])->assertOk();
+        $subIssue = MaintenanceTicket::find($ticketId)->subIssues->first();
+
+        Sanctum::actingAs($otherAdmin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/assign-mechanic", [
+            'assigned_mechanic_id' => $juan->id,
+            'maintenance_type' => 'Engine Repair',
+        ])->assertOk();
+
+        Sanctum::actingAs($juan, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/log-repairs", [
+            'repair_logs' => 'Refilled coolant, tested.',
+        ])->assertOk();
+
+        Sanctum::actingAs($custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/verify", [
+            'verification_verdict' => 'Approved',
+            'test_attested' => true,
+            'functional_test' => [['item' => 'Reported issue no longer occurs', 'passed' => true]],
+        ])->assertOk();
+
+        Sanctum::actingAs($juan, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
+            'confirmation_verdict' => 'Confirmed',
+        ])->assertForbidden()
+            ->assertJsonFragment(['message' => 'You performed repair work on this sub-issue — another Admin needs to give the final confirmation.']);
+
+        Sanctum::actingAs($otherAdmin, ['*']);
+        $this->putJson("/api/tickets/{$ticketId}/sub-issues/{$subIssue->sub_issue_id}/confirm", [
+            'confirmation_verdict' => 'Confirmed',
+        ])->assertOk();
     }
 
     #[Test]

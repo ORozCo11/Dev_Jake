@@ -276,11 +276,76 @@ class PhaseB4RoleModelTest extends TestCase
     // Maintenance Records — Admin-only to create/edit now
     // =======================================================================
 
+    #[Test]
+    public function a_custodian_can_no_longer_create_a_standalone_maintenance_record(): void
+    {
+        $vehicle = $this->vehicle();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/maintenance-records', [
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+            'problem_reason' => 'Routine oil change',
+        ])->assertForbidden();
+    }
+
+    #[Test]
+    public function admin_can_still_create_a_standalone_maintenance_record(): void
+    {
+        $vehicle = $this->vehicle();
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->postJson('/api/maintenance-records', [
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+            'problem_reason' => 'Routine oil change',
+            'maintenance_personnel_id' => $this->mechanic->id,
+        ])->assertCreated();
+    }
+
+    #[Test]
+    public function a_custodian_can_no_longer_edit_a_maintenance_record(): void
+    {
+        $vehicle = $this->vehicle();
+        $record = VehicleMaintenanceRecord::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+            'problem_reason' => 'Routine oil change.',
+            'maintenance_personnel_id' => $this->mechanic->id,
+        ]);
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/maintenance-records/{$record->maintenance_id}", [
+            'problem_reason' => 'Trying to edit.',
+        ])->assertForbidden();
+    }
+
     // =======================================================================
     // Maintenance Schedules — Spec §19 (2026-10-06, current): Admin owns the
     // calendar (create/edit/cancel/reassign); a Custodian only suggests one
     // (schedule.suggest notifies Admin, books nothing).
     // =======================================================================
+
+    #[Test]
+    public function a_custodian_cannot_create_a_maintenance_schedule_only_suggest_one(): void
+    {
+        // Spec §19 (2026-10-06): Admin owns the calendar.
+        $vehicle = $this->vehicle();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/maintenance-schedules', [
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+            'scheduled_date' => now()->addWeek()->toDateString(),
+        ])->assertForbidden();
+
+        $this->postJson('/api/maintenance-schedules/suggest', [
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+        ])->assertCreated();
+        $this->assertDatabaseHas('notifications', ['user_id' => $this->admin->id, 'type' => 'schedule_suggested', 'vehicle_id' => $vehicle->vehicle_id]);
+        $this->assertDatabaseCount('vehicle_maintenance_schedules', 0);
+    }
 
     #[Test]
     public function maintenance_personnel_still_cannot_create_a_maintenance_schedule(): void
@@ -364,6 +429,41 @@ class PhaseB4RoleModelTest extends TestCase
     // Issue reports — Maintenance Personnel loses edit entirely; Custodian's
     // own-report-while-Pending path is unaffected
     // =======================================================================
+
+    #[Test]
+    public function maintenance_personnel_can_no_longer_edit_an_issue_report(): void
+    {
+        $vehicle = $this->vehicle();
+        $issue = VehicleIssueReport::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'issue_type' => 'Flat tire',
+            'issue_description' => 'Front-left tire flat.',
+            'reported_by' => $this->mechanic->id,
+        ]);
+
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->putJson("/api/issues/{$issue->issue_report_id}", [
+            'status' => 'In Maintenance',
+        ])->assertForbidden();
+    }
+
+    #[Test]
+    public function a_custodian_can_still_edit_their_own_pending_issue_report(): void
+    {
+        $vehicle = $this->vehicle();
+        $issue = VehicleIssueReport::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'issue_type' => 'Flat tire',
+            'issue_description' => 'Front-left tire flat.',
+            'reported_by' => $this->custodian->id,
+            'status' => 'Pending',
+        ]);
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/issues/{$issue->issue_report_id}", [
+            'issue_description' => 'Updated description.',
+        ])->assertOk();
+    }
 
     // =======================================================================
     // Catalogs — Admin-only to create now (everyone else picks "Other" +

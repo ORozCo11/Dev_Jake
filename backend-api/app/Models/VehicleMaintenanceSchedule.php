@@ -24,7 +24,6 @@ class VehicleMaintenanceSchedule extends Model
         'recurrence_months',
         'resulting_maintenance_id',
         'resulting_ticket_id',
-        'due_notified_at',
     ];
 
     protected $casts = [
