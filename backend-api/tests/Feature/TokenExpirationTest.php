@@ -82,20 +82,22 @@ class TokenExpirationTest extends TestCase
         $loginToken = $admin->createToken('auth_token', $admin->allRoles());
 
         \Laravel\Sanctum\Sanctum::actingAs($admin, ['*']);
-        $impersonateResponse = $this->postJson("/api/impersonate/{$target->id}")->assertOk();
+        $impersonateResponse = $this->postJson("/api/impersonate/{$target->id}", ['reason' => 'Testing token expiry'])->assertOk();
 
         $impersonationTokenId = (int) explode('|', $impersonateResponse->json('access_token'))[0];
         $impersonationToken = \Laravel\Sanctum\PersonalAccessToken::find($impersonationTokenId);
 
+        // VMS-IMPROVEMENT-PLAN.md Phase A5 — 30 minutes, not the 4 hours
+        // this used to be.
         $this->assertNotNull($impersonationToken->expires_at, 'Impersonation tokens must carry an explicit expiry.');
         $this->assertTrue(
-            $impersonationToken->expires_at->lte(now()->addHours(4)->addMinute()),
-            'Impersonation tokens should expire within about 4 hours.'
+            $impersonationToken->expires_at->lte(now()->addMinutes(31)),
+            'Impersonation tokens should expire within about 30 minutes.'
         );
 
         // The regular login-style token created above has no explicit
         // per-token expiry (relies on the global config instead), so it
-        // outlives the impersonation token's explicit 4-hour cutoff.
+        // outlives the impersonation token's explicit 30-minute cutoff.
         $this->assertNull($loginToken->accessToken->expires_at);
         $this->assertTrue(
             $impersonationToken->expires_at->lt(now()->addDays(7)),

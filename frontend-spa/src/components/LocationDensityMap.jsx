@@ -175,36 +175,6 @@ function groupVehiclesByHub(vehicles, hubs) {
   return Array.from(groups.values());
 }
 
-function MapClickHandler({ addMode, onPickLocation }) {
-  const map = useMap();
-
-  useEffect(() => {
-    const container = map.getContainer();
-
-    if (addMode) {
-      map.dragging.disable();
-      container.style.cursor = 'crosshair';
-    } else {
-      map.dragging.enable();
-      container.style.cursor = '';
-    }
-
-    const handleClick = (e) => {
-      if (!addMode) return;
-      onPickLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
-    };
-
-    map.on('click', handleClick);
-
-    return () => {
-      map.off('click', handleClick);
-      container.style.cursor = '';
-    };
-  }, [map, addMode, onPickLocation]);
-
-  return null;
-}
-
 // Captures the live Leaflet map (tiles + overlays) to a PNG and triggers a download.
 async function captureMapToPng(mapEl) {
   if (!mapEl) {
@@ -335,13 +305,17 @@ function LocationDensityMap({
   onClearSelectedVehicle = null,
   onHubsChange = null,
   canManageHubs = false,
+  // Navigates to the dedicated "Add Location" form page — Add Hub used to
+  // start a click-the-map-to-pin mode right here, but that page already
+  // does the same POST /hubs with a proper name/address form and its own
+  // live map, so this button just goes there now instead of duplicating it.
+  onAddHub = null,
   // { geometry: GeoJSON Polygon|MultiPolygon, label: string } | null — set
   // by the admin topbar's barangay/city selector. Falls back to the
   // hardcoded Paknaan outline below when nothing is selected.
   boundaryOverride = null,
 }) {
   const [hubRecords, setHubRecords] = useState([]);
-  const [addMode, setAddMode] = useState(false);
   const [pendingLatLng, setPendingLatLng] = useState(null);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [hubNameDraft, setHubNameDraft] = useState('');
@@ -392,19 +366,12 @@ function LocationDensityMap({
     }
   }, [pendingLatLng]);
 
-  const handlePickLocation = useCallback((latLng) => {
-    setAddMode(false);
-    setHubNameDraft('');
-    setPendingLatLng(latLng);
-  }, []);
-
   // Opens the same naming dialog without requiring a map click first — the
   // lat/lng inputs in it start at the barangay's known center and are fully
   // editable, so a location can be added by typing coordinates alone (e.g.
   // copied from another map/GPS reading) instead of having to click the
   // exact spot.
   const openManualEntry = useCallback(() => {
-    setAddMode(false);
     setHubNameDraft('');
     setPendingLatLng({ lat: PAKNAAN_CENTER.lat, lng: PAKNAAN_CENTER.lng });
   }, []);
@@ -563,6 +530,16 @@ function LocationDensityMap({
   }
   const selectedVehicleIcon = useMemo(() => createSelectedVehicleIcon(), []);
 
+  // Vehicles still parked at the hub pending deletion — the backend already
+  // refuses this delete server-side (a vehicle's current_location still
+  // points at it), but surfacing it here lets the Admin see which vehicles
+  // are blocking it and act on them, instead of only finding out after the
+  // delete request comes back with an error.
+  const deleteCandidateVehicles = useMemo(() => {
+    if (!deleteCandidate) return [];
+    return vehicleGroups.find((group) => group.hub.id === deleteCandidate.id)?.vehicles ?? [];
+  }, [deleteCandidate, vehicleGroups]);
+
   return (
     <div className={`location-density-map-shell${isMaximized ? ' is-maximized' : ''}`} ref={mapShellRef}>
       <div className="location-density-toolbar">
@@ -573,7 +550,7 @@ function LocationDensityMap({
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
           {canManageHubs
-            ? (addMode ? 'Click anywhere on the map to drop the new hub.' : 'Click "Add Hub" then the map to pin a location, or "By Coordinates" to type its name and lat/lng directly.')
+            ? '"Add Hub" opens the add-location form, or use "By Coordinates" to type its name and lat/lng directly.'
             : 'Hubs shown here are shared by every workspace user.'}
         </span>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -608,29 +585,17 @@ function LocationDensityMap({
           {canManageHubs && (
             <button
               type="button"
-              className={`location-density-btn ${addMode ? 'is-active' : 'is-primary'}`}
-              onClick={() => setAddMode((prev) => !prev)}
+              className="location-density-btn is-primary"
+              onClick={onAddHub}
             >
-              {addMode ? (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                  Cancel
-                </>
-              ) : (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
-                    <circle cx="12" cy="9" r="2.5" fill="currentColor" stroke="none" />
-                  </svg>
-                  Add Hub
-                </>
-              )}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+                <circle cx="12" cy="9" r="2.5" fill="currentColor" stroke="none" />
+              </svg>
+              Add Hub
             </button>
           )}
-          {canManageHubs && !addMode && (
+          {canManageHubs && (
             <button
               type="button"
               className="location-density-btn is-secondary"
@@ -745,7 +710,6 @@ function LocationDensityMap({
         zoom={16}
         zoomControl={false}
       >
-        <MapClickHandler addMode={addMode} onPickLocation={handlePickLocation} />
         {basemap === 'satellite' ? (
           <>
             <TileLayer attribution={ESRI_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={ESRI_IMAGERY_URL} />
@@ -1019,10 +983,23 @@ function LocationDensityMap({
               <h3 id="hub-delete-title">Delete hub</h3>
             </div>
 
-            <p className="hub-modal-message">
-              Remove <strong>{deleteCandidate.name}</strong> from the map and location choices?
-            </p>
-            {!deleteCandidate.isCustom && (
+            {deleteCandidateVehicles.length > 0 ? (
+              <>
+                <p className="hub-modal-message">
+                  <strong>{deleteCandidate.name}</strong> still has {deleteCandidateVehicles.length} vehicle{deleteCandidateVehicles.length > 1 ? 's' : ''} assigned to it. Relocate or update {deleteCandidateVehicles.length > 1 ? 'those vehicles' : 'that vehicle'} to another location before this hub can be deleted.
+                </p>
+                <ul className="hub-modal-vehicle-list">
+                  {deleteCandidateVehicles.map((vehicle) => (
+                    <li key={vehicle.vehicle_id}>{vehicle.vehicle_name} · {vehicle.plate_number}</li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="hub-modal-message">
+                Remove <strong>{deleteCandidate.name}</strong> from the map and location choices?
+              </p>
+            )}
+            {!deleteCandidate.isCustom && deleteCandidateVehicles.length === 0 && (
               <p className="hub-modal-coords">
 Built-in hubs are hidden for every user and can be restored later.
               </p>
@@ -1030,11 +1007,13 @@ Built-in hubs are hidden for every user and can be restored later.
 
             <div className="hub-modal-actions">
               <button type="button" className="hub-modal-btn hub-modal-cancel" onClick={cancelDeleteHub}>
-                Cancel
+                {deleteCandidateVehicles.length > 0 ? 'Close' : 'Cancel'}
               </button>
-              <button type="button" className="hub-modal-btn hub-modal-delete" onClick={confirmDeleteHub}>
-                Delete Hub
-              </button>
+              {deleteCandidateVehicles.length === 0 && (
+                <button type="button" className="hub-modal-btn hub-modal-delete" onClick={confirmDeleteHub}>
+                  Delete Hub
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -257,7 +257,9 @@ function Register() {
         {submitted ? (
           <div>
             <p className="notice success">
-              Registration submitted. An administrator must approve your account before you can sign in.
+              {isFirstForBarangay
+                ? 'Registration submitted. A Super Admin must review and approve your account as this barangay\'s first Administrator before you can sign in.'
+                : 'Registration submitted. An administrator must approve your account before you can sign in.'}
             </p>
             <Link className="primary-button auth-submit-btn" to="/login" style={{ display: 'flex', textDecoration: 'none' }}>
               Back to Login
@@ -413,7 +415,7 @@ function Register() {
 
             {isFirstForBarangay === true && (
               <p className="notice success auth-field-full">
-                You&apos;ll be the first to register here — you&apos;ll become this barangay&apos;s Administrator once your staff registration code is verified below.
+                You&apos;ll be the first to register here — you&apos;ll become this barangay&apos;s Administrator once a Super Admin reviews and approves your account.
               </p>
             )}
 

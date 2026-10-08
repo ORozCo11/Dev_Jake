@@ -10,10 +10,18 @@ class Barangay extends Model
         'name',
         'city_id',
         'boundary',
+        'boundary_status',
+        'boundary_source',
+        'boundary_verified_at',
+        'boundary_verified_by',
+        'pending_boundary',
+        'pending_boundary_source',
     ];
 
     protected $casts = [
         'boundary' => 'array',
+        'boundary_verified_at' => 'datetime',
+        'pending_boundary' => 'array',
     ];
 
     public function city()
@@ -24,6 +32,23 @@ class Barangay extends Model
     public function users()
     {
         return $this->hasMany(User::class);
+    }
+
+    public function registrationSetting()
+    {
+        return $this->hasOne(RegistrationSetting::class);
+    }
+
+    /**
+     * Used wherever a barangay's boundary is labeled for a viewer (e.g. the
+     * Vehicle Location map) — several barangay names repeat across
+     * neighboring cities (Banilad, Basak, ...), so the bare name alone is
+     * ambiguous. Relies on `city` being eager-loaded; falls back to null
+     * rather than lazy-loading it on every row.
+     */
+    public function getCityNameAttribute(): ?string
+    {
+        return $this->relationLoaded('city') ? $this->city?->name : null;
     }
 
     /**

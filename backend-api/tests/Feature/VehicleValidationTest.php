@@ -32,6 +32,33 @@ class VehicleValidationTest extends TestCase
         return $admin;
     }
 
+    private function actingAsCustodian(): User
+    {
+        $custodian = User::factory()->create(['role' => 'Custodian']);
+        Sanctum::actingAs($custodian, ['*']);
+
+        return $custodian;
+    }
+
+    // Production-readiness audit finding #6 — vehicle registration needs an
+    // explicit per-account delegation (can_register_vehicles), not just the
+    // Custodian role.
+    private function actingAsDelegatedCustodian(): User
+    {
+        $custodian = User::factory()->create(['role' => 'Custodian', 'can_register_vehicles' => true]);
+        Sanctum::actingAs($custodian, ['*']);
+
+        return $custodian;
+    }
+
+    private function actingAsMechanic(): User
+    {
+        $mechanic = User::factory()->create(['role' => 'Maintenance Personnel']);
+        Sanctum::actingAs($mechanic, ['*']);
+
+        return $mechanic;
+    }
+
     private function category(): VehicleCategory
     {
         return VehicleCategory::create([
@@ -213,5 +240,80 @@ class VehicleValidationTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['fuel_type']);
+    }
+
+    // =======================================================================
+    // Vehicle registration — Admin + a delegated Custodian may register a
+    // vehicle; Maintenance Personnel may not. Registration is data entry,
+    // not a transfer of accountability — vehicle.edit stays Admin-only (see
+    // PhaseB4RoleModelTest), so a Custodian who registers one still can't
+    // freely change its protected master data afterward.
+    // =======================================================================
+
+    #[Test]
+    public function a_custodian_can_register_a_vehicle_when_delegated(): void
+    {
+        $this->actingAsDelegatedCustodian();
+
+        $response = $this->postJson('/api/vehicles', $this->validPayload());
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('vehicles', ['plate_number' => 'ABC-1234']);
+    }
+
+    #[Test]
+    public function a_custodian_can_register_a_vehicle_even_without_the_legacy_delegation_flag(): void
+    {
+        // User::canRegisterVehicles() no longer requires the extra
+        // can_register_vehicles flag on top of the role (production-
+        // readiness audit finding #6 was reversed) — vehicle registration is
+        // now a standard Custodian duty for ANY Custodian account. The
+        // can_register_vehicles column is kept for account history, but
+        // this proves a Custodian WITHOUT it still succeeds.
+        $this->actingAsCustodian();
+
+        $response = $this->postJson('/api/vehicles', $this->validPayload());
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('vehicles', ['plate_number' => 'ABC-1234']);
+    }
+
+    #[Test]
+    public function maintenance_personnel_cannot_register_a_vehicle(): void
+    {
+        $this->actingAsMechanic();
+
+        $response = $this->postJson('/api/vehicles', $this->validPayload());
+
+        $response->assertForbidden();
+        $this->assertDatabaseCount('vehicles', 0);
+    }
+
+    #[Test]
+    public function a_custodian_who_registered_a_vehicle_still_cannot_edit_its_master_data(): void
+    {
+        $custodian = $this->actingAsDelegatedCustodian();
+        $created = $this->postJson('/api/vehicles', $this->validPayload())->assertCreated()->json();
+
+        Sanctum::actingAs($custodian, ['*']);
+        $response = $this->putJson("/api/vehicles/{$created['vehicle_id']}", [
+            'plate_number' => 'ZZZ-9999',
+        ]);
+
+        $response->assertForbidden();
+    }
+
+    #[Test]
+    public function registering_a_vehicle_logs_the_role_it_was_registered_under(): void
+    {
+        $custodian = $this->actingAsDelegatedCustodian();
+
+        $created = $this->postJson('/api/vehicles', $this->validPayload())->assertCreated()->json();
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $custodian->id,
+            'role' => 'Custodian',
+            'affected_record_id' => $created['vehicle_id'],
+        ]);
     }
 }

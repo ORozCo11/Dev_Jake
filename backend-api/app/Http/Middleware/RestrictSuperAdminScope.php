@@ -15,11 +15,14 @@ use Symfony\Component\HttpFoundation\Response;
  * ordinary /vehicles, /tickets, etc. endpoints. Rather than adding a
  * role check to dozens of individual controller methods, this is an
  * allowlist: a Super Admin may only reach /superadmin/*, /impersonate/*,
- * and the handful of account-level routes below — everything else 403s.
+ * /notifications/* (scoped strictly to `user_id` in NotificationController
+ * — no fleet/barangay data flows through it, and it's how a Super Admin
+ * is pushed pending-registration alerts via notifySuperAdmins()), and the
+ * handful of account-level routes below — everything else 403s.
  */
 class RestrictSuperAdminScope
 {
-    private const ALLOWED_PREFIXES = ['superadmin', 'impersonate'];
+    private const ALLOWED_PREFIXES = ['superadmin', 'impersonate', 'notifications'];
     private const ALLOWED_EXACT = ['logout', 'user', 'profile', 'profile/password', 'greeting'];
 
     public function handle(Request $request, Closure $next): Response

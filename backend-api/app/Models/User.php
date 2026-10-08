@@ -31,6 +31,7 @@ class User extends Authenticatable
         'photo_url',
         'is_active',
         'approved_at',
+        'can_register_vehicles',
     ];
 
     /**
@@ -45,6 +46,7 @@ class User extends Authenticatable
         'is_active' => 'boolean',
         'roles'     => 'array',
         'approved_at' => 'datetime',
+        'can_register_vehicles' => 'boolean',
     ];
 
     // Matches the migration's DB-level default. Without this, a User
@@ -108,6 +110,15 @@ class User extends Authenticatable
      * Match users who hold a given role either as their primary `role` or
      * anywhere in their `roles` list. Uses a portable LIKE against the JSON
      * text so it works identically on SQLite and Postgres (no JSON1 needed).
+     *
+     * This is a SQL-level mirror of hasRole()/allRoles() (PHP-level), kept
+     * separate deliberately — a query scope filters rows at the database
+     * before they're hydrated into User instances, so it can't call an
+     * instance method per row without pulling every row into PHP first,
+     * which would defeat the point of filtering in the query. Because the
+     * two are necessarily separate implementations of the same rule, they
+     * MUST be changed together — MultiRoleTest::scope_having_role_agrees_with_has_role_for_every_role_storage_shape
+     * guards against them silently drifting apart.
      */
     public function scopeHavingRole($query, string $role)
     {
@@ -115,5 +126,90 @@ class User extends Authenticatable
             $q->where('role', $role)
               ->orWhere('roles', 'like', '%"' . $role . '"%');
         });
+    }
+
+    /**
+     * Single source of truth for "can this account do X" (config/permissions.php),
+     * OR'd across every role the account holds. Ownership/live-state rules
+     * (own report, not-the-repairer, last-active-Admin, same barangay) are
+     * NOT decided here — they stay as separate guard calls next to this one,
+     * since they depend on a database record, not just the actor's role.
+     */
+    /**
+     * VMS-IMPROVEMENT-PLAN.md Phase B2 — every ability this account currently
+     * holds, for the frontend to gate on instead of role strings. Deliberately
+     * a plain method, not an Eloquent accessor/$appends entry: this is only
+     * meaningful for "who am I" (login response, GET /user) — appending it
+     * globally would silently bloat every OTHER user embedded elsewhere
+     * (a ticket's assignedCustodian, an issue's reportedBy, etc.) with an
+     * abilities array nobody asked for there.
+     */
+    public function getAbilities(): array
+    {
+        return collect(config('permissions'))
+            ->filter(fn (array $roles) => $this->hasAnyRole($roles))
+            ->keys()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Production-readiness audit finding #6 — vehicle.create's role grant
+     * (Admin, Custodian) says WHO is ever eligible; this is the per-account
+     * delegation check layered on top, same pattern as every other
+     * ownership/live-state guard in this codebase (not folded into
+     * config/permissions.php, which only ever expresses role membership).
+     * Admin is always allowed; a Custodian needs can_register_vehicles.
+     */
+    public function canRegisterVehicles(): bool
+    {
+        if ($this->hasRole('Admin')) {
+            return true;
+        }
+
+        // Vehicle registration is now a standard Custodian duty. Keep the
+        // old database flag for account history, but do not require it.
+        return $this->hasRole('Custodian');
+    }
+
+    public function canDo(string $ability): bool
+    {
+        // Note: config('permissions.' . $ability) would be wrong here — Laravel's
+        // config() helper splits every dot into a nested lookup, but
+        // config/permissions.php stores each ability as a single flat key that
+        // itself contains a dot (e.g. 'vehicle.create'), not a nested array.
+        $allowedRoles = config('permissions')[$ability] ?? [];
+
+        return $this->hasAnyRole($allowedRoles);
+    }
+
+    /**
+     * Which of this account's roles actually granted the given ability — the
+     * "function used" for an audit-log entry, as opposed to the primary
+     * `role` (which only reflects routing/dashboard layout). A dual-role
+     * account (e.g. Custodian + Maintenance Personnel) performing a
+     * Maintenance-only action should have THAT role recorded, even when
+     * their primary role is Custodian. Falls back to the primary role when
+     * the ability is unknown or the account doesn't actually hold it (the
+     * caller should already have gated on canDo() before reaching here).
+     */
+    public function effectiveRoleFor(string $ability): ?string
+    {
+        $allowedRoles = config('permissions')[$ability] ?? [];
+
+        // Primary role first (allRoles() doesn't guarantee that ordering on
+        // its own), so a role held both primarily and in the secondary
+        // `roles` list is reported the same way canDo() already treats it —
+        // a tie goes to the role that drives this account's dashboard/routing.
+        if ($this->role && in_array($this->role, $allowedRoles, true)) {
+            return $this->role;
+        }
+        foreach ($this->allRoles() as $candidate) {
+            if (in_array($candidate, $allowedRoles, true)) {
+                return $candidate;
+            }
+        }
+
+        return $this->role;
     }
 }

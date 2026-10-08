@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, Marker, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -65,7 +65,12 @@ export default function VehicleLocationMap({ lat, lng, label, scrollWheelZoom = 
       scrollWheelZoom={scrollWheelZoom}
       className="veh-map-canvas"
       attributionControl={false}
+      // The default top-left zoom control sat directly under the Map/
+      // Satellite toggle below, making the +/- buttons unreachable —
+      // moved to the opposite corner instead of just disabled.
+      zoomControl={false}
     >
+      <ZoomControl position="bottomright" />
       <ResizeMapOnContainerResize />
       {basemap === 'satellite' ? (
         <>

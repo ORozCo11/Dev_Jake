@@ -73,7 +73,7 @@ export default function About() {
 
       <section className="about-features">
         <div className="about-features-inner">
-          <h2 className="about-features-title">A Better Way to Run Your Barangay's Fleet</h2>
+          <h2 className="about-features-title">A Smarter Way to Manage Your Barangay's Fleet</h2>
           <div className="about-features-grid">
             {FEATURES.map((f) => (
               <div className="about-feature-card" key={f.title}>

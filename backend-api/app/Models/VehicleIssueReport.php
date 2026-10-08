@@ -42,4 +42,9 @@ class VehicleIssueReport extends Model
     {
         return $this->hasOne(MaintenanceTicket::class, 'issue_report_id', 'issue_report_id');
     }
+
+    public function attachments()
+    {
+        return $this->hasMany(IssueReportAttachment::class, 'issue_report_id', 'issue_report_id')->latest('attachment_id');
+    }
 }

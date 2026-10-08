@@ -12,6 +12,8 @@ class Vehicle extends Model
     protected $primaryKey = 'vehicle_id';
 
     protected $fillable = [
+        'custom_values',
+        'criticality',
         'vehicle_name',
         'plate_number',
         'category_id',
@@ -40,6 +42,7 @@ class Vehicle extends Model
     ];
 
     protected $casts = [
+        'custom_values' => 'array',
         'archived_at' => 'datetime',
         'decommissioned_at' => 'datetime',
         // Serialize as a plain Y-m-d string so it binds directly to a
@@ -65,6 +68,12 @@ class Vehicle extends Model
     public function schedules()
     {
         return $this->hasMany(VehicleMaintenanceSchedule::class, 'vehicle_id', 'vehicle_id');
+    }
+
+    // Admin's per-vehicle override, else the Vehicle Type's default.
+    public function effectiveCriticality(): string
+    {
+        return $this->criticality ?: ($this->category?->default_criticality ?: 'Normal');
     }
 
     public function readinessChecks()

@@ -14,7 +14,11 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProvinceController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\VehicleImportController;
+use App\Http\Controllers\VehicleTypeFieldController;
+use App\Http\Controllers\VehicleUsageController;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\RestrictImpersonatedToReadOnly;
 use App\Http\Middleware\RestrictSuperAdminScope;
 
 /*
@@ -55,14 +59,19 @@ Route::post('/concern-reports', [ConcernReportController::class, 'store'])->midd
 | Protected Routes (Requires a Valid Sanctum Token in Header)
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdminScope::class])->group(function () {
+Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdminScope::class, RestrictImpersonatedToReadOnly::class])->group(function () {
     
     // Session termination route
     Route::post('/logout', [AuthController::class, 'logout']);
 
     // Secure user identification endpoint (useful for checking active status on refresh)
     Route::get('/user', function (Request $request) {
-        return $request->user();
+        $user = $request->user();
+
+        // 'abilities' is added here rather than via a global User $appends —
+        // this route is "who am I", the one place the frontend actually
+        // needs the list (VMS-IMPROVEMENT-PLAN.md Phase B2).
+        return array_merge($user->toArray(), ['abilities' => $user->getAbilities()]);
     });
 
     // DEV-ONLY impersonation (fast role-switching for testing). These handlers
@@ -89,20 +98,35 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/maintenance-types', [CatalogController::class, 'storeMaintenanceType']);
     Route::put('/maintenance-types/{maintenanceType}', [CatalogController::class, 'updateMaintenanceType']);
     Route::delete('/maintenance-types/{maintenanceType}', [CatalogController::class, 'destroyMaintenanceType']);
+    Route::get('/reported-persons', [CatalogController::class, 'reportedPersons']);
+    Route::post('/reported-persons', [CatalogController::class, 'storeReportedPerson']);
+    Route::put('/reported-persons/{reportedPerson}', [CatalogController::class, 'updateReportedPerson']);
+    Route::delete('/reported-persons/{reportedPerson}', [CatalogController::class, 'destroyReportedPerson']);
 
     Route::get('/categories', [FleetController::class, 'categories']);
     Route::post('/categories', [FleetController::class, 'storeCategory']);
     Route::put('/categories/{category}', [FleetController::class, 'updateCategory']);
     Route::delete('/categories/{category}', [FleetController::class, 'deleteCategory']);
+    Route::get('/categories/{category}/fields', [VehicleTypeFieldController::class, 'index']);
+    Route::post('/categories/{category}/fields', [VehicleTypeFieldController::class, 'store']);
+    Route::put('/category-fields/{field}', [VehicleTypeFieldController::class, 'update']);
 
     Route::get('/vehicles', [FleetController::class, 'vehicles']);
     Route::post('/vehicles', [FleetController::class, 'storeVehicle']);
+    Route::get('/vehicle-imports/template', [VehicleImportController::class, 'template']);
+    Route::post('/vehicle-imports', [VehicleImportController::class, 'preview']);
+    Route::post('/vehicle-imports/{import}/commit', [VehicleImportController::class, 'commit']);
+    Route::get('/vehicle-imports/{import}/errors', [VehicleImportController::class, 'errorReport']);
     Route::put('/vehicles/{vehicle}', [FleetController::class, 'updateVehicle']);
     Route::delete('/vehicles/{vehicle}', [FleetController::class, 'archiveVehicle']);
     Route::post('/vehicles/{vehicle}/restore', [FleetController::class, 'restoreVehicle']);
     Route::put('/vehicles/{vehicle}/decommission', [FleetController::class, 'decommissionVehicle']);
     Route::get('/vehicles/{vehicle}/reliability', [FleetController::class, 'vehicleReliability']);
     Route::get('/vehicles/{vehicle}/readiness', [FleetController::class, 'vehicleReadiness']);
+    Route::post('/vehicles/{vehicle}/request-inspection', [FleetController::class, 'requestInspection']);
+    Route::get('/vehicles/{vehicle}/usage', [VehicleUsageController::class, 'index']);
+    Route::post('/vehicles/{vehicle}/usage', [VehicleUsageController::class, 'start']);
+    Route::put('/usage-logs/{log}/end', [VehicleUsageController::class, 'end']);
     Route::post('/vehicles/{vehicle}/readiness-check', [FleetController::class, 'storeReadinessCheck']);
     Route::put('/vehicles/{vehicle}/mark-available', [FleetController::class, 'markVehicleAvailable']);
     Route::get('/vehicles/{vehicle}/open-tickets', [TicketController::class, 'openTicketsForVehicle']);
@@ -132,12 +156,18 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     |--------------------------------------------------------------------------
     */
     Route::get('/superadmin/barangays', [SuperAdminController::class, 'barangays']);
+    Route::post('/superadmin/barangays', [SuperAdminController::class, 'storeBarangay']);
     Route::get('/superadmin/users', [SuperAdminController::class, 'users']);
+    Route::get('/superadmin/pending-approvals', [SuperAdminController::class, 'pendingApprovals']);
     Route::put('/superadmin/users/{user}/activate', [SuperAdminController::class, 'activateUser']);
     Route::put('/superadmin/users/{user}/deactivate', [SuperAdminController::class, 'deactivateUser']);
+    Route::delete('/superadmin/users/{user}/reject', [SuperAdminController::class, 'rejectUser']);
     Route::put('/superadmin/users/{user}/role', [SuperAdminController::class, 'updateUserRole']);
     Route::get('/superadmin/barangays/{barangay}/registration-code', [SuperAdminController::class, 'registrationCode']);
     Route::post('/superadmin/barangays/{barangay}/registration-code/regenerate', [SuperAdminController::class, 'regenerateRegistrationCode']);
+    Route::post('/superadmin/barangays/{barangay}/boundary/refresh', [SuperAdminController::class, 'refreshBarangayBoundary']);
+    Route::post('/superadmin/barangays/{barangay}/boundary/confirm', [SuperAdminController::class, 'confirmBarangayBoundary']);
+    Route::delete('/superadmin/barangays/{barangay}/boundary/pending', [SuperAdminController::class, 'discardPendingBoundary']);
     Route::get('/superadmin/activity-log', [SuperAdminController::class, 'activityLog']);
     Route::get('/superadmin/concern-reports', [SuperAdminController::class, 'concernReports']);
     Route::put('/superadmin/concern-reports/{concernReport}/resolve', [SuperAdminController::class, 'resolveConcernReport']);
@@ -157,9 +187,12 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::get('/issues', [FleetController::class, 'issues']);
     Route::get('/vehicles/{vehicle}/open-issues', [FleetController::class, 'openIssuesForVehicle']);
     Route::get('/issues/{issue}', [FleetController::class, 'showIssue']);
+    Route::post('/issues/{issue}/recommend-ticket', [FleetController::class, 'recommendTicket']);
     Route::post('/issues', [FleetController::class, 'storeIssue']);
     Route::put('/issues/{issue}', [FleetController::class, 'updateIssue']);
     Route::delete('/issues/{issue}', [FleetController::class, 'destroyIssue']);
+    Route::put('/issues/{issue}/dismiss', [FleetController::class, 'dismissIssue']);
+    Route::delete('/issue-attachments/{attachment}', [FleetController::class, 'destroyIssueAttachment']);
 
     Route::get('/maintenance-records', [FleetController::class, 'maintenanceRecords']);
     Route::get('/maintenance-records/{record}', [FleetController::class, 'showMaintenanceRecord']);
@@ -171,7 +204,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     Route::get('/maintenance-schedules', [FleetController::class, 'schedules']);
     Route::post('/maintenance-schedules', [FleetController::class, 'storeSchedule']);
+    Route::post('/maintenance-schedules/suggest', [FleetController::class, 'suggestSchedule']);
     Route::put('/maintenance-schedules/{schedule}', [FleetController::class, 'updateSchedule']);
+    Route::put('/maintenance-schedules/{schedule}/reassign', [FleetController::class, 'reassignSchedule']);
     Route::put('/maintenance-schedules/{schedule}/complete', [FleetController::class, 'completeSchedule']);
     Route::post('/maintenance-schedules/{schedule}/restore', [FleetController::class, 'restoreSchedule']);
     Route::delete('/maintenance-schedules/{schedule}', [FleetController::class, 'deleteSchedule']);
@@ -193,12 +228,19 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     // Phase 1 — Admin: Create ticket (Main Issue) & assign to Custodian
     Route::post('/tickets', [TicketController::class, 'createTicket']);
+    Route::post('/tickets/propose', [TicketController::class, 'proposeTicket']);
+    Route::put('/tickets/{ticket}/approve', [TicketController::class, 'approveTicket']);
+    Route::put('/tickets/{ticket}/decline', [TicketController::class, 'declineTicket']);
+    Route::put('/tickets/{ticket}/undecline', [TicketController::class, 'undeclineTicket']);
+
+    // Ticket-level workflow. Sub-issues remain work-line details and audit
+    // evidence, never separate user-facing work orders.
+    Route::put('/tickets/{ticket}/assign-mechanic', [TicketController::class, 'assignTicketMechanic']);
+    Route::put('/tickets/{ticket}/submit-for-verification', [TicketController::class, 'submitForVerification']);
+    Route::put('/tickets/{ticket}/verify', [TicketController::class, 'verifyTicket']);
 
     // Phase 2 — Custodian: Submit inspection, populate the sub-issue list
     Route::put('/tickets/{ticket}/inspect', [TicketController::class, 'submitInspection']);
-
-    // Append a newly discovered root cause while the ticket is still Active
-    Route::post('/tickets/{ticket}/sub-issues', [TicketController::class, 'addSubIssue']);
 
     // Phase 3 — Admin: Dispatch work order to a mechanic, per sub-issue
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/assign-mechanic', [TicketController::class, 'assignMechanic']);
@@ -213,6 +255,15 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
 
     // Phase 3 — Mechanic: Log physical repairs on a sub-issue
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/log-repairs', [TicketController::class, 'logRepairs']);
+    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/external-sent', [TicketController::class, 'markExternalSent']);
+    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/external-returned', [TicketController::class, 'markExternalReturned']);
+    Route::post('/tickets/{ticket}/sub-issues', [TicketController::class, 'addSubIssue']);
+    Route::put('/tickets/{ticket}/sub-issues/{subIssue}', [TicketController::class, 'updateSubIssue']);
+    Route::delete('/tickets/{ticket}/sub-issues/{subIssue}', [TicketController::class, 'deleteSubIssue']);
+
+    // Phase 3.5 — Admin: Approve or reject a cannibalized repair
+    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/approve-cannibalization', [TicketController::class, 'approveCannibalization']);
+    Route::put('/tickets/{ticket}/sub-issues/{subIssue}/reject-cannibalization', [TicketController::class, 'rejectCannibalization']);
 
     // Phase 4 Tier 1 — Custodian: Verify a sub-issue's repair
     Route::put('/tickets/{ticket}/sub-issues/{subIssue}/verify', [TicketController::class, 'verifyRepair']);

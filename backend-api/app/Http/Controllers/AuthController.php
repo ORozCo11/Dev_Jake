@@ -119,6 +119,15 @@ class AuthController extends Controller
 
             $role = $isFirstForBarangay ? 'Admin' : $roleData['requested_role'];
 
+            // Was: `is_active: $isFirstForBarangay` — the first person to
+            // register for a barangay went live instantly, with nobody ever
+            // reviewing them. The shared staff code only proves "someone
+            // handed me a code for this barangay," not "I'm the legitimate
+            // first Admin" — anyone holding that code could win the race.
+            // Every registrant, first-for-barangay or not, now starts
+            // inactive and waits for a human: Super Admin approves the
+            // first Admin per barangay (see SuperAdminController::
+            // pendingAdmins()); an existing Admin approves everyone after.
             $user = User::create([
                 'name' => $data['name'],
                 'email' => $data['email'],
@@ -130,16 +139,36 @@ class AuthController extends Controller
                 'barangay_name' => $data['barangay_name'] ?? null,
                 'role' => $role,
                 'roles' => [$role],
-                'is_active' => $isFirstForBarangay,
-                'approved_at' => $isFirstForBarangay ? now() : null,
+                'is_active' => false,
+                'approved_at' => null,
             ]);
 
             return [$user, $isFirstForBarangay];
         });
 
+        if ($isFirstForBarangay) {
+            $barangayLabel = $user->barangay_name ?? $user->barangay?->name ?? 'their barangay';
+            $this->notifySuperAdmins(
+                'New barangay Admin awaiting approval',
+                "{$user->name} registered as the first Admin for {$barangayLabel}. Review and approve before they can sign in.",
+                'pending_admin_approval'
+            );
+        } else {
+            // Every other registration is approved by the barangay's own
+            // Admin(s), who otherwise had no way to learn a pending account
+            // existed short of happening to open the Users module
+            // (VMS-IMPROVEMENT-PLAN.md Phase B6).
+            $this->notifyAdmins(
+                'New staff registration awaiting approval',
+                "{$user->name} registered as {$user->role} and is awaiting your approval before they can sign in.",
+                'pending_staff_approval',
+                $user->barangay_id
+            );
+        }
+
         return response()->json([
             'message' => $isFirstForBarangay
-                ? 'Admin account created for your barangay. You can sign in now.'
+                ? 'Registration submitted. A Super Admin must approve your account (as the first Admin for your barangay) before you can sign in.'
                 : 'Registration submitted. An administrator must approve your account before you can sign in.',
             'user' => [
                 'id' => $user->id,
@@ -147,6 +176,40 @@ class AuthController extends Controller
                 'email' => $user->email,
             ],
         ], 201);
+    }
+
+    // Mirrors FleetController::notifyAdmins() — Super Admin is unscoped by
+    // barangay, so this reaches every Super Admin account platform-wide,
+    // not just one barangay's.
+    private function notifySuperAdmins(string $title, string $message, string $type): void
+    {
+        $superAdmins = User::havingRole('Super Admin')->get();
+        foreach ($superAdmins as $superAdmin) {
+            \App\Models\Notification::create([
+                'user_id' => $superAdmin->id,
+                'title' => $title,
+                'message' => $message,
+                'type' => $type,
+                'ticket_id' => null,
+            ]);
+        }
+    }
+
+    // Same shape as FleetController::notifyAdmins() / TicketController's own
+    // copy — a fourth near-identical instance rather than a new shared
+    // service, matching how the other two already coexist.
+    private function notifyAdmins(string $title, string $message, string $type, ?int $barangayId): void
+    {
+        $admins = User::where('barangay_id', $barangayId)->havingRole('Admin')->get();
+        foreach ($admins as $admin) {
+            \App\Models\Notification::create([
+                'user_id' => $admin->id,
+                'title' => $title,
+                'message' => $message,
+                'type' => $type,
+                'ticket_id' => null,
+            ]);
+        }
     }
 
     /**
@@ -199,15 +262,27 @@ class AuthController extends Controller
         }
 
         if (!$user->is_active) {
-            // approved_at is only ever set the moment an Admin first approves
-            // an account (UserController::activate) — a still-NULL value
-            // means this account has never been approved yet at all (a
-            // brand-new registrant waiting in the queue), which reads very
-            // differently from an account an Admin actively deactivated
-            // after it was already in use.
-            $message = $user->approved_at === null
-                ? 'Your account is still awaiting approval from your barangay\'s Admin.'
-                : 'This account has been deactivated. Contact an administrator.';
+            // approved_at is only ever set the moment an Admin (or, for a
+            // barangay's first-ever Admin, a Super Admin) first approves an
+            // account (UserController::activate / SuperAdminController::
+            // activateUser) — a still-NULL value means this account has
+            // never been approved yet at all (a brand-new registrant waiting
+            // in the queue), which reads very differently from an account an
+            // Admin actively deactivated after it was already in use. A
+            // pending Admin with no other active Admin in their barangay is
+            // specifically the case a Super Admin approves, not their own
+            // (nonexistent) barangay Admin — the message reflects who they're
+            // actually waiting on.
+            $awaitsSuperAdmin = $user->approved_at === null
+                && $user->role === 'Admin'
+                && !User::where('barangay_id', $user->barangay_id)->where('id', '!=', $user->id)
+                    ->havingRole('Admin')->where('is_active', true)->exists();
+
+            $message = $user->approved_at !== null
+                ? 'This account has been deactivated. Contact an administrator.'
+                : ($awaitsSuperAdmin
+                    ? 'Your account is still awaiting approval from a Super Admin, as the first Admin for your barangay.'
+                    : 'Your account is still awaiting approval from your barangay\'s Admin.');
 
             return response()->json(['message' => $message], 403);
         }
@@ -227,6 +302,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $user->role, // Primary role — drives the portal layout
                 'roles' => $user->allRoles(), // Every hat this account may wear
+                'abilities' => $user->getAbilities(), // Phase B2 — what the frontend gates on
             ]
         ], 200);
     }
@@ -258,8 +334,7 @@ class AuthController extends Controller
      */
     private function canImpersonate(Request $request): bool
     {
-        return $request->user()?->hasRole('Admin')
-            || $request->user()?->hasRole('Super Admin')
+        return (bool) $request->user()?->canDo('impersonation.start')
             || (bool) $request->user()?->currentAccessToken()?->can('impersonated');
     }
 
@@ -320,20 +395,47 @@ class AuthController extends Controller
         // above.
         abort_if(!$user->is_active, 422, 'That account is deactivated.');
 
+        // A written reason, on every impersonation (dev-only included, so the
+        // habit — and the log's shape — is the same one that matters in
+        // production): this is a deliberate support/recovery action taken on
+        // someone else's behalf, not idle browsing, and the reason is what
+        // lets whoever reviews the log later actually judge that.
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:5', 'max:500'],
+        ], [
+            'reason.required' => 'A reason is required before impersonating an account.',
+        ]);
+
         // Impersonation is a brief, deliberate admin action, not a persistent
         // login — give it a short explicit expiry regardless of the global
         // Sanctum 'expiration' setting (config/sanctum.php), which governs
-        // ordinary login tokens instead.
-        $token = $user->createToken('impersonation_token', [...$user->allRoles(), 'impersonated'], now()->addHours(4))->plainTextToken;
+        // ordinary login tokens instead. 30 minutes (not the 4 hours this
+        // used to be): long enough for one support task, short enough that a
+        // forgotten/abandoned session doesn't sit live for hours.
+        // In 'local' only, no expiry at all — a dev jumping between many
+        // accounts to test a feature shouldn't get logged out mid-session
+        // ("Unauthenticated") just for taking longer than 30 minutes.
+        // Production/Super Admin support use is unaffected.
+        $impersonationExpiry = app()->environment('local') ? null : now()->addMinutes(30);
+        $token = $user->createToken('impersonation_token', [...$user->allRoles(), 'impersonated'], $impersonationExpiry)->plainTextToken;
 
         $actingAsSuperAdmin = $request->user()?->hasRole('Super Admin');
         ActivityLog::create([
-            'user_id' => $request->user()?->id,
-            'role'    => $request->user()?->role,
-            'action'  => 'Impersonate',
-            'module'  => $actingAsSuperAdmin ? 'Super Admin' : 'Dev Tools',
-            'details' => ($request->user()?->name ?? 'Someone') . " impersonated {$user->name}"
-                . ($actingAsSuperAdmin ? '.' : ' (dev only).'),
+            'user_id'     => $request->user()?->id,
+            'role'        => $request->user()?->role,
+            'action'      => 'Impersonate',
+            'module'      => $actingAsSuperAdmin ? 'Super Admin' : 'Dev Tools',
+            // Explicitly set (not left to BelongsToBarangay's creating-hook
+            // default, which would stamp the ACTOR's own barangay_id — null
+            // for a Super Admin) so this entry is visible in the TARGET
+            // barangay's own Activity Log (FleetController::logs(), scoped
+            // by BelongsToBarangay's global scope) as well as here via
+            // SuperAdminController::activityLog()'s module filter, from the
+            // same single row.
+            'barangay_id' => $user->barangay_id,
+            'details'     => ($request->user()?->name ?? 'Someone') . " impersonated {$user->name}"
+                . ($actingAsSuperAdmin ? '.' : ' (dev only).')
+                . " Reason: {$data['reason']}",
         ]);
 
         return response()->json([
@@ -345,6 +447,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role'  => $user->role,
                 'roles' => $user->allRoles(),
+                'abilities' => $user->getAbilities(),
             ],
         ]);
     }
@@ -354,8 +457,35 @@ class AuthController extends Controller
      */
     public function logout(Request $request)
     {
+        $user = $request->user();
+        $token = $user->currentAccessToken();
+
+        // Phase A5 — "log start and end": impersonate() above logs the
+        // start; ending one always goes through here (either an explicit
+        // logout, or Workspace.jsx's "Return to..." control, which calls
+        // this on the impersonated token before swapping back to the real
+        // account — see stopImpersonating()). $user IS the impersonated
+        // account at this point, not who started it, so this can't name
+        // them the way the start log does; cross-referencing barangay_id
+        // and timing against that start entry covers that.
+        //
+        // Keyed off the token's NAME, not ->can('impersonated') — see
+        // RestrictImpersonatedToReadOnly's docblock for why: the ability
+        // check is satisfied by ANY Sanctum::actingAs($user, ['*']) token,
+        // which is this whole test suite's normal way of authenticating.
+        if ($token?->name === 'impersonation_token') {
+            ActivityLog::create([
+                'user_id'     => $user->id,
+                'role'        => $user->role,
+                'action'      => 'Impersonation Ended',
+                'module'      => 'Super Admin',
+                'barangay_id' => $user->barangay_id,
+                'details'     => "Impersonated session for {$user->name} ended.",
+            ]);
+        }
+
         // Revoke the exact token string utilized to authenticate the active API request
-        $request->user()->currentAccessToken()->delete();
+        $token->delete();
 
         return response()->json([
             'message' => 'Session terminated and token revoked successfully.'

@@ -13,13 +13,7 @@ export default function WorkspaceFooter() {
           <Icon name="gear" size={36} className="workspace-footer-gear-icon" filled />
           <span className="vms-wordmark vms-wordmark-md workspace-footer-vms-text">vms</span>
         </div>
-        <p className="workspace-footer-tagline">A Smarter Way to Manage Your Barangay's Fleet.</p>
-        <div className="workspace-footer-social">
-          <a href="#" aria-label="Facebook"><Icon name="facebook" size={15} filled /></a>
-          <a href="#" aria-label="Instagram"><Icon name="instagram" size={15} filled /></a>
-          <a href="#" aria-label="X"><Icon name="twitterX" size={15} filled /></a>
-          <a href="#" aria-label="LinkedIn"><Icon name="linkedin" size={15} filled /></a>
-        </div>
+        <p className="workspace-footer-tagline">A System to Manage Your Barangay's Fleet.</p>
       </div>
       <div className="workspace-footer-actions">
         <div className="workspace-footer-buttons">

@@ -823,6 +823,10 @@
   position: sticky;
   top: var(--topbar-height, 64px);
   overflow-y: auto;
+  /* Same compositing-layer fix as .topbar — a sticky sidebar can lag a
+     frame behind the fixed header on fast scroll otherwise. */
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .sidebar-brand {
   display: flex; align-items: center; gap: 12px;
@@ -852,28 +856,41 @@
 .module-nav-group { display: flex; flex-direction: column; gap: 4px; }
 .module-nav-group + .module-nav-group { margin-top: 12px; }
 
-/* Section header — deliberately quieter than a nav item so it reads as a
-   label, not another destination you can click into. */
+/* Section header — same visual weight as a real nav item (icon + label +
+   chevron), not a quiet label, so it reads as the clickable accordion
+   trigger it is. No group-wide highlight box when expanded — just this
+   header's own hover/color state, like every other nav row. */
 .module-nav .module-nav-section {
-  display: flex; align-items: center; gap: 6px;
-  width: 100%; padding: 4px 12px;
-  background: transparent; border: none; border-radius: 6px;
-  color: #64748b;
-  font-size: 0.68rem; font-weight: 800;
-  text-transform: uppercase; letter-spacing: 0.07em;
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 10px 12px;
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  color: #cbd5e1;
+  font-size: 0.875rem; font-weight: 600;
+  text-transform: none; letter-spacing: normal;
   cursor: pointer; text-align: left;
-  transition: color 0.15s ease;
+  transition: all 0.15s ease;
 }
-.module-nav .module-nav-section:hover { background: transparent; color: #cbd5e1; }
+.module-nav .module-nav-section:hover { background: #1e293b; color: #f1f5f9; }
 .module-nav-section-label { flex: 1; }
 .module-nav-section-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
-/* Points right when folded, down when open. */
-.module-nav-section-chevron.is-collapsed { transform: rotate(-90deg); }
+/* Points down when folded, up (flipped) when open. */
+.module-nav-section-chevron.is-expanded { transform: rotate(180deg); }
+/* A section's own rows sit indented under its header's text, not flush with
+   it, so the parent/child relationship reads at a glance. */
+.module-nav-group > button:not(.module-nav-section) {
+  padding-left: 34px;
+}
 
 /* Icon-only rail: no room for section labels, and the groups are force-open
    in JS there so every icon stays reachable. */
 .sidebar.collapsed .module-nav-section { display: none; }
 .sidebar.collapsed .module-nav-group + .module-nav-group { margin-top: 8px; }
+/* ...and no room for the sub-item indent either — every icon must stay
+   centered like a top-level one. Specificity has to beat the light-theme
+   indent override below it in the cascade, not just the base indent rule. */
+.sidebar.collapsed .module-nav-group > button:not(.module-nav-section) {
+  padding-left: 10px;
+}
 
 .module-nav button {
   display: flex; align-items: center; gap: 10px;
@@ -938,6 +955,112 @@
   background: #ef4444;
   color: #ffffff;
 }
+
+/* Activity Log — a rounded pill color tag per module/category (color picked
+   deterministically per module string, see moduleBadgeTone), the Action
+   column as the plain full sentence, and a User cell that stacks the
+   actor's role in small muted text under their name instead of a separate
+   Role column. */
+.log-category-tag {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.log-user-cell { display: flex; flex-direction: column; gap: 2px; }
+.log-user-role {
+  padding-left: 34px;
+  font-size: 0.72rem;
+  color: var(--text-muted, #64748b);
+}
+
+/* Underline tabs (List View / Recent Activities, Card/List elsewhere) — a
+   lighter-weight alternative to the filled-pill .locations-tab-button
+   segmented control, for views that read as one page with two lenses
+   rather than a mode switch. */
+.view-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  margin-bottom: 16px;
+}
+.view-tabs button {
+  padding: 10px 2px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.view-tabs button:hover { color: var(--text, #1f2937); }
+.view-tabs button.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+/* Generate Report dropdown */
+.generate-report-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.generate-report-panel { width: 240px; padding: 6px; }
+.generate-report-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.generate-report-option:hover { background: var(--surface-2, #f8fafc); }
+.generate-report-option strong { font-size: 0.82rem; color: var(--text-strong, #0f172a); }
+.generate-report-option span { font-size: 0.72rem; color: var(--text-muted, #64748b); }
+
+/* Recent Activities timeline */
+.activity-timeline-wrap { margin-top: 4px; }
+.activity-timeline-title { margin: 0 0 16px; font-size: 1rem; font-weight: 700; color: var(--text-strong, #0f172a); }
+.activity-timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.activity-timeline::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--border, #e2e8f0);
+}
+.activity-timeline-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 0;
+}
+.activity-timeline-dot {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eff6ff;
+  color: #2563eb;
+}
+.activity-timeline-body { flex: 1; min-width: 0; }
+.activity-timeline-body strong { display: block; font-size: 0.88rem; color: var(--text-strong, #0f172a); }
+.activity-timeline-body p { margin: 2px 0 0; font-size: 0.82rem; color: var(--text-muted, #64748b); }
+.activity-timeline-time { flex-shrink: 0; font-size: 0.78rem; color: var(--text-muted, #94a3b8); white-space: nowrap; }
 
 /* SIDEBAR — collapsed state (icons only, hidden labels) */
 .sidebar-toggle-btn { flex-shrink: 0; }
@@ -1061,6 +1184,12 @@
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   min-height: var(--topbar-height, 64px);
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  /* Promotes the fixed header to its own GPU compositing layer — without
+     this, some Chrome/Windows setups repaint a `position: fixed` element a
+     frame late during a fast scroll, showing a brief gap between it and the
+     content underneath before it "catches up". */
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .topbar-left { display: flex; align-items: center; gap: 14px; }
 
@@ -1122,6 +1251,48 @@
 .breadcrumb-path { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; }
 .topbar h2 { font-size: 1.4rem; font-weight: 800; color: #0f172a; margin-top: 2px; }
 .topbar-right { display: flex; align-items: center; gap: 12px; }
+/* Phase A5 — persistent full-width reminder (not just a topbar button) that
+   the current session is a read-only impersonation, shown on every page
+   for as long as it's active. Amber/warning-toned on purpose, same family
+   as the app's other warning callouts, so it reads as "you're not really
+   this account" rather than blending in as ordinary chrome. */
+.impersonation-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  background: #4a2e05;
+  border-bottom: 1px solid #f59e0b;
+  color: #fcd34d;
+  font-size: 0.85rem;
+}
+.impersonation-banner > svg { flex-shrink: 0; }
+.impersonation-banner strong { color: #fde68a; }
+.impersonation-banner-return {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 7px 14px;
+  border: 1.5px solid #f59e0b;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+.impersonation-banner-return:hover { background: rgba(245, 158, 11, 0.22); }
+html[data-theme="light"] .impersonation-banner {
+  background: #fffbeb;
+  border-bottom: 1px solid #fcd34d;
+  color: #92400e;
+}
+html[data-theme="light"] .impersonation-banner strong { color: #78350f; }
+html[data-theme="light"] .impersonation-banner-return { color: #92400e; }
 .topbar-search {
   display: flex; align-items: center; position: relative;
   background: #f8fafc; border: 1px solid #e2e8f0;
@@ -1352,11 +1523,14 @@
 .auth-footer-links a:hover { color: yellowgreen; text-decoration: underline; transform: translateX(3px); }
 .auth-footer-links a:active { transform: scale(0.95); }
 .auth-footer-bottom {
-  display: flex;
+  /* 3-track grid (copyright | legal | empty) instead of space-between —
+     puts Privacy Policy/Terms of Service in the true visual center of the
+     bar rather than pinned to the right edge, regardless of how wide the
+     copyright text is. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
-  flex-wrap: wrap;
   max-width: 1180px;
   margin: 0 auto;
   padding: 20px 0;
@@ -1370,6 +1544,7 @@
 .auth-footer-legal {
   display: flex;
   gap: 24px;
+  justify-self: center;
 }
 .auth-footer-legal a {
   font-size: 0.8rem;
@@ -1380,7 +1555,7 @@
 .auth-footer-legal a:hover { color: yellowgreen; text-decoration: underline; }
 @media (max-width: 720px) {
   .auth-footer-main { flex-direction: column; }
-  .auth-footer-bottom { justify-content: center; text-align: center; }
+  .auth-footer-bottom { grid-template-columns: 1fr; justify-items: center; text-align: center; }
 }
 
 /* NOTICES */
@@ -1505,6 +1680,16 @@ html[data-theme="light"] .toast-notice-ticket-link:hover,
   color: #fca5a5;
   box-shadow: 0 4px 10px rgba(239, 68, 68, 0.18);
 }
+/* Action succeeded but flagged something worth a second look (e.g. a
+   self-verification conflict from assign-mechanic/reassign-custodian) —
+   amber, same family as the other warning callouts in the app, so it never
+   blends into an ordinary green success or reads as a red failure. */
+.toast-notice.warning {
+  background: #4a2e05;
+  border: 1px solid #f59e0b;
+  color: #fcd34d;
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.18);
+}
 html[data-theme="light"] .toast-notice.success {
   background: #eafcf3;
   border: 1px solid #86efac;
@@ -1517,6 +1702,40 @@ html[data-theme="light"] .toast-notice.error {
   color: #b91c1c;
   box-shadow: 0 4px 10px rgba(239, 68, 68, 0.12);
 }
+html[data-theme="light"] .toast-notice.warning {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.12);
+}
+/* Phase A4 — "you're the only active Admin" dashboard banner. Same amber
+   family as .toast-notice.warning, but a persistent inline section (not a
+   dismissible toast) since this is standing state, not a one-off event. */
+.dashboard-sole-admin-warning {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: #4a2e05;
+  border: 1px solid #f59e0b;
+  color: #fcd34d;
+}
+.dashboard-sole-admin-warning > svg { flex-shrink: 0; }
+.dashboard-sole-admin-warning strong { display: block; color: #fde68a; }
+.dashboard-sole-admin-warning p { margin: 2px 0 0; font-size: 0.85rem; opacity: 0.9; }
+.dashboard-sole-admin-warning .ghost-button { flex-shrink: 0; margin-left: auto; border-color: #f59e0b; color: #fde68a; }
+html[data-theme="light"] .dashboard-sole-admin-warning {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+html[data-theme="light"] .dashboard-sole-admin-warning strong { color: #78350f; }
+html[data-theme="light"] .dashboard-sole-admin-warning .ghost-button { border-color: #fcd34d; color: #92400e; }
+/* Phase A4 — the same warning, compact, next to a barangay's Admin Status
+   badge in the Super Admin's barangay list. */
+.sole-admin-flag { display: inline-flex; color: #f59e0b; cursor: help; }
+html[data-theme="light"] .sole-admin-flag { color: #d97706; }
 /* Icon + message side by side, not stacked — any extra content (e.g. the
    ticket-link buttons below) still stacks under this row since the outer
    .toast-notice itself stays a column. */
@@ -1741,6 +1960,33 @@ html[data-theme="light"] .toast-notice.error {
   flex-shrink: 0;
 }
 
+/* Centered modal loader (see SubmitLoadingOverlay) — a bigger, more
+   noticeable alternative to the in-button spinner above, for submits that
+   sit on a long scrolled form (e.g. Create Ticket) where a spinner tucked
+   inside the submit button at the bottom is easy to miss. */
+.submit-loading-overlay { z-index: 400; }
+.submit-loading-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.25);
+  animation: modalIn 0.22s ease;
+}
+.submit-loading-gear {
+  animation: loaderSpin 1s linear infinite;
+  color: #2563eb;
+}
+.submit-loading-label {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
 /* --- Full-screen session loader --- */
 .fullscreen-loader {
   position: fixed;
@@ -1808,14 +2054,14 @@ html[data-theme="light"] .toast-notice.error {
 /* MODULE GRID — always full width; forms open as modals */
 .module-grid { display: grid; grid-template-columns: 1fr; gap: 24px; align-items: start; }
 
-/* Issue Reports' stat cards + filter bar share a left column; the "what
-   just came in" card sits in a fixed-width right column spanning BOTH
-   rows — tall enough to run alongside the cards and the (narrow, natural-
-   width) filter row below them, instead of one flat strip per row. */
+/* Issue Reports overview row: stat cards span the full width, then a
+   "Projects"-style chart pairs with the "what just came in" activity card
+   (same row, chart on the left / activity on the right), and the filter bar
+   spans full width again below both. */
 .issue-summary-grid {
   display: grid;
   grid-template-columns: 1fr 420px;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   gap: 16px;
 }
 @media (max-width: 900px) {
@@ -1824,19 +2070,25 @@ html[data-theme="light"] .toast-notice.error {
   }
 }
 .issue-summary-stats {
-  grid-column: 1;
+  grid-column: 1 / -1;
   grid-row: 1;
   min-width: 0;
 }
 .issue-summary-stats .metric-grid {
   margin-bottom: 0 !important;
 }
-.issue-summary-filters {
+.issue-summary-chart {
   grid-column: 1;
   grid-row: 2;
   min-width: 0;
 }
+.issue-summary-filters {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-width: 0;
+}
 @media (max-width: 900px) {
+  .issue-summary-chart,
   .issue-summary-filters {
     grid-column: 1;
     grid-row: auto;
@@ -1844,7 +2096,7 @@ html[data-theme="light"] .toast-notice.error {
 }
 .latest-issue-card {
   grid-column: 2;
-  grid-row: 1 / 3;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2004,6 +2256,17 @@ html[data-theme="light"] .toast-notice.error {
 @media (max-width: 560px) {
   .dashboard-headline-grid { grid-template-columns: 1fr !important; }
 }
+/* Maintenance Schedule's 8-card row (Total + 4 urgency buckets + Completed
+   + Awaiting Verification + Cancelled) — same fixed-column fix as the
+   dashboard's headline grid, so it lands as two even rows of four instead
+   of auto-fit's ragged trailing row (7 wide columns, 1 card alone on row 2). */
+.schedule-stat-grid { grid-template-columns: repeat(4, 1fr) !important; }
+@media (max-width: 900px) {
+  .schedule-stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 560px) {
+  .schedule-stat-grid { grid-template-columns: 1fr !important; }
+}
 .full-span { grid-column: 1/-1; }
 .metric-card {
   background: linear-gradient(180deg, #ffffff, #f8fbff); border: 1px solid #d9e6f8; border-radius: 16px; padding: 22px;
@@ -2060,8 +2323,12 @@ html[data-theme="light"] .toast-notice.error {
   transform: translateY(-2px);
 }
 .metric-card-iconic .metric-card-body { display: flex; flex-direction: column; text-align: left; }
-.metric-card-iconic .metric-card-body span { margin-bottom: 4px; }
-.metric-card-iconic .metric-card-body strong { font-size: 1.5rem; }
+/* Fixed (not theme-variable) colors — .metric-card's own background is
+   hardcoded white/light regardless of app theme, so these cards need text
+   that's always readable against that, not var(--text-strong)/(--text-muted)
+   which flip to near-white in dark mode and would vanish on a white card. */
+.metric-card-iconic .metric-card-body span { margin-bottom: 4px; color: #64748b; }
+.metric-card-iconic .metric-card-body strong { font-size: 1.5rem; color: #0f172a; }
 
 /* Dashboard's top metric row specifically — a touch more compact than the
    iconic stat cards used on module pages (Vehicle Management, etc.). */
@@ -2113,6 +2380,13 @@ table colgroup ~ tbody td {
   word-break: normal;
 }
 td.cell-center, th.cell-center { text-align: center; }
+/* The light-theme header/cell rules below are scoped to `html[data-theme="light"] thead th`
+   (3 type selectors) which otherwise outranks the plain `.cell-center` class
+   above on specificity, even though it comes first in the cascade — repeat
+   the override at matching specificity so a column that opts into centering
+   actually gets it in light theme too. */
+html[data-theme="light"] td.cell-center,
+html[data-theme="light"] th.cell-center { text-align: center; }
 
 /* Badge/action-only cells: center their content instead of hugging the left
    edge of a wider percentage-based column, which otherwise leaves a big
@@ -2135,11 +2409,18 @@ td.cell-text {
 }
 
 /* Click-to-expand long text: clamped to N lines by default via inline
-   -webkit-line-clamp; clicking sets it to 'unset' and shows the rest. */
+   -webkit-line-clamp; clicking sets it to 'unset' and shows the rest. The
+   wrapper stacks the clamped text above a "Show more" chevron toggle, which
+   only renders (see ExpandableText) when the text actually overflows. */
+.expandable-text-wrap {
+  display: block;
+}
 .expandable-text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.expandable-text.is-clickable {
   cursor: pointer;
   text-decoration: underline dotted;
   text-underline-offset: 3px;
@@ -2148,6 +2429,26 @@ td.cell-text {
 .expandable-text.is-expanded {
   overflow: visible;
   text-decoration: none;
+}
+.expandable-text-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary, #2563eb);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.expandable-text-toggle svg {
+  transition: transform 0.15s ease;
+}
+.expandable-text-toggle.is-expanded svg {
+  transform: rotate(180deg);
 }
 
 /* --- Issue Reports: combined issue cell --- */
@@ -2184,18 +2485,24 @@ td.cell-text {
   line-height: 1.2;
 }
 
-/* Distinguishes a vehicle's standing condition from its older, superseded
-   check-in history so a repeated vehicle in the table never reads as
-   ambiguous about which row is actually true right now. */
-.issue-desc {
-  margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.4;
-  color: var(--text-muted, #64748b);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+/* Full-width note band a table row can render right below itself (see
+   DataTable's renderSubRow) — for a long free-text field that doesn't fit a
+   narrow column, instead of clamping/truncating it. */
+.table-subrow td {
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 8px 18px;
+  border-right: none;
+}
+.table-subrow-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.table-subrow-lines strong {
+  color: #334155;
 }
 
 .issue-reporter {
@@ -2325,6 +2632,7 @@ table a:hover {
   flex-direction: column;
   gap: 4px;
 }
+
 .field-hint {
   font-size: 0.72rem;
   font-weight: 400;
@@ -2512,6 +2820,67 @@ table a:hover {
 .smart-form label.file-inline {
   grid-column: auto !important;
 }
+
+/* Multi-file "filing cabinet" field (type: 'multi-file') — same file-list +
+   dropzone look as the Vehicle Files card (.file-card-empty/.file-card-
+   dropzone, reused as-is), replacing the old single-photo box wherever more
+   than one attachment of any type makes sense (e.g. Report Issue). */
+.multi-file-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.multi-file-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.multi-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+.multi-file-dropzone {
+  margin-top: 0 !important;
+}
+.multi-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  color: var(--text-strong, #0f172a);
+}
+.multi-file-item.is-existing { background: var(--surface-2, #f8fafc); }
+.multi-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+a.multi-file-name:hover { text-decoration: underline; color: var(--primary, #2563eb); }
+.multi-file-remove {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+}
+.multi-file-remove:hover { background: #fee2e2; color: #b91c1c; }
 .field-extra {
   margin-top: -4px;
 }
@@ -2558,7 +2927,7 @@ table a:hover {
    overrides max-width/ellipsis entirely — the classic flexbox truncation bug. */
 .vcn-text {
   display: block;
-  max-width: 150px;
+  max-width: 220px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2651,7 +3020,7 @@ button.vehicle-cell-name.cell-link { font-weight: 600; }
   display: grid;
   grid-template-columns: minmax(300px, 380px) 1fr;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 @media (max-width: 980px) {
   .form-context-layout { grid-template-columns: 1fr; }
@@ -2666,7 +3035,16 @@ button.vehicle-cell-name.cell-link { font-weight: 600; }
   border: 2px solid var(--primary, #2563eb);
   display: block;
 }
-.form-context-map { height: 220px; }
+.form-context-map { height: 420px; }
+/* Wraps the form + map so both stack in the wide grid column together,
+   instead of the map defaulting into the narrow side-card track. */
+.form-context-form-col { display: flex; flex-direction: column; gap: 16px; }
+.form-context-map-inline { flex: 1; display: flex; flex-direction: column; }
+/* min-height guards against a short form (e.g. after removing a field)
+   shrinking the stretched row this sits in, which would otherwise let a
+   flex:1 child with no content-based minimum collapse down to a sliver. */
+.form-context-map-inline .veh-map-wrap { flex: 1; min-height: 300px; }
+.form-context-map-expanded { height: 520px; }
 .form-context-empty {
   align-items: center;
   justify-content: center;
@@ -2811,19 +3189,52 @@ button.vehicle-cell-name.cell-link { font-weight: 600; }
   font-weight: 700 !important;
 }
 
-.issue-view-photo { display: block; padding: 12px; }
-.issue-view-photo img { width: 100%; border-radius: 10px; border: 1px solid var(--border, #e2e8f0); display: block; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
-.issue-view-photo-empty {
+/* Issue report "filing cabinet" — photos as a thumbnail grid, other files as
+   typed rows (extension badge + name + uploader/date). */
+.issue-files-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.issue-files-thumb {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface-2, #f8fafc);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.issue-files-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.issue-files-thumb:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12); }
+.issue-files-list { display: flex; flex-direction: column; gap: 6px; }
+.issue-files-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.issue-files-row:hover { background: var(--surface-2, #f8fafc); border-color: var(--primary, #2563eb); }
+.issue-files-ext {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 7px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 28px 16px;
-  color: var(--text-faint, #94a3b8);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #475569;
+  background: #f1f5f9;
 }
-.issue-view-photo-empty svg { opacity: 0.5; }
-.issue-view-photo-empty p { margin: 0; font-size: 0.82rem; }
+.issue-files-ext.is-pdf { color: #b91c1c; background: #fee2e2; }
+.issue-files-ext.is-doc, .issue-files-ext.is-docx { color: #1d4ed8; background: #dbeafe; }
+.issue-files-meta { display: flex; flex-direction: column; min-width: 0; }
+.issue-files-meta strong { font-size: 0.82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issue-files-meta span { font-size: 0.72rem; color: var(--text-faint, #94a3b8); }
 
 .issue-view-timeline { padding: 14px 18px; display: flex; flex-direction: column; }
 .issue-view-timeline-row { display: flex; gap: 10px; }
@@ -3160,62 +3571,97 @@ table button.icon-btn svg,
 .report-heading h3 { font-size: 1.2rem; font-weight: 800; }
 .report-heading p { font-size: 0.9rem; color: #64748b; margin-top: 3px; }
 
-.report-catalog { display: flex; flex-direction: column; gap: 10px; }
-.report-category {
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 10px;
-  overflow: hidden;
+/* Reports — always-visible colored columns (one per category), each report
+   expanding its generator form inline in place, instead of the old single
+   accordion + shared bottom panel. */
+.report-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
 }
-.report-category-header {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  background: var(--surface-2, #f8fafc);
-  border: none;
-  color: var(--text-strong, #0f172a);
-  font-size: 0.88rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-.report-category-header span { display: flex; align-items: center; gap: 8px; }
-.report-category-body {
-  display: flex;
-  flex-direction: column;
-  padding: 6px;
-  gap: 4px;
-}
-.report-type-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.report-type-item:hover { background: rgba(37, 99, 235, 0.06); }
-.report-type-item.active { background: rgba(37, 99, 235, 0.1); border-color: rgba(37, 99, 235, 0.28); }
-.report-type-item strong { font-size: 0.85rem; color: var(--text-strong, #0f172a); }
-.report-type-item span { font-size: 0.78rem; color: var(--text-muted, #64748b); }
-.report-generator-panel {
-  margin-top: 8px;
-  padding: 18px;
+.report-category-card {
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 10px;
   background: var(--surface, #fff);
+  overflow: hidden;
 }
-.report-generator-panel h4 {
+.report-category-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.9rem;
-  margin-bottom: 14px;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+}
+.report-category-card-head h4 { margin: 0; font-size: 0.92rem; font-weight: 700; flex: 1; }
+.report-category-card-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.report-category-count {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-2, #f1f5f9);
+  color: var(--text-muted, #64748b);
+}
+.report-category-card.tone-blue .report-category-card-head h4 { color: #2563eb; }
+.report-category-card.tone-blue .report-category-card-icon,
+.report-category-card.tone-blue .report-category-count,
+.report-category-card.tone-blue .report-type-icon { background: #dbeafe; color: #2563eb; }
+.report-category-card.tone-green .report-category-card-head h4 { color: #16a34a; }
+.report-category-card.tone-green .report-category-card-icon,
+.report-category-card.tone-green .report-category-count,
+.report-category-card.tone-green .report-type-icon { background: #dcfce7; color: #16a34a; }
+.report-category-card.tone-purple .report-category-card-head h4 { color: #7c3aed; }
+.report-category-card.tone-purple .report-category-card-icon,
+.report-category-card.tone-purple .report-category-count,
+.report-category-card.tone-purple .report-type-icon { background: #ede9fe; color: #7c3aed; }
+.report-category-card.tone-amber .report-category-card-head h4 { color: #d97706; }
+.report-category-card.tone-amber .report-category-card-icon,
+.report-category-card.tone-amber .report-category-count,
+.report-category-card.tone-amber .report-type-icon { background: #fef3c7; color: #d97706; }
+
+.report-category-card-body { display: flex; flex-direction: column; }
+.report-type-row + .report-type-row { border-top: 1px solid var(--border-subtle, #eef2f7); }
+.report-type-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.report-type-item:hover { background: var(--surface-2, #f8fafc); }
+.report-type-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.report-type-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.report-type-item strong { font-size: 0.85rem; color: var(--text-strong, #0f172a); }
+.report-type-item span span { font-size: 0.76rem; color: var(--text-muted, #64748b); }
+.report-type-item svg { flex-shrink: 0; transition: transform 0.15s ease; color: var(--text-muted, #94a3b8); }
+.report-type-item svg.is-expanded { transform: rotate(180deg); }
+.report-type-row.is-open .report-type-item { background: var(--surface-2, #f8fafc); }
+.report-generator-panel {
+  padding: 4px 16px 16px;
+  background: var(--surface-2, #f8fafc);
 }
 
 /* ANIMATIONS */
@@ -3620,10 +4066,38 @@ button.wizard-step-pill:hover {
   /* Matches .panel's actual padding (14px 16px) exactly, so this bleeds
      flush to the panel's own edge instead of overshooting past its rounded
      corner (which left a sliver of the panel's white background showing
-     through at each top corner). */
-  margin: -14px -16px 16px -16px;
+     through at each top corner). Bottom margin dropped to 0 (was 16px) so
+     the table sitting right below it reads as one continuous card instead
+     of two separately-bordered boxes with a gap between them. */
+  margin: -14px -16px 0 -16px;
   border-bottom: none;
   border-radius: 6px 6px 0 0;
+}
+/* The blue border belongs to the whole card this bar sits on top of — not
+   just an inner table immediately below it. A panel can have a filter row
+   (category/date dropdowns, its own "FILTERS:" label) sitting between the
+   bar and the actual table, which broke a border scoped to "table directly
+   after the bar": the filter row had no border of its own, so the card's
+   blue outline just stopped at the bottom of the bar and picked up again,
+   inset and disconnected, at the table further down. Bordering the whole
+   panel instead means the bar, the filters, and the table all sit inside
+   one continuous blue-outlined block regardless of what's between them. */
+/* `.module-grid` added purely to out-specificity the later, equally-targeted
+   `html[data-theme="light"] .module-grid .panel` border rule further down
+   this file (same specificity tier otherwise, and that one wins on source
+   order alone) — every `.panel-header-bar` panel lives inside a
+   `.module-grid` anyway, so this never excludes a real case. */
+html[data-theme="light"] .module-grid .panel:has(> .panel-header-bar) {
+  border: 3px solid #2563eb;
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+}
+/* The panel above now owns the border — an inner table's own border would
+   just double it up, so it goes borderless and blends into the panel's
+   white background instead. */
+html[data-theme="light"] .panel:has(> .panel-header-bar) .table-shell {
+  border: none;
+  border-radius: 0;
 }
 /* Use when the bar isn't the first element in the panel (e.g. below a tab
    row) — same look, but doesn't bleed into whatever sits above it. */
@@ -3753,6 +4227,54 @@ button.wizard-step-pill:hover {
 }
 .ticket-alert-banner.formaint { background: linear-gradient(90deg,#fffbeb,#fef3c7); border: 1px solid #fcd34d; color: #92400e; }
 .ticket-alert-banner.forconfirm { background: linear-gradient(90deg,#faf5ff,#ede9fe); border: 1px solid #c4b5fd; color: #5b21b6; }
+
+/* Collapsible "Tickets Ready to Close" highlight strip, sitting above the
+   main ticket table — a red count badge, title, its own search box, and a
+   toggle to collapse the mini-table when it's not needed. */
+.ready-to-close-panel {
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ready-to-close-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.ready-to-close-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #065f46;
+  white-space: nowrap;
+}
+.ready-to-close-search {
+  flex: 1;
+  max-width: 320px;
+  margin-left: auto;
+}
+.ready-to-close-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: none;
+  background: #a7f3d0;
+  color: #065f46;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.ready-to-close-toggle:hover { background: #6ee7b7; }
+.ready-to-close-toggle svg.is-expanded { transform: rotate(180deg); }
+.ready-to-close-body {
+  padding: 0 16px 16px;
+}
+.ready-to-close-body .table-shell { background: #ffffff; border-radius: 8px; }
 
 /* --- Ticket Cards Grid --- */
 .ticket-card-grid {
@@ -4032,13 +4554,6 @@ button.wizard-step-pill:hover {
 html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; color: #ffffff; }
 .ticket-process-hero .ticket-detail-subline { margin-top: 8px; color: rgba(226, 232, 240, 0.78); }
 .ticket-process-hero .ticket-meta-item { color: rgba(226, 232, 240, 0.78); }
-.ticket-process-description {
-  margin-top: 10px;
-  font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.85);
-  line-height: 1.55;
-  max-width: 60ch;
-}
 .ticket-process-cancelled { margin: 20px 28px 0; }
 
 /* Resolved-% ring — same conic-gradient technique as the dashboard's Ops
@@ -4282,6 +4797,30 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   padding: 20px 28px; border-top: 1px solid #e2e8f0; background: #f8fbff;
 }
 .ticket-inline-form h4 { font-size: 0.9rem; font-weight: 800; color: #0f172a; margin-bottom: 14px; }
+
+.subissue-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.subissue-bulk-actions button {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 0.74rem;
+  border-radius: 6px;
+  gap: 5px;
+  box-shadow: none;
+}
+.subissue-bulk-actions button svg {
+  width: 12px;
+  height: 12px;
+}
 .notice.warning { background: linear-gradient(90deg,#fffbeb,#fef3c7); border: 1px solid #fcd34d; color: #92400e; }
 
 .muted { color: #64748b; font-size: 0.82rem; }
@@ -4502,6 +5041,121 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Operations board — Work Tracker and Work Orders share one deliberate
+   scanning pattern: context first, then a calm actionable queue. */
+.operations-board {
+  overflow: hidden;
+  border: 1px solid #d7e3f5;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 26px rgba(30, 64, 175, 0.06);
+}
+.operations-board-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #e7eef8;
+  background: linear-gradient(120deg, #f8fbff 0%, #fff 58%);
+}
+.operations-kicker { display: block; margin-bottom: 5px; color: #2563eb; font-size: .68rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.operations-board-head h3 { margin: 0; color: #102a56; font-size: 1.08rem; }
+.operations-board-head p { margin: 6px 0 0; max-width: 650px; color: #64748b; font-size: .82rem; line-height: 1.45; }
+.operations-board-head .local-search { min-width: 250px; margin-top: 8px; }
+.operations-board-note { display: flex; align-items: center; gap: 8px; margin: 16px 24px 0; padding: 10px 12px; border-radius: 8px; background: #f8fafc; color: #52657f; font-size: .78rem; }
+.operations-board-note svg { color: #2563eb; }
+.operations-card-grid { padding: 16px 24px 24px; }
+.work-tracker-grid.operations-card-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.operations-card-grid .work-tracker-card { position: relative; min-height: 112px; align-items: flex-start; padding: 15px; border: 1px solid #dbe5f1; border-left: 3px solid #cbd5e1; border-radius: 12px; box-shadow: none; }
+.operations-card-grid .work-tracker-card:hover { border-color: #93c5fd; border-left-color: #2563eb; background: #f8fbff; box-shadow: 0 7px 16px rgba(37, 99, 235, .08); transform: translateY(-1px); }
+.operations-card-grid .work-tracker-card.needs-action { border-left-color: #f59e0b; background: linear-gradient(90deg, #fffdf6, #fff); }
+.operations-card-grid .work-tracker-thumb { width: 42px; height: 42px; border-radius: 10px; background: #edf4ff; }
+.operations-card-grid .work-tracker-card-heading { gap: 4px; }
+.work-tracker-card-label { color: #2563eb; font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.operations-card-grid .work-tracker-card-title-row { font-size: .9rem; color: #172b4d; }
+.operations-card-grid .work-tracker-card-sub { color: #475569; font-size: .8rem; }
+.operations-card-grid .work-tracker-card-summary { margin-top: 3px; color: #718096; }
+.operations-card-grid .work-tracker-card-chevron { align-self: center; color: #2563eb; }
+
+/* Maintenance record — turn a scattered detail view into a concise service
+   report with a clear identity line, progress sequence, and readable facts. */
+.maintenance-record-detail { display: flex; flex-direction: column; gap: 22px; padding: 4px; }
+.maintenance-record-hero { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 16px 18px; border: 1px solid #dce8f8; border-radius: 12px; background: linear-gradient(115deg, #f6f9ff, #fff); }
+.maintenance-record-hero .vehicle-cell { padding-right: 12px; border-right: 1px solid #dbe5f1; }
+.maintenance-progress { display: flex; align-items: flex-start; max-width: 600px; padding: 18px 14px 6px; border-bottom: 1px solid #e5edf7; }
+.maintenance-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; max-width: 940px; overflow: hidden; border: 1px solid #e0e8f3; border-radius: 12px; background: #e0e8f3; font-size: .86rem; }
+.maintenance-detail-grid > div { min-height: 88px; padding: 15px 16px; background: #fff; color: #1e293b; line-height: 1.45; }
+.maintenance-detail-label { display: block; margin-bottom: 7px; color: #64748b; font-size: .67rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+
+/* Vehicle edit becomes a composed form surface rather than a full-width field
+   dump. The media input anchors the first column while form fields retain
+   their practical two-column rhythm. */
+.veh-edit-card { border-radius: 16px; box-shadow: 0 10px 28px rgba(15, 23, 42, .08); }
+.veh-edit-card .veh-card-head { padding: 18px 22px; background: linear-gradient(110deg, #f6f9ff, #fff); }
+.veh-edit-card .veh-card-head h4 { font-size: 1rem; }
+.veh-edit-body { padding: 26px; background: #fbfdff; }
+.veh-edit-body .smart-form { gap: 18px 22px; }
+.veh-edit-body .smart-form label { padding: 8px 10px 10px; border: 1px solid transparent; border-radius: 10px; background: #fff; }
+.veh-edit-body .smart-form label:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59, 130, 246, .10); }
+.veh-edit-body .smart-form input:not([type="file"]), .veh-edit-body .smart-form select, .veh-edit-body .smart-form textarea { max-width: none; }
+.veh-edit-body .photo-box { border-radius: 12px; border-color: #bfdbfe; background: #f8fbff; }
+.veh-edit-body .smart-form .form-actions { padding-top: 16px; border-top: 1px solid #dce8f5; }
+
+/* Edit vehicle information is intentionally grouped as a small workspace:
+   identify the unit first, then keep its image beside its specifications.
+   This removes the tall, empty cells created by mixing a photo upload into
+   the general two-column form grid. */
+.form-grid-2col.veh-edit-body .smart-form {
+  grid-template-columns: minmax(280px, 330px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.veh-edit-body .smart-form > .form-group {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid #dce7f4;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, .025);
+}
+.veh-edit-body .smart-form > .form-group:nth-of-type(1),
+.veh-edit-body .smart-form > .form-group:nth-of-type(4),
+.veh-edit-body .smart-form > .form-actions {
+  grid-column: 1 / -1;
+}
+.veh-edit-body .smart-form > .form-group:nth-of-type(2) { grid-column: 1; }
+.veh-edit-body .smart-form > .form-group:nth-of-type(3) { grid-column: 2; }
+.veh-edit-body .form-group-title {
+  margin: 0 0 16px;
+  padding: 0 0 10px;
+  color: #183b70;
+  font-size: .78rem;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.veh-edit-body .form-group-body {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+.veh-edit-body .smart-form > .form-group:nth-of-type(2) .form-group-body { grid-template-columns: 1fr; }
+.veh-edit-body .smart-form > .form-group:nth-of-type(3) .form-group-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.veh-edit-body .form-group-body label { min-width: 0; padding: 0; }
+.veh-edit-body .form-group-body label:has(input[type="file"]) { grid-column: auto; }
+.veh-edit-body .form-group-body .photo-box { max-width: none; min-height: 230px; }
+.veh-edit-body .form-group-body .photo-box img { max-height: 220px; object-fit: cover; }
+.veh-edit-body .field-extra { margin-top: 12px; }
+
+@media (max-width: 720px) {
+  .operations-board-head { flex-direction: column; padding: 18px; }
+  .operations-board-head .local-search { width: 100%; min-width: 0; }
+  .operations-board-note { margin-left: 18px; margin-right: 18px; }
+  .operations-card-grid { padding: 14px 18px 18px; }
+  .maintenance-detail-grid { grid-template-columns: 1fr; }
+  .maintenance-record-hero .vehicle-cell { width: 100%; padding: 0 0 12px; border: 0; border-bottom: 1px solid #dbe5f1; }
+  .veh-edit-body { padding: 16px; }
 }
 
 /* Account avatar dropdown (topbar, replaces the old sidebar profile panel) */
@@ -4858,6 +5512,17 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   flex-direction: column;
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
 }
+/* Same escape hatch as .ticket-section.smart-form: the Create/Propose
+   Ticket cards that host a CreatableSelect (Issue Details' Fault Category,
+   Sub-Issues' Maintenance Type) need their dropdown to escape the card's
+   own bounds instead of being clipped by its corner-rounding overflow —
+   a short card (e.g. a single sub-issue row) left almost no room below the
+   field, cutting the popup down to one visible option. Scoped to this
+   modifier class only, so every other .veh-card (photo/map cards) keeps
+   its corner clip. */
+.veh-card.veh-card-form {
+  overflow: visible;
+}
 .veh-card-head {
   display: flex;
   align-items: center;
@@ -4925,6 +5590,58 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
 .form-grid-2col.category-form-grid {
   max-width: 640px;
   margin: 0 auto;
+}
+
+/* Inspect Ticket — Inspection Result/Notes on the left, the "Root Causes
+   Found" card on the right, instead of stacking everything one under the
+   other. Only applied once there's actually something for the right
+   column to show (Needs Maintenance picked); otherwise the left column's
+   fields stay plain full-width block children of the form. */
+.inspect-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 780px) {
+  .inspect-form-grid { grid-template-columns: 1fr; }
+}
+
+/* Root Causes — type-and-Add on the left instead of every row being a
+   permanently-editable input; the right side lists what's already been
+   added as plain text, each with its own Edit/Delete, so it's clear
+   what's confirmed vs. still being typed. */
+.root-cause-builder {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .root-cause-builder { grid-template-columns: 1fr; }
+}
+.root-cause-input-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.root-cause-list-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.root-cause-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: #1e293b;
 }
 
 /* Create Ticket form — sectioned card layout instead of one long vertical
@@ -5003,27 +5720,37 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   font-size: 1.15rem;
 }
 
-.btn-reassign-custodian {
-  background: #d97706;
-  border: 1.5px solid #d97706;
+/* Shared "reassign someone" action — Custodian or Mechanic, same color and
+   same compact size, so the two read as one consistent action everywhere
+   they appear (inline on the ticket page, or in the bulk toolbar). */
+.btn-reassign-action {
+  background: #2563eb;
+  border: 1.5px solid #2563eb;
   color: #ffffff;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 0.74rem;
+  border-radius: 6px;
+  gap: 5px;
+  box-shadow: none;
 }
-.btn-reassign-custodian:hover {
-  background: #b45309;
-  border-color: #b45309;
+.btn-reassign-action:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+.btn-reassign-action svg {
+  width: 12px;
+  height: 12px;
 }
 
-/* Defer is a lighter-weight, non-committal action (not a fix, not a
-   reassignment) — an amber outline instead of a solid fill, but still
-   sized/shaped exactly like every other .ghost-button on the page. */
 .btn-defer-action {
-  background: none;
-  border: 1.5px solid #f59e0b;
-  color: #b45309;
+  background: #eab308;
+  border: 1.5px solid #eab308;
+  color: #422006;
 }
 .btn-defer-action:hover {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: #d97706;
+  background: #ca8a04;
+  border-color: #ca8a04;
 }
 
 .sub-issue-rows {
@@ -5153,35 +5880,6 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
 }
 .veh-remarks p { margin: 4px 0 0; font-size: 0.86rem; color: var(--text, #334155); }
 
-.veh-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px 18px 6px; }
-.veh-stat {
-  background: var(--surface-2, #f8fafc); border: 1px solid var(--border-subtle, #eef2f7);
-  border-radius: 10px; padding: 11px 13px; display: flex; flex-direction: column; gap: 2px;
-}
-.veh-stat span { font-size: 1.15rem; font-weight: 800; color: var(--primary-strong, #1d4ed8); font-variant-numeric: tabular-nums; }
-.veh-stat small { font-size: 0.68rem; font-weight: 600; color: var(--text-muted, #64748b); text-transform: uppercase; letter-spacing: 0.04em; }
-/* One solid color per stat (not a pastel tint) so the four read as
-   distinct signals at a glance instead of four identical gray boxes. */
-.veh-stat-blue, .veh-stat-amber, .veh-stat-red, .veh-stat-green {
-  border-color: transparent;
-}
-.veh-stat-blue span, .veh-stat-amber span, .veh-stat-red span, .veh-stat-green span,
-.veh-stat-blue small, .veh-stat-amber small, .veh-stat-red small, .veh-stat-green small {
-  color: #fff;
-}
-.veh-stat-blue small, .veh-stat-amber small, .veh-stat-red small, .veh-stat-green small {
-  opacity: 0.85;
-}
-.veh-stat-blue { background: #2563eb; }
-.veh-stat-amber { background: #d97706; }
-.veh-stat-red { background: #dc2626; }
-.veh-stat-green { background: #16a34a; }
-.veh-mini-label {
-  margin: 8px 18px 6px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--text-muted, #64748b);
-}
-.veh-analytics .horizontal-bars, .veh-analytics .empty-state { padding: 0 18px 16px; }
-
 .veh-map-wrap, .issue-view-map-wrap { height: 300px; width: 100%; }
 .veh-map-canvas { height: 100%; width: 100%; }
 .veh-map-empty, .veh-map-wrap .veh-map-empty {
@@ -5298,11 +5996,6 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   background: #fff; color: #2563eb; cursor: pointer; transition: background 0.15s ease;
 }
 .veh-reports-print-btn:hover { background: #eff6ff; }
-
-/* Current Location map — moved out of the narrow left column entirely so
-   it spans the full page width instead of being squeezed to ~380px. */
-.veh-map-wide { width: 100%; margin-top: 16px; }
-.veh-map-wide .veh-map-wrap { height: 360px; }
 
 /* Printable report — kept off-screen (not display:none) so the embedded
    Leaflet map inside it can actually size/mount and load tiles ahead of
@@ -5844,7 +6537,7 @@ button.file-card-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-
   margin-left: auto;
 }
 .module-filter-panel {
-  padding: 16px 22px;
+  padding: 14px 18px;
 }
 .module-filter-panel .filter-bar-container {
   margin: 0;
@@ -5875,10 +6568,243 @@ button.file-card-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-
   position: relative;
   display: inline-block;
 }
-.filter-bar-container > .filter-date-group {
+/* Not scoped to a direct child of .filter-bar-container — this also needs
+   to render correctly nested inside other filter layouts (e.g. Issue
+   Reports' bespoke panel). Label sits above the input (like the
+   reference's "From Date"/"To Date" captions) instead of beside it. */
+.filter-date-group {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filter-date-group > span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+/* A bigger, blue calendar icon (the browser's native picker indicator,
+   enlarged and tinted) instead of the tiny default one. min-width (not a
+   fixed width) so callers that want a narrower, content-hugging box can
+   still override it inline (see FilterBar's date inputs) — but the default
+   here is now sized to just fit "mm/dd/yyyy" plus that icon; the old 210px
+   left dead space between the date text and the icon, so it no longer sat
+   flush against the field's own right edge the way the reference does. */
+.filter-date-group input[type="date"] {
+  min-width: 165px;
+  padding: 8px 8px 8px 10px;
+  font-size: 0.85rem;
+  cursor: text;
+}
+.filter-date-group input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  padding: 3px;
+  margin-left: 6px;
+  transform: scale(1.35);
+  filter: invert(32%) sepia(93%) saturate(1352%) hue-rotate(202deg) brightness(94%) contrast(101%);
+}
+/* DateFilterInput — the visible MM/DD/YYYY text field plus its calendar
+   button sit in one bordered box (so it still reads as a single control),
+   with the real <input type="date"> that actually drives the picker
+   collapsed to nothing behind it. */
+.date-filter-input {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 165px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  overflow: hidden;
+}
+.date-filter-input input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 0;
+  padding: 8px 8px 8px 10px;
+  font-size: 0.85rem;
+}
+.date-filter-input input[type="text"]:focus {
+  outline: none;
+  box-shadow: none;
+}
+.date-filter-input-icon {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 32px;
+  border: none;
+  border-left: 1px solid #e2e8f0;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+}
+.date-filter-input-icon:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+.date-filter-input-hidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Issue Reports' bespoke filter panel (search + dropdowns + dates on top,
+   a severity range slider and colored status chips below). A 2-column
+   grid — not two independent flex rows — so the dates block (top-right)
+   and the chips+button cluster (bottom-right) share the exact same
+   track and their edges line up, instead of the dates sitting narrower
+   than whatever width the chips+button happen to render at. */
+.issue-filter-panel {
+  display: grid;
+  grid-template-columns: 1fr minmax(500px, 650px);
+  gap: 10px;
+  width: 100%;
+}
+.issue-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.issue-filter-dates {
+  display: flex;
+  gap: 10px;
+}
+.issue-filter-date-input {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.issue-filter-date-input input[type="date"] {
+  width: 100%;
+}
+.issue-filter-severity-card {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--surface-1, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+}
+.issue-filter-severity-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-strong, #0f172a);
+}
+.issue-filter-right-cluster {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+/* Fixed-width chips (not stretched to fill leftover cluster space) so the
+   Filter button is what grows to fill the rest of the cluster — sized by
+   the shared grid track above, not the whole panel width. */
+.issue-filter-status-grid {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 240px));
+  gap: 6px;
+}
+/* Checkbox pinned left, label pushed to the far edge — same reading order
+   as the reference's chips (a full-width pill, not a tight checkbox+label
+   cluster) instead of both sitting bunched together on the left. */
+.issue-filter-status-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.issue-filter-status-chip input { flex-shrink: 0; width: 15px; height: 15px; margin: 0; }
+.issue-filter-actions {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  min-width: 140px;
+}
+.issue-filter-apply-btn { width: 100%; height: 38px; font-size: 0.9rem; }
+@media (max-width: 900px) {
+  .issue-filter-panel { grid-template-columns: 1fr; }
+  .issue-filter-right-cluster { flex-wrap: wrap; }
+}
+
+/* Dual-handle range slider — two overlaid native range inputs share one
+   track; each input is fully transparent and click-through except its own
+   thumb, so only a thumb (not the bare track) is draggable per-input. */
+.dual-range-slider { padding: 6px 8px 0; }
+.dual-range-track {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2, #e2e8f0);
+  margin: 14px 0;
+}
+.dual-range-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #2563eb;
+  border-radius: 999px;
+}
+.dual-range-input {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  margin: 0;
+  transform: translateY(-50%);
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  pointer-events: none;
+}
+.dual-range-input::-webkit-slider-runnable-track { background: transparent; }
+.dual-range-input::-moz-range-track { background: transparent; }
+.dual-range-input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.dual-range-input::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.dual-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-muted, #64748b);
+  font-weight: 600;
 }
 .multi-select-trigger.filter-select {
   display: flex;
@@ -5996,7 +6922,7 @@ button.file-card-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-
   padding: 6px;
 }
 .creatable-select-option-list {
-  max-height: 220px;
+  max-height: 340px;
   overflow-y: auto;
 }
 .creatable-select-option-row {
@@ -6077,6 +7003,26 @@ button.file-card-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-
   padding-top: 7px;
   padding-bottom: 8px;
 }
+/* The inline "custom interval" row (SelectOrAddNumberField) reuses
+   .creatable-select-add-pinned for its layout/border, but holds a real
+   input + button instead of being one clickable label — reset the
+   inherited link-style color/weight so only the icon and "Add" button
+   keep it, not the number the person is typing, and drop the whole-row
+   hover tint that only makes sense on a single clickable label. Scoped to
+   rows that actually contain the custom-number input, so the plain
+   "+ Add New X" pinned row elsewhere keeps its own hover feedback. */
+.creatable-select-add-pinned:has(.creatable-select-custom-input):hover { background: none; }
+.creatable-select-custom-input {
+  flex: 1;
+  min-width: 0;
+  color: #1e293b;
+  font-weight: 500;
+}
+.creatable-select-add-pinned .ghost-button {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
 .filter-label {
   font-size: 0.78rem;
   font-weight: 800;
@@ -6124,44 +7070,6 @@ button.file-card-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-
   color: #dc2626;
   transform: translateY(-1px);
 }
-
-/* Advanced Filter — a collapsed bar that expands into a second row of
-   more specific criteria, instead of cramming every filter into the one
-   always-visible basic row. */
-.advanced-filter-panel {
-  width: 100%;
-  margin-top: 4px;
-  border: 1px solid #dbeafe;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #f8fafc;
-}
-.advanced-filter-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 11px 16px;
-  background: #eef4ff;
-  border: none;
-  color: #1e293b;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-.advanced-filter-toggle:hover { background: #dbeafe; }
-.advanced-filter-chevron { transition: transform 0.15s ease; }
-.advanced-filter-chevron.is-open { transform: rotate(180deg); }
-.advanced-filter-grid {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  animation: fadeSlide 0.15s ease;
-}
-.advanced-filter-grid .filter-select { min-width: 200px; }
 
 /* Condition Monitoring Checklist Filter Panel */
 .filter-popover-container {
@@ -6755,29 +7663,6 @@ table button,
   place-items: center;
 }
 
-.donut-chart svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.donut-track,
-.donut-segment {
-  fill: none;
-  stroke-linecap: round;
-  stroke-width: 12;
-  transform: rotate(-90deg);
-  transform-origin: 60px 60px;
-}
-
-.donut-track {
-  stroke: rgba(255, 255, 255, 0.06);
-}
-
-.donut-segment {
-  transition: stroke-dasharray 0.24s ease;
-}
-
 .donut-center {
   position: absolute;
   inset: 26%;
@@ -6803,6 +7688,163 @@ table button,
   font-weight: 700;
 }
 
+.segmented-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-2, #f1f5f9);
+  margin-bottom: 16px;
+}
+.segmented-bar span { display: block; height: 100%; }
+
+/* "Projects"-style titled chart card: a tall segmented bar with inline
+   value labels, a hover tooltip breaking every segment down at once, and a
+   plain legend row underneath. Rendered with Recharts (see components/charts.jsx);
+   this card just supplies the title/legend chrome and the bar's rounded frame. */
+.stacked-bar-chart {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  padding: 24px;
+  height: 100%;
+  box-sizing: border-box;
+}
+.stacked-bar-chart-title {
+  margin: 0 0 22px;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-strong, #0f172a);
+}
+.stacked-bar {
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-2, #f1f5f9);
+}
+.stacked-bar-legend {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.stacked-bar-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted, #64748b);
+}
+.stacked-bar-legend-item span {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* Users page analytics row (donut + role bar), replacing the old stat-pill
+   row for this one module — see Users module render branch. */
+.user-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.user-analytics-card { padding: 18px; }
+.user-analytics-title { margin: 0 0 16px; font-size: 0.92rem; font-weight: 700; color: var(--text-strong, #0f172a); }
+
+.user-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.user-card:hover { box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08); transform: translateY(-1px); }
+.user-card-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+.user-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.user-card-name { font-size: 0.95rem; color: var(--text-strong, #0f172a); }
+.user-card-role { font-size: 0.78rem; font-style: italic; color: var(--text-muted, #64748b); }
+.user-card-underline { width: 40px; height: 3px; border-radius: 999px; background: #2563eb; margin: 8px 0; }
+.user-card-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.8rem;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 8px;
+  max-width: 100%;
+}
+.user-card-contact a { color: #2563eb; text-decoration: none; word-break: break-all; }
+.user-card-contact a:hover { text-decoration: underline; }
+
+.history-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.history-card:hover { box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08); transform: translateY(-1px); }
+.history-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.history-card-activity {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.history-card-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted, #64748b);
+  line-height: 1.4;
+}
+.history-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle, #edf1f7);
+  font-size: 0.76rem;
+  color: var(--text-muted, #64748b);
+}
+.history-card-date { display: inline-flex; align-items: center; gap: 6px; }
+
 .chart-legend {
   list-style: none;
   display: flex;
@@ -6826,15 +7868,13 @@ table button,
   box-shadow: 0 0 12px color-mix(in srgb, var(--legend-color) 48%, transparent);
 }
 
-.chart-legend small,
-.column-bar small {
+.chart-legend small {
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 700;
 }
 
-.chart-legend strong,
-.column-bar strong {
+.chart-legend strong {
   color: var(--text-strong);
   font-size: 0.88rem;
 }
@@ -6853,13 +7893,6 @@ table button,
   margin: 4px auto 16px;
   display: grid;
   place-items: center;
-}
-.solid-pie-chart svg { width: 100%; height: 100%; overflow: visible; }
-.solid-pie-segment {
-  fill: none;
-  transition: stroke-dasharray 0.24s ease;
-  transform: rotate(-90deg);
-  transform-origin: 60px 60px;
 }
 .solid-pie-legend {
   display: flex;
@@ -6893,89 +7926,45 @@ table button,
 }
 
 .horizontal-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
   margin-top: 4px;
 }
 
-.bar-row {
-  display: grid;
-  gap: 7px;
-}
-
-.bar-row-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--text);
-}
-
-.bar-row-label span {
-  color: var(--text);
-  font-size: 0.83rem;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bar-row-label strong {
-  color: var(--primary-strong);
-  font-size: 0.86rem;
-}
-
-.bar-track {
-  height: 9px;
-  background: rgba(255, 255, 255, 0.055);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.bar-track span {
-  display: block;
-  height: 100%;
-  min-width: 10px;
-  background: linear-gradient(90deg, #2563eb, #60a5fa);
-  border-radius: inherit;
-}
-
 .column-chart {
-  min-height: 185px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  align-items: end;
+  height: 240px;
   padding-top: 8px;
 }
 
-.column-bar {
-  min-width: 0;
-  display: grid;
-  grid-template-rows: 138px auto auto;
-  gap: 7px;
-  justify-items: center;
+/* Recharts tooltip replacement — themed to match the app's dark/light card
+   styling instead of the library's default white box. */
+.chart-tooltip-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24);
+  padding: 8px 12px;
+  font-size: 0.82rem;
 }
 
-.column-track {
-  width: 100%;
-  max-width: 54px;
-  height: 138px;
-  background: rgba(255, 255, 255, 0.055);
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px 999px 7px 7px;
+.chart-tooltip-row {
   display: flex;
-  align-items: flex-end;
-  overflow: hidden;
-  padding: 4px;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
 }
 
-.column-track span {
-  width: 100%;
-  min-height: 8px;
-  border-radius: inherit;
-  box-shadow: 0 0 18px rgba(37, 99, 235, 0.16);
+.chart-tooltip-row span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.chart-tooltip-label {
+  color: var(--text-muted, #64748b);
+}
+
+.chart-tooltip-row strong {
+  color: var(--text-strong, #0f172a);
 }
 
 .graph-footnote {
@@ -7838,6 +8827,112 @@ table button,
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
   overflow: hidden;
 }
+/* The Review Proposal card (the only .ticket-section that also hosts a
+   CreatableSelect) needs its own escape hatch: overflow:hidden here exists
+   to clip ordinary content to the rounded corners, but it also clips
+   CreatableSelect's absolutely-positioned dropdown panel — which showed as
+   a catalog list truncated to one visible row with no way to scroll to the
+   rest, since scroll-height was being measured against the panel's own
+   220px cap, not this card's clip. Scoped to this one combination (nothing
+   else in the app pairs .smart-form onto a .ticket-section) so every other
+   .ticket-section keeps its corner-clipping exactly as before. */
+.ticket-section.smart-form {
+  overflow: visible;
+}
+
+/* Review Proposal — the Admin's one decision point on a proposal, so it gets
+   the strongest visual anchor on the page: a blue header band, tinted field
+   groups, numbered sub-issue cards and a dedicated action bar. */
+.ticket-section.proposal-review { padding: 0; border-color: #bfdbfe; box-shadow: 0 6px 18px rgba(37, 99, 235, 0.10); }
+.proposal-review-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #3b82f6 100%);
+  color: #fff;
+  border-radius: 11px 11px 0 0;
+}
+.proposal-review-head-icon {
+  width: 36px; height: 36px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.proposal-review-head-text { flex: 1; min-width: 0; }
+html .ticket-section.proposal-review .proposal-review-head h4 { margin: 0; padding: 0; border: 0; color: #fff; font-size: 1rem; font-weight: 800; text-transform: none; letter-spacing: normal; }
+html .ticket-section.proposal-review .proposal-review-head p { margin: 2px 0 0; color: rgba(255, 255, 255, 0.85); font-size: 0.8rem; }
+html .ticket-section.proposal-review .proposal-review-head p strong { color: #fff; }
+.proposal-review-pill {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: #fef3c7;
+  color: #92400e;
+}
+.proposal-review-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.proposal-review-group {
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.045);
+  border: 1px solid rgba(37, 99, 235, 0.14);
+}
+.proposal-review-group-title {
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 12px;
+  font-size: 0.78rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #1d4ed8;
+}
+.proposal-review-count {
+  min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; background: #2563eb; color: #fff;
+  font-size: 0.7rem; letter-spacing: 0;
+}
+.proposal-review-empty {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px; border-radius: 8px;
+  background: var(--surface, #fff); border: 1px dashed #93c5fd;
+  font-size: 0.82rem; color: #334155;
+}
+.proposal-review-empty svg { color: #2563eb; flex-shrink: 0; margin-top: 1px; }
+.proposal-subissue {
+  padding: 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.proposal-subissue:last-child { margin-bottom: 0; }
+.proposal-subissue-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.proposal-subissue-num {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: #2563eb; color: #fff;
+  font-size: 0.78rem; font-weight: 800;
+}
+.smart-form .proposal-subissue .proposal-subissue-title { flex: 1 1 auto; width: 100%; max-width: none; min-width: 0; font-weight: 600; font-size: 0.88rem; padding: 8px 10px; }
+.proposal-subissue-type {
+  flex-shrink: 0; padding: 3px 9px; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 700; white-space: nowrap;
+}
+.proposal-subissue-type.is-in_house { background: #dcfce7; color: #166534; }
+.proposal-subissue-type.is-cannibalized { background: #ffedd5; color: #9a3412; }
+.proposal-subissue-type.is-external { background: #ede9fe; color: #5b21b6; }
+.proposal-review-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 18px;
+  border-top: 1px solid #dbeafe;
+  background: rgba(37, 99, 235, 0.04);
+  border-radius: 0 0 11px 11px;
+}
+.proposal-review-actions.is-declining { display: block; }
+html .ticket-section.proposal-review .proposal-review-hint { margin: 0; font-size: 0.78rem; color: #64748b; }
+.proposal-review-buttons { display: flex; gap: 8px; margin-left: auto; }
 .ticket-section h4 {
   margin: 0 0 12px;
   padding: 0 0 10px;
@@ -7918,45 +9013,56 @@ table button,
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 12px 4px 0;
-  font-size: 0.8rem;
+  padding: 16px 4px 0;
+  font-size: 0.85rem;
+  color: var(--text, #334155);
+}
+.table-pagination-pages,
+.table-pagination-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.table-pagination-size { gap: 8px; }
+.table-pagination-size .muted { margin-right: 2px; font-size: 0.82rem; }
+.pagination-ellipsis {
+  padding: 0 4px;
+  color: var(--text-muted, #94a3b8);
+}
+/* Numbered page / page-size buttons — plain text until picked, then a solid
+   blue circle, matching the reference pager instead of the old boxy
+   Prev/Next + <select> footer. */
+.pagination-page,
+.pagination-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text, #334155);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.pagination-page:hover:not(.active),
+.pagination-arrow:hover:not(:disabled) {
+  background: var(--surface-2, #f1f5f9);
+}
+.pagination-page.active {
+  background: #2563eb;
+  color: #ffffff;
+}
+.pagination-arrow {
+  font-size: 1.1rem;
+  font-weight: 400;
   color: var(--text-muted, #64748b);
 }
-.table-pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.table-pagination-controls label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-}
-.table-pagination-controls select {
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border, #e2e8f0);
-  background: var(--surface, #fff);
-  color: var(--text, #1f2937);
-}
-.table-pagination-controls button.ghost-button {
-  padding: 5px 12px;
-  font-size: 0.78rem;
-  height: auto;
-  color: #fff !important;
-  background: #2563eb !important;
-  border: 1px solid #2563eb !important;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.table-pagination-controls button.ghost-button:hover:not(:disabled) {
-  background: #1d4ed8 !important;
-  border-color: #1d4ed8 !important;
-  color: #fff !important;
-  transform: none;
-}
-.table-pagination-controls button.ghost-button:disabled { opacity: 0.4; cursor: not-allowed; }
+.pagination-arrow:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* View-mode dropdown (Card View / List View) */
 .view-dropdown { position: relative; flex-shrink: 0; }
@@ -8151,6 +9257,10 @@ table a:hover,
 /* Distinct from the amber "under-maintenance" — this is "nothing left to
    do, just needs one click to close" rather than genuine active repair. */
 .status-badge.awaiting-closure { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.32); color: #93c5fd; }
+/* Condition Monitoring's synthesized row for a vehicle with no check on
+   file — neutral gray, not amber/red, since it isn't a bad result, just an
+   absence of one. */
+.status-badge.not-checked { background: rgba(148, 163, 184, 0.14); border-color: rgba(148, 163, 184, 0.3); color: #cbd5e1; }
 
 .status-badge.inactive,
 .status-badge.decommissioned,
@@ -8733,6 +9843,42 @@ button.btn-view-action svg {
   color: #ffffff;
 }
 
+/* Custodian's merged "Report / Propose" entry point — a two-option chooser
+   shown before either underlying (unchanged) flow, so the choice is explicit
+   instead of guessing which of two near-identical sidebar rows to click. */
+.entry-chooser {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.entry-chooser-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  padding: 20px;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  color: var(--text, #1f2937);
+}
+.entry-chooser-card:hover {
+  border-color: #2563eb;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
+}
+.entry-chooser-card h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+.entry-chooser-card p {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--text-muted, #64748b);
+}
+
 .map-container-full {
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -9106,6 +10252,19 @@ button.btn-view-action svg {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+.hub-modal-vehicle-list {
+  margin: 10px 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 8px;
+  background: var(--surface-muted, #f8fafc);
+  font-size: 0.82rem;
+  color: var(--text);
+  max-height: 140px;
+  overflow-y: auto;
+}
+.hub-modal-vehicle-list li { padding: 2px 0; }
 
 .hub-modal-label {
   display: block;
@@ -10114,6 +11273,13 @@ html[data-theme="light"] .module-nav button {
   padding: 9px 10px;
 }
 
+/* Re-applies the sub-item indent (see base .module-nav-group rule above) —
+   this theme's own `.module-nav button` padding shorthand just above would
+   otherwise win on specificity and flatten it back to 10px. */
+html[data-theme="light"] .module-nav-group > button:not(.module-nav-section) {
+  padding-left: 34px;
+}
+
 html[data-theme="light"] .module-nav button:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: transparent;
@@ -10131,20 +11297,21 @@ html[data-theme="light"] .module-nav button.active .nav-icon {
   stroke: #ffffff;
 }
 
-/* Section headers must stay quiet labels here too. `html[data-theme="light"]
-   .module-nav button` above is more specific than the base .module-nav-section
-   rule, so without this the header would inherit full nav-item colour, padding
-   and min-height and read as another clickable destination. */
+/* Section header carries the same weight as a real nav item here too — an
+   accordion trigger, not a quiet label — matching the base (dark) theme
+   restyle above. `html[data-theme="light"] .module-nav button` above is more
+   specific than the base .module-nav-section rule, so this still needs its
+   own declaration even though the values now largely mirror it. */
 html[data-theme="light"] .module-nav .module-nav-section {
-  color: rgba(237, 246, 255, 0.62);
-  padding: 4px 10px;
-  min-height: 0;
-  font-size: 0.68rem;
-  font-weight: 800;
+  color: #edf6ff;
+  padding: 9px 10px;
+  min-height: 38px;
+  font-size: 0.8rem;
+  font-weight: 600;
   border-radius: 0;
 }
 html[data-theme="light"] .module-nav .module-nav-section:hover {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
 }
 
@@ -10324,7 +11491,7 @@ html[data-theme="light"] .filter-bar-container {
 
 html[data-theme="light"] .module-filter-panel,
 [data-theme="light"] .module-filter-panel {
-  padding: 16px 22px;
+  padding: 14px 18px;
 }
 
 html[data-theme="light"] .module-filter-panel .filter-bar-container,
@@ -10468,7 +11635,7 @@ html[data-theme="light"] .filter-apply-btn:hover:not(:disabled) {
 
 /* Was border-radius: 3px here — nearly square, while the base (dark-theme)
    rule above and every solid-color modifier class layered on top of
-   .ghost-button (.btn-reassign-custodian, .btn-defer-action, the confirm
+   .ghost-button (.btn-reassign-action, .btn-defer-action, the confirm
    dialog's Cancel button, etc.) keep their own ~9-10px rounding. That
    mismatch is what made action rows read as "different buttons" instead
    of one consistent button style with different colors. */
@@ -10502,23 +11669,23 @@ html[data-theme="light"] .filter-clear-btn,
 html[data-theme="light"] .filter-clear-all-btn {
   font-size: 0.74rem;
 }
-html[data-theme="light"] .btn-reassign-custodian {
-  background: #d97706;
-  border: 1.5px solid #d97706;
+html[data-theme="light"] .btn-reassign-action {
+  background: #2563eb !important;
+  border: 1.5px solid #2563eb !important;
   color: #ffffff !important;
 }
-html[data-theme="light"] .btn-reassign-custodian:hover {
-  background: #b45309;
-  border-color: #b45309;
+html[data-theme="light"] .btn-reassign-action:hover {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
 }
 html[data-theme="light"] .btn-defer-action {
-  background: none !important;
-  border: 1.5px solid #f59e0b !important;
-  color: #b45309 !important;
+  background: #eab308 !important;
+  border: 1.5px solid #eab308 !important;
+  color: #422006 !important;
 }
 html[data-theme="light"] .btn-defer-action:hover {
-  background: rgba(245, 158, 11, 0.1) !important;
-  border-color: #d97706 !important;
+  background: #ca8a04 !important;
+  border-color: #ca8a04 !important;
 }
 /* Cell links stay plain hyperlinks in light theme too (beats the rule above). */
 html[data-theme="light"] table button.cell-link,
@@ -10588,7 +11755,10 @@ html[data-theme="light"] .filter-clear-btn:hover {
 
 html[data-theme="light"] .table-shell {
   background: #ffffff;
-  border: none;
+  /* Ties the table body's outline to the same blue as the panel-header-bar
+     sitting above it, instead of the plain white/gray edge that made each
+     table look disconnected from its own header. */
+  border: 1.5px solid #2563eb;
   border-radius: 10px;
   box-shadow: none;
   margin-bottom: 0;
@@ -10605,19 +11775,24 @@ html[data-theme="light"] .table-shell table {
 html[data-theme="light"] thead th {
   background: #ffffff;
   border-bottom: 2px solid #e2e8f0;
+  border-right: none;
   color: #0f172a;
   font-size: 0.85rem;
   font-weight: 700;
   line-height: 1.3;
   padding: 10px 12px;
-  text-align: center;
+  text-align: left;
   text-transform: none;
   white-space: normal;
 }
 
+/* No inside grid lines — rows read off the alternating tint below plus a
+   hover highlight, not ruled-off cells; only the table's own outer border
+   (below) separates it from the rest of the page. */
 html[data-theme="light"] tbody td {
   background: #ffffff;
-  border-bottom: 1px solid #edf1f7;
+  border-bottom: none;
+  border-right: none;
   color: #17243a;
   font-size: 0.72rem;
   font-weight: 500;
@@ -10628,6 +11803,17 @@ html[data-theme="light"] tbody td {
 
 html[data-theme="light"] tbody tr:nth-child(even) td {
   background: #f8fbff;
+}
+
+/* A long free-text sub-row (see .table-subrow above) was losing its grey
+   band here — both this file's plain-row rule and its even-row stripe rule
+   out-specify the base .table-subrow td rule (more element selectors),
+   so the same white/near-white background as every normal row was winning
+   instead. Matched at least as specifically (tbody tr.table-subrow td)
+   against both, including the even-row stripe. */
+html[data-theme="light"] tbody tr.table-subrow td {
+  background: #e2e8f0;
+  color: #475569;
 }
 
 html[data-theme="light"] tbody tr:hover,
@@ -10801,6 +11987,7 @@ html[data-theme="light"] .status-badge.ticket-forinspect { background: #dcfce7; 
 html[data-theme="light"] .status-badge.ticket-forconfirm,
 html[data-theme="light"] .status-badge.for-verification { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
 html[data-theme="light"] .status-badge.awaiting-closure { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+html[data-theme="light"] .status-badge.not-checked { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
 
 html[data-theme="light"] .status-badge.inactive,
 html[data-theme="light"] .status-badge.decommissioned,
@@ -10970,6 +12157,14 @@ html[data-theme="light"] .issue-id-badge {
 /* Smart dashboard redesign */
 .dashboard-grid-smart {
   gap: 18px;
+  /* The Custodian/Maintenance-Personnel lean dashboard mixes col-span-7 and
+     col-span-5 cards whose count and order vary by role combination (a
+     dual-role account sees more cards than either role alone) — spans that
+     don't sum to 12 per row otherwise leave a visible gap next to every
+     unpaired col-span-7 card instead of packing cleanly. `dense` lets the
+     grid backfill those gaps with whichever later card actually fits,
+     regardless of exact DOM order. */
+  grid-auto-flow: row dense;
 }
 
 .dashboard-grid-smart > .dashboard-banner-compact,
@@ -11095,58 +12290,69 @@ html[data-theme="light"] .issue-id-badge {
   border-color: rgba(255, 255, 255, 0.32);
 }
 
-.dashboard-hologram-core {
+.dashboard-ready-split {
   align-self: center;
+  display: grid;
+  justify-content: center;
+  justify-self: center;
+}
+
+.dashboard-ready-stat {
   aspect-ratio: 1;
   background:
     radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.94) 0 43%, transparent 44%),
-    conic-gradient(var(--core) var(--score), rgba(148, 163, 184, 0.2) 0),
-    radial-gradient(circle, var(--core-soft), transparent 68%);
+    conic-gradient(#22c55e 0 var(--ready-pct, 100%), #ef4444 var(--ready-pct, 100%) 100%),
+    radial-gradient(circle, rgba(34, 197, 94, 0.2), transparent 68%);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 50%;
   box-shadow:
-    0 0 38px var(--core-soft),
-    inset 0 0 30px rgba(255, 255, 255, 0.06);
+    0 0 32px rgba(34, 197, 94, 0.2),
+    inset 0 0 26px rgba(255, 255, 255, 0.06);
   display: grid;
-  justify-self: center;
-  max-width: 230px;
-  min-width: 190px;
   place-items: center;
   position: relative;
-  width: 100%;
+  width: 190px;
 }
 
-.dashboard-hologram-inner {
+.dashboard-ready-stat-inner {
   align-content: center;
   background: rgba(2, 6, 23, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 50%;
   display: grid;
-  height: 57%;
+  gap: 4px;
+  height: 68%;
   justify-items: center;
-  padding: 14px;
+  padding: 10px;
   text-align: center;
-  width: 57%;
+  width: 68%;
 }
 
-.dashboard-hologram-inner span {
-  color: #bae6fd;
-  font-size: 0.66rem;
-  font-weight: 900;
-  text-transform: uppercase;
+.dashboard-ready-row {
+  display: grid;
+  justify-items: center;
+  line-height: 1;
 }
 
-.dashboard-hologram-inner strong {
+.dashboard-ready-row strong {
   color: #ffffff;
-  font-size: 3rem;
+  font-size: 1.5rem;
   font-weight: 900;
   line-height: 0.95;
 }
 
-.dashboard-hologram-inner small {
-  color: rgba(226, 232, 240, 0.88);
-  font-size: 0.7rem;
-  font-weight: 800;
+.dashboard-ready-row span {
+  font-size: 0.58rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dashboard-ready-row.is-ready span {
+  color: #86efac;
+}
+
+.dashboard-ready-row.is-not-ready span {
+  color: #fca5a5;
 }
 
 .dashboard-hologram-scan {
@@ -11157,6 +12363,17 @@ html[data-theme="light"] .issue-id-badge {
   inset: 8%;
   opacity: 0.42;
   position: absolute;
+}
+
+@keyframes dashboardScan {
+  from { transform: translateY(-9px); }
+  to { transform: translateY(9px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-hologram-scan {
+    animation: none;
+  }
 }
 
 .dashboard-command-side {
@@ -11351,6 +12568,439 @@ button.dashboard-signal-card:hover {
   height: 100%;
 }
 
+/* Super Admin dashboard — real content below the signal-card KPI row
+   (coverage chart, role breakdown, orphaned barangays, recent approvals),
+   not just counts. Panels reuse .dashboard-smart-panel's card language. */
+.superadmin-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.superadmin-dashboard-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.superadmin-dashboard-panel {
+  background: var(--card-bg, linear-gradient(180deg, rgba(22, 23, 27, 0.98), rgba(14, 15, 18, 0.98)));
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  padding: 18px;
+}
+.superadmin-dashboard-panel h4 {
+  color: var(--text-strong, #0f172a);
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 0 0 14px;
+}
+.superadmin-dashboard-panel h4:has(+ .superadmin-panel-subtitle) {
+  margin-bottom: 2px;
+}
+.superadmin-panel-subtitle {
+  color: var(--text-muted, #64748b);
+  font-size: 0.76rem;
+  margin: 0 0 14px;
+}
+/* "Barangay snapshot" section header, above the two charts — bold title
+   left, small filter-state caption right, same idea as the reference's
+   "54 matching requirements · Charts follow all grid filters". */
+.superadmin-snapshot-head {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 2px;
+}
+.superadmin-snapshot-head h3 {
+  color: var(--text-strong, #0f172a);
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+.superadmin-snapshot-head .muted { font-size: 0.78rem; }
+
+/* Clickable filter-tabs above the barangay grid — plain text links with a
+   count, the active one bold/underlined in the brand blue. */
+.superadmin-filter-tabs {
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 0;
+}
+.superadmin-filter-tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 10px 6px 8px;
+}
+.superadmin-filter-tabs button span {
+  color: inherit;
+  font-weight: 700;
+  margin-left: 4px;
+}
+.superadmin-filter-tabs button:hover { color: #2563eb; }
+.superadmin-filter-tabs button.active {
+  border-bottom-color: #2563eb;
+  color: #2563eb;
+}
+
+/* Search + province filter + Reset + Add Barangay, above the grid — plain
+   white toolbar row, deliberately NOT .panel-header-bar (that's a blue
+   title banner, wrong look for a row of form controls). */
+.superadmin-grid-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+.superadmin-grid-toolbar .primary-button { margin-left: auto; }
+
+/* Modern <select> styling for the whole Super Admin portal — every plain
+   dropdown here (topbar Impersonate, Registration Codes, the Users role
+   picker, Recover, the grid toolbar, Add Barangay's cascade, ...), not just
+   the ones in a .smart-form. Same look .smart-form select already uses
+   elsewhere in the app (custom chevron via appearance:none + an inline SVG,
+   rounded border, focus ring) instead of the bare OS-native dropdown. */
+.superadmin-shell select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9px;
+  color: #1e293b;
+  cursor: pointer;
+  font-size: 0.85rem;
+  outline: none;
+  padding: 8px 32px 8px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.superadmin-shell select:hover { border-color: #94a3b8; }
+.superadmin-shell select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+.superadmin-shell select:disabled {
+  background-color: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+/* The topbar's own three selects (Province/Barangay/Staff — .map-boundary-
+   selector, .dev-impersonate) already carry this exact look from their own
+   rules; this file loads after theirs, so re-declare their sizing here to
+   avoid the wider default padding/border crowding that compact topbar row. */
+.superadmin-shell .map-boundary-selector select,
+.superadmin-shell .dev-impersonate select {
+  border-radius: 6px;
+  padding: 4px 28px 4px 10px;
+  font-size: 0.78rem;
+}
+
+.superadmin-dashboard-panel-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.superadmin-dashboard-panel-head h4 { margin: 0; }
+.superadmin-dashboard-donut-row {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+}
+.superadmin-dashboard-donut-row .chart-legend { flex: 1; }
+.superadmin-dashboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.superadmin-dashboard-list li {
+  align-items: center;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 8px 6px;
+}
+.superadmin-dashboard-list li:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+.superadmin-dashboard-list li > span:first-of-type {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.superadmin-dashboard-list-more {
+  cursor: default;
+  font-size: 0.8rem;
+  justify-content: center;
+}
+.superadmin-dashboard-list-more:hover { background: none; }
+.link-button {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0;
+}
+.link-button:hover { color: #1d4ed8; text-decoration: underline; }
+
+html[data-theme="light"] .superadmin-dashboard-panel {
+  background: #ffffff;
+  border-color: #cdddf0;
+}
+
+/* ============================================================
+   Super Admin console — a unified workspace for platform-wide tasks
+   ============================================================ */
+.superadmin-shell .content-area {
+  background: linear-gradient(135deg, #f4f8ff 0%, #f8fafc 48%, #eef5ff 100%);
+}
+.superadmin-shell .content-body { max-width: 1500px; margin: 0 auto; }
+.superadmin-shell .page-heading-row {
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px 24px;
+  border: 1px solid #d8e5f6;
+  border-radius: 16px;
+  background: linear-gradient(110deg, #ffffff, #f1f6ff);
+  box-shadow: 0 8px 24px rgba(30, 64, 175, .055);
+}
+.superadmin-shell .page-heading-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #dbeafe, #e8f0ff);
+  color: #2563eb;
+}
+.superadmin-page-kicker { display: block; margin-bottom: 3px; color: #2563eb; font-size: .66rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.superadmin-shell .page-heading-text h2 { margin: 0; color: #102a56; font-size: 1.25rem; }
+.superadmin-shell .page-heading-text p { margin: 4px 0 0; color: #64748b; font-size: .82rem; line-height: 1.4; }
+.superadmin-tab { display: flex; flex-direction: column; gap: 16px; }
+.superadmin-tab > .panel-header-bar,
+.superadmin-tab > .panel-header-bar.inline {
+  min-height: 68px;
+  padding: 16px 20px;
+  border: 1px solid #d9e5f5;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, .04);
+}
+.superadmin-tab > .panel-header-bar h3 { color: #173664; font-size: 1rem; }
+.superadmin-tab .table-shell {
+  overflow: auto;
+  border: 1px solid #d9e5f5;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, .04);
+}
+.superadmin-tab .table-shell table { min-width: 720px; }
+.superadmin-tab .table-shell th { padding: 13px 16px; background: #f4f8fe; color: #526b91; font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; }
+.superadmin-tab .table-shell td { padding: 13px 16px; border-color: #e7eef8; }
+.superadmin-tab .table-shell tbody tr:hover { background: #f8fbff; }
+.superadmin-tab .table-pagination { padding: 2px 4px 0; }
+.superadmin-dashboard { gap: 20px; }
+.superadmin-dashboard .dashboard-signal-grid { gap: 14px; }
+.superadmin-dashboard-panel { border-radius: 14px; padding: 20px; box-shadow: 0 7px 20px rgba(15, 23, 42, .045); }
+.superadmin-snapshot-head { margin: 4px 2px 0; padding-top: 4px; }
+.superadmin-snapshot-head h3 { color: #173664; font-size: 1.06rem; }
+.superadmin-filter-tabs { gap: 8px; padding: 6px; border: 1px solid #d9e5f5; border-radius: 12px; background: #fff; }
+.superadmin-filter-tabs button { padding: 8px 12px; border: 0; border-radius: 8px; }
+.superadmin-filter-tabs button.active { background: #e8f0ff; color: #1d4ed8; }
+.superadmin-grid-toolbar { margin: 0; padding: 14px; border: 1px solid #d9e5f5; border-radius: 12px; background: #fff; box-shadow: 0 4px 12px rgba(15, 23, 42, .035); }
+.superadmin-grid-toolbar .local-search-bar { flex: 1 1 300px; }
+.superadmin-tab .location-form-panel,
+.superadmin-tab .superadmin-panel-spaced { border: 1px solid #d9e5f5; border-radius: 14px; background: #fff; box-shadow: 0 5px 16px rgba(15, 23, 42, .04); }
+.superadmin-tab .location-form-panel { padding: 22px; }
+.superadmin-tab .locations-tab-bar { align-self: flex-start; margin: 0; padding: 5px; border: 1px solid #d9e5f5; border-radius: 11px; background: #fff; }
+.superadmin-tab .locations-tab-button { border-radius: 8px; }
+.superadmin-tab .locations-tab-button.active { background: #e8f0ff; }
+.superadmin-pending-tab .approval-groups,
+.superadmin-users-tab .users-province-groups { display: flex; flex-direction: column; gap: 12px; }
+.superadmin-tab .users-province-group,
+.superadmin-tab .users-barangay-group { overflow: hidden; border: 1px solid #d9e5f5; border-radius: 13px; background: #fff; box-shadow: 0 4px 12px rgba(15, 23, 42, .035); }
+.superadmin-tab .users-province-group > summary { padding: 14px 16px; background: #f7faff; color: #173664; }
+.superadmin-tab .users-barangay-group { margin: 10px 12px 12px; }
+.superadmin-tab .users-barangay-group > summary { padding: 11px 13px; background: #fbfdff; }
+.superadmin-settings-tab .smart-form { padding: 22px; border: 1px solid #d9e5f5; border-radius: 14px; background: #fff; box-shadow: 0 5px 16px rgba(15, 23, 42, .04); }
+html[data-theme="dark"] .superadmin-shell .content-area { background: linear-gradient(135deg, #0b1220, #101827); }
+html[data-theme="dark"] .superadmin-shell .page-heading-row,
+html[data-theme="dark"] .superadmin-tab > .panel-header-bar,
+html[data-theme="dark"] .superadmin-tab .table-shell,
+html[data-theme="dark"] .superadmin-grid-toolbar,
+html[data-theme="dark"] .superadmin-tab .location-form-panel,
+html[data-theme="dark"] .superadmin-tab .users-province-group,
+html[data-theme="dark"] .superadmin-tab .users-barangay-group,
+html[data-theme="dark"] .superadmin-settings-tab .smart-form { background: #111827; border-color: #26354c; }
+html[data-theme="dark"] .superadmin-tab .table-shell th,
+html[data-theme="dark"] .superadmin-tab .users-province-group > summary { background: #172235; }
+
+/* Super Admin surface treatment — matches the reference's restrained panels:
+   white cards float above the canvas with neutral grey elevation rather than
+   conspicuous blue outlines. Blue is reserved for interactive states only. */
+html[data-theme="light"] .superadmin-shell .content-area {
+  background: #edf3fa;
+}
+html[data-theme="light"] .superadmin-shell .page-heading-row {
+  border-color: #e6ebf1;
+  background: #f7f9fc;
+  box-shadow: none;
+}
+html[data-theme="light"] .superadmin-shell .page-heading-icon {
+  background: #eef4ff;
+  box-shadow: inset 0 0 0 1px #dce6f6;
+}
+html[data-theme="light"] .superadmin-tab > .panel-header-bar,
+html[data-theme="light"] .superadmin-tab .table-shell,
+html[data-theme="light"] .superadmin-dashboard-panel,
+html[data-theme="light"] .superadmin-grid-toolbar,
+html[data-theme="light"] .superadmin-tab .location-form-panel,
+html[data-theme="light"] .superadmin-tab .superadmin-panel-spaced,
+html[data-theme="light"] .superadmin-tab .users-province-group,
+html[data-theme="light"] .superadmin-tab .users-barangay-group,
+html[data-theme="light"] .superadmin-settings-tab .smart-form {
+  border: 1px solid #e4e8ed;
+  background: #ffffff;
+  box-shadow: 0 3px 10px rgba(55, 65, 81, .16), 0 1px 2px rgba(55, 65, 81, .08);
+}
+html[data-theme="light"] .superadmin-tab .table-shell { border-radius: 8px; }
+html[data-theme="light"] .superadmin-tab > .panel-header-bar,
+html[data-theme="light"] .superadmin-dashboard-panel,
+html[data-theme="light"] .superadmin-grid-toolbar,
+html[data-theme="light"] .superadmin-tab .location-form-panel,
+html[data-theme="light"] .superadmin-settings-tab .smart-form { border-radius: 7px; }
+html[data-theme="light"] .superadmin-tab .table-shell th {
+  background: #fafbfd;
+  border-bottom: 1px solid #e3e7ec;
+  color: #64748b;
+}
+html[data-theme="light"] .superadmin-tab .table-shell td { border-color: #edf0f3; }
+html[data-theme="light"] .superadmin-tab .table-shell tbody tr:hover { background: #fafcff; }
+html[data-theme="light"] .superadmin-filter-tabs,
+html[data-theme="light"] .superadmin-tab .locations-tab-bar {
+  border-color: #e3e7ec;
+  background: #ffffff;
+  box-shadow: 0 2px 7px rgba(55, 65, 81, .11);
+}
+html[data-theme="light"] .superadmin-filter-tabs button.active,
+html[data-theme="light"] .superadmin-tab .locations-tab-button.active { background: #edf4ff; }
+html[data-theme="light"] .superadmin-tab .users-province-group > summary,
+html[data-theme="light"] .superadmin-tab .users-barangay-group > summary { background: #fbfcfe; }
+
+/* A Super Admin works across the platform, so this is a full operational
+   canvas — not a centered, marketing-style column. */
+.superadmin-shell .content-body {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.superadmin-shell .page-heading-row {
+  min-height: 72px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  border-radius: 7px;
+}
+.superadmin-shell .page-heading-icon { width: 40px; height: 40px; border-radius: 8px; }
+.superadmin-shell .page-heading-text h2 { font-size: 1.1rem; }
+.superadmin-tab { width: 100%; gap: 14px; }
+.superadmin-dashboard-row { grid-template-columns: minmax(0, 1.45fr) minmax(340px, .85fr); }
+.superadmin-dashboard-panel { min-height: 250px; }
+.superadmin-tab .table-shell,
+.superadmin-tab .location-form-panel,
+.superadmin-tab > .panel-header-bar { width: 100%; }
+@media (max-width: 980px) {
+  .superadmin-dashboard-row { grid-template-columns: 1fr; }
+}
+
+/* Table-first console composition. KPI values read as one compact strip,
+   while the queue and data tables receive the visual weight. */
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-grid {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #e1e6eb;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(55, 65, 81, .14);
+}
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card {
+  min-height: 108px;
+  padding: 16px 18px;
+  border: 0;
+  border-right: 1px solid #e8ecf0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+}
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card:last-child { border-right: 0; }
+html[data-theme="light"] .superadmin-dashboard button.dashboard-signal-card:hover { background: #f8fbff; transform: none; }
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card-head { color: #64748b; font-size: .7rem; letter-spacing: .045em; text-transform: uppercase; }
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card strong { color: #1e293b; font-size: 1.35rem; }
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-meter { display: none; }
+html[data-theme="light"] .superadmin-dashboard-panel { padding: 18px; }
+html[data-theme="light"] .superadmin-dashboard-panel h4 { padding-bottom: 11px; border-bottom: 1px solid #e7ebef; }
+.superadmin-pending-tab .superadmin-muted-block { margin: -5px 2px 0; font-size: .8rem; }
+html[data-theme="light"] .superadmin-pending-tab .approval-group-list { gap: 6px; }
+html[data-theme="light"] .superadmin-pending-tab .approval-group-card {
+  min-height: 72px;
+  border: 1px solid #e3e7eb;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(55, 65, 81, .11);
+}
+html[data-theme="light"] .superadmin-pending-tab .approval-group-card:hover { background: #fafcff; transform: none; }
+html[data-theme="light"] .superadmin-pending-tab .approval-card-list { grid-template-columns: 1fr; gap: 7px; }
+html[data-theme="light"] .superadmin-pending-tab .approval-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.15fr) minmax(220px, 1.2fr) auto auto minmax(200px, .75fr);
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border: 1px solid #e3e7eb;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(55, 65, 81, .11);
+}
+html[data-theme="light"] .superadmin-pending-tab .approval-card.is-first-admin { border-left: 3px solid #d97706; box-shadow: 0 2px 7px rgba(55, 65, 81, .11); }
+html[data-theme="light"] .superadmin-pending-tab .approval-card-actions { margin: 0; }
+@media (max-width: 900px) {
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card:nth-child(2) { border-right: 0; }
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card:nth-child(-n+2) { border-bottom: 1px solid #e8ecf0; }
+  html[data-theme="light"] .superadmin-pending-tab .approval-card { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-grid { grid-template-columns: 1fr; }
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card { border-right: 0; border-bottom: 1px solid #e8ecf0; }
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card:last-child { border-bottom: 0; }
+  html[data-theme="light"] .superadmin-pending-tab .approval-card { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .superadmin-shell .page-heading-row { align-items: flex-start; padding: 16px; }
+  .superadmin-shell .page-heading-text p { max-width: 290px; }
+  .superadmin-tab > .panel-header-bar { align-items: flex-start; flex-direction: column; }
+  .superadmin-grid-toolbar .primary-button { width: 100%; margin-left: 0; }
+  .superadmin-dashboard-donut-row { align-items: flex-start; flex-direction: column; }
+}
+
 .dashboard-intelligence-grid {
   display: grid;
   gap: 14px;
@@ -11481,16 +13131,7 @@ button.dashboard-signal-card:hover {
 }
 
 .dashboard-operations-matrix .column-chart {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  min-height: 142px;
-}
-
-.dashboard-operations-matrix .column-bar {
-  grid-template-rows: 96px auto auto;
-}
-
-.dashboard-operations-matrix .column-track {
-  height: 96px;
+  height: 200px;
 }
 
 .dashboard-panel-note {
@@ -11522,26 +13163,6 @@ button.dashboard-signal-card:hover {
   text-transform: uppercase;
 }
 
-.dashboard-grid-smart .horizontal-bars {
-  gap: 10px;
-}
-
-.dashboard-grid-smart .bar-track {
-  background: rgba(148, 163, 184, 0.18);
-  height: 7px;
-}
-
-@keyframes dashboardScan {
-  from { transform: translateY(-9px); }
-  to { transform: translateY(9px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dashboard-hologram-scan {
-    animation: none;
-  }
-}
-
 html[data-theme="light"] .dashboard-command-center {
   background:
     linear-gradient(135deg, #0b1f4d 0%, #1d4ed8 55%, #2563eb 100%);
@@ -11570,20 +13191,20 @@ html[data-theme="light"] .dashboard-smart-panel-head > strong {
   color: #071a35;
 }
 
-html[data-theme="light"] .dashboard-hologram-inner {
+html[data-theme="light"] .dashboard-ready-stat-inner {
   background: rgba(248, 250, 252, 0.88);
 }
 
-html[data-theme="light"] .dashboard-hologram-inner strong {
+html[data-theme="light"] .dashboard-ready-row strong {
   color: #071a35;
 }
 
-html[data-theme="light"] .dashboard-hologram-inner span {
+html[data-theme="light"] .dashboard-ready-row.is-ready span {
   color: #0f766e;
 }
 
-html[data-theme="light"] .dashboard-hologram-inner small {
-  color: #475569;
+html[data-theme="light"] .dashboard-ready-row.is-not-ready span {
+  color: #b91c1c;
 }
 
 @media (max-width: 1180px) {
@@ -11613,8 +13234,8 @@ html[data-theme="light"] .dashboard-hologram-inner small {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-hologram-core {
-    max-width: 220px;
+  .dashboard-ready-stat {
+    width: 160px;
   }
 
   .dashboard-readiness-matrix,
@@ -11638,8 +13259,8 @@ html[data-theme="light"] .dashboard-hologram-inner small {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-hologram-inner strong {
-    font-size: 2.35rem;
+  .dashboard-ready-row strong {
+    font-size: 1.2rem;
   }
 
   .dashboard-signal-card p {
@@ -11722,4 +13343,636 @@ html[data-theme="dark"] .file-cabinet-dropzone:hover {
 }
 html[data-theme="dark"] .file-cabinet-dropzone-title {
   color: var(--text-strong, #f1f5f9);
+}
+
+/* ============================================================
+   Super Admin workspace — Pending Approvals cards, and small layout
+   utilities that replace one-off inline styles across its other tabs
+   (Barangays recovery panel, Registration Codes chip, Impersonate row),
+   so every page in this portal reads as one consistently designed module.
+   ============================================================ */
+
+.approval-card-list {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.approval-card {
+  background: var(--card-bg, #101827);
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.approval-card.is-first-admin {
+  border-color: #d97706;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35);
+}
+
+.approval-card-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.approval-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: -4px;
+}
+
+.approval-card-email {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-card-phone {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.75rem;
+}
+
+.approval-card-tags {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.badge-first-admin {
+  background: rgba(217, 119, 6, 0.16);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  border-radius: 999px;
+  color: #d97706;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  text-transform: uppercase;
+}
+
+.approval-card-location {
+  align-items: center;
+  color: var(--text-muted, #94a3b8);
+  display: flex;
+  font-size: 0.8rem;
+  gap: 6px;
+}
+
+.approval-card-submitted {
+  font-size: 0.74rem;
+}
+
+.approval-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.approval-card-actions .ghost-button,
+.approval-card-actions .primary-button {
+  flex: 1;
+  justify-content: center;
+}
+
+/* Pending Approvals' grouped-by-barangay overview — one clickable card per
+   barangay (not per account), drilling into the same .approval-card-list
+   used before this redesign. */
+.approval-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.approval-group-card {
+  align-items: center;
+  background: var(--card-bg, #101827);
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  text-align: left;
+  transition: border-color 0.15s, transform 0.1s;
+  width: 100%;
+}
+.approval-group-card:hover {
+  border-color: #2563eb;
+  transform: translateY(-1px);
+}
+.approval-group-card.is-first-admin {
+  border-color: #d97706;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35);
+}
+.approval-group-card-location {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  min-width: 0;
+}
+.approval-group-card-location > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.approval-group-card-location strong {
+  font-size: 0.94rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-group-card-location .muted {
+  font-size: 0.78rem;
+}
+.approval-group-card-tags {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+}
+.approval-group-card-chevron {
+  color: var(--text-muted, #94a3b8);
+  flex-shrink: 0;
+}
+.approval-group-back {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  margin-right: 4px;
+  padding: 2px;
+  vertical-align: middle;
+}
+
+/* All Users — grouped Province -> Barangay via nested <details>, native
+   collapse/expand instead of hand-rolled toggle state. Both levels render
+   open by default (a constant `open` attribute — React only touches the
+   DOM when the prop VALUE changes between renders, so this never fights a
+   user's own manual collapse click). */
+.users-province-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.users-province-group {
+  background: var(--card-bg, #101827);
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  overflow: hidden;
+}
+.users-province-group > summary {
+  align-items: center;
+  background: rgba(37, 99, 235, 0.1);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.95rem;
+  font-weight: 700;
+  gap: 10px;
+  list-style: none;
+  padding: 12px 16px;
+}
+.users-province-group > summary::-webkit-details-marker { display: none; }
+.users-province-group > summary::before {
+  content: '';
+  border-style: solid;
+  border-width: 5px 4px 0 4px;
+  border-color: currentColor transparent transparent transparent;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.users-province-group[open] > summary::before { transform: rotate(-90deg); }
+.users-province-group > summary span:first-of-type { flex: 1; }
+.users-barangay-group {
+  border-top: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.15));
+  padding: 10px 16px 14px 16px;
+}
+.users-barangay-group > summary {
+  align-items: center;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.84rem;
+  font-weight: 600;
+  gap: 8px;
+  list-style: none;
+  padding: 6px 0;
+}
+.users-barangay-group > summary::-webkit-details-marker { display: none; }
+.users-barangay-group > summary::before {
+  content: '';
+  border-style: solid;
+  border-width: 4px 3.5px 0 3.5px;
+  border-color: currentColor transparent transparent transparent;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.users-barangay-group[open] > summary::before { transform: rotate(-90deg); }
+.users-barangay-group > summary span:first-of-type { flex: 1; color: var(--text, #e2e8f0); }
+.users-barangay-group .table-shell { margin-top: 6px; }
+
+html[data-theme="light"] .users-province-group {
+  background: #ffffff;
+  border-color: #cdddf0;
+}
+html[data-theme="light"] .users-barangay-group > summary span:first-of-type {
+  color: #1e293b;
+}
+
+.superadmin-panel-spaced { margin-top: 16px; }
+.superadmin-inline-row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.superadmin-muted-block { margin-bottom: 12px; }
+
+.superadmin-code-chip {
+  background: rgba(37, 99, 235, 0.14);
+  border: 1.5px solid rgba(96, 165, 250, 0.4);
+  border-radius: 8px;
+  color: #93c5fd;
+  display: inline-flex;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 8px 14px;
+}
+
+.superadmin-description-cell {
+  display: block;
+  max-width: 340px;
+  white-space: normal;
+}
+
+html[data-theme="light"] .approval-card,
+html[data-theme="light"] .approval-group-card {
+  background: #ffffff;
+  border-color: #cdddf0;
+  box-shadow: 0 8px 20px rgba(31, 75, 122, 0.1);
+}
+
+html[data-theme="light"] .approval-card-email,
+html[data-theme="light"] .approval-card-phone,
+html[data-theme="light"] .approval-card-location {
+  color: #64748b;
+}
+
+html[data-theme="light"] .superadmin-code-chip {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+/* ============================================================
+   Ticket Details redesign — `html`-prefixed so these win over the older,
+   more scattered ticket-process/ticket-section rules earlier in this
+   file instead of having to hunt down and edit every one of them.
+   ============================================================ */
+
+/* White header, larger title, muted kicker/meta (was a dark glass card). */
+html .ticket-process-hero {
+  background: #ffffff;
+  border: 1px solid #d5dbe3;
+  color: #0f172a;
+}
+html section.ticket-process-hero .ticket-detail-title {
+  color: #0f172a;
+  font-size: 1.5rem;
+}
+html .ticket-process-kicker,
+html .ticket-process-kicker > span:not(:first-child),
+html .ticket-process-hero .ticket-detail-subline,
+html .ticket-process-hero .ticket-meta-item {
+  color: #64748b;
+}
+
+/* Resolved-% ring on a white header — a light inner circle instead of the
+   dark one, so it reads as a ring on the card, not a hole punched in it. */
+html .ticket-process-meter {
+  background: conic-gradient(var(--ticket-hero-accent, #2563eb) var(--ticket-progress, 0%), #e2e8f0 0);
+}
+html .ticket-process-meter-core {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+html .ticket-process-meter-core span { color: var(--ticket-hero-accent, #2563eb); }
+html .ticket-process-meter-core strong { color: #0f172a; }
+html .ticket-process-meter-core small { color: #64748b; }
+
+/* Next Best Action — a light blue-tinted card instead of a translucent
+   glass panel competing with the header for attention. */
+html .ticket-process-next-card {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+html .ticket-process-next-label { color: #2563eb; }
+html .ticket-process-next-card > strong { color: #1d4ed8; }
+html .ticket-process-next-card > p { color: #475569; }
+html .ticket-process-close { color: #94a3b8; }
+html .ticket-process-close:hover { color: #0f172a; }
+html .ticket-process-stat-grid { border-top: 1px solid #e2e8f0; }
+html .ticket-process-stat svg,
+html .ticket-process-stat span { color: #64748b; }
+html .ticket-process-stat strong { color: #0f172a; }
+
+/* Small uppercase section headings, no divider line underneath. */
+html .ticket-section h4 {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  border-bottom: none;
+  margin: 0 0 12px;
+}
+html .ticket-section h4 svg { color: #2563eb; stroke: #2563eb; flex-shrink: 0; }
+
+/* Sub-Issues heading: count pill + hover tooltip icon instead of a long
+   help sentence sitting under the heading. */
+html .ticket-count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: normal;
+}
+html .ticket-section-info-icon { display: inline-flex; color: #94a3b8; cursor: help; }
+html .ticket-section-info-icon:hover { color: #64748b; }
+
+/* Overview / Custodian Inspection key-value pairs — class-based instead of
+   the inline styles they used to carry. */
+html .ticket-kv-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+html .ticket-kv-row > div > span {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+
+/* Ticket Timeline — same, now class-based and a touch lighter than the
+   inline version it replaces. */
+html .ticket-timeline { display: flex; flex-direction: column; }
+html .ticket-timeline-item { display: flex; gap: 10px; }
+html .ticket-timeline-marker { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+html .ticket-timeline-dot {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #f1f5f9; color: #64748b;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+html .ticket-timeline-line { width: 2px; flex: 1; min-height: 18px; background: #eef1f5; margin-top: 2px; }
+html .ticket-timeline-content { padding-bottom: 16px; }
+html .ticket-timeline-item:last-child .ticket-timeline-content { padding-bottom: 2px; }
+html .ticket-timeline-content p { margin: 0 0 3px; font-size: 0.82rem; font-weight: 600; color: #334155; }
+html .ticket-timeline-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: 0.76rem; color: #64748b; }
+
+@media (max-width: 860px) {
+  html .ticket-process-hero { grid-template-columns: 1fr; }
+}
+
+/* Page background behind the Ticket Details cards. */
+html .content-area:has(.ticket-detail-panel) { background: #f4f6f9; }
+
+/* Sub-issue cards — same grey border as the rest of the page, a lighter
+   shadow, white background. */
+html .subissue-card {
+  border: 1px solid #d5dbe3;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+html .subissue-card-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+
+/* Reassign/Defer per-sub-issue icon buttons — quiet by default (white,
+   1px grey border), colored only on hover; sit below the meta strip. */
+html .subissue-icon-row { display: flex; gap: 6px; margin-top: 8px; }
+html .icon-btn.subissue-icon-btn {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: #ffffff; border: 1px solid #e2e8f0; color: #94a3b8;
+}
+html .icon-btn.subissue-icon-btn svg { width: 14px; height: 14px; }
+html .icon-btn.subissue-icon-btn.is-reassign:hover { color: #2563eb; border-color: #2563eb; background: #eff6ff; }
+html .icon-btn.subissue-icon-btn.is-defer:hover { color: #d97706; border-color: #d97706; background: #fffbeb; }
+
+/* Inline Reassign/Defer form (replaces the old modals) — a two-column grid
+   that only appears once a panel is open, stacking below 1100px. */
+html .subissue-body-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 8px; }
+html .subissue-body-grid:has(.subissue-inline-panel) { grid-template-columns: 1fr 1fr; align-items: start; }
+html .subissue-body-main { min-width: 0; }
+html .subissue-inline-panel {
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+@media (max-width: 1100px) {
+  html .subissue-body-grid:has(.subissue-inline-panel) { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   Same grey border + soft shadow, app-wide, for every role. Light theme
+   only — popups, dropdowns, filter panels and auth/profile cards are
+   deliberately left untouched.
+   ============================================================ */
+html:not([data-theme="dark"]) :is(
+  .panel,
+  .table-shell,
+  .metric-card,
+  .veh-card,
+  .ticket-card,
+  .work-tracker-card,
+  .dashboard-quick-card,
+  .report-category-card,
+  .ticket-section,
+  .map-card,
+  .stat-filter-card
+) {
+  border: 1px solid #d5dbe3;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.10), 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+/* `.module-grid .panel` carries its own higher-specificity border/shadow
+   (the blue-tinted #cddcf0 look) earlier in this file — matched here so
+   the grey border above actually wins instead of losing to it. */
+html:not([data-theme="dark"]) .module-grid .panel {
+  border: 1px solid #d5dbe3;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.10), 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+
+/* ── Ticket hero v2: ring beside the title, one tidy summary card ─────── */
+html .ticket-detail-panel.is-page .ticket-process-hero {
+  grid-template-columns: auto minmax(0, 1fr) minmax(380px, 1.25fr);
+  gap: 22px;
+  align-items: center;
+  padding: 22px 26px;
+  background: linear-gradient(180deg, #ffffff, #fafcff);
+}
+html .ticket-detail-panel.is-page .ticket-process-meter {
+  width: 104px; min-width: 104px; max-width: 104px;
+  border: 0;
+  box-shadow: none;
+  background: conic-gradient(var(--ticket-hero-accent, #2563eb) var(--ticket-progress, 0%), #e6ecf5 0);
+}
+html .ticket-detail-panel.is-page .ticket-process-meter-core {
+  width: 80%;
+  background: #fff;
+  box-shadow: 0 0 0 1px #eef2f8;
+}
+html .ticket-detail-panel.is-page .ticket-process-meter-core strong { font-size: 1.3rem; color: #0f172a; }
+html .ticket-detail-panel.is-page .ticket-process-meter-core span { color: var(--ticket-hero-accent, #2563eb); font-size: .54rem; }
+html .ticket-detail-panel.is-page .ticket-process-meter-core small { font-size: .6rem; }
+html .ticket-detail-panel.is-page .ticket-process-kicker { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+html .ticket-detail-panel.is-page .ticket-process-kicker > span:not(:first-child)::before { content: '•'; margin-right: 10px; color: #cbd5e1; }
+html .ticket-detail-panel.is-page section.ticket-process-hero .ticket-detail-title { font-size: 1.5rem; line-height: 1.2; margin-bottom: 12px; }
+html .ticket-detail-panel.is-page .ticket-process-next-card {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+html .ticket-detail-panel.is-page .ticket-process-next-label { font-size: .64rem; letter-spacing: .08em; }
+html .ticket-detail-panel.is-page .ticket-process-next-card > strong { font-size: 1.1rem; }
+html .ticket-detail-panel.is-page .ticket-process-next-card > p { font-size: .82rem; margin: 3px 0 14px; }
+html .ticket-detail-panel.is-page .ticket-process-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+html .ticket-detail-panel.is-page .ticket-process-stat {
+  align-items: center; text-align: center; gap: 2px;
+  padding: 8px 6px;
+  background: #fff;
+  border: 1px solid #e8edf4;
+  border-radius: 10px;
+}
+html .ticket-detail-panel.is-page .ticket-process-stat svg { display: block; color: #64748b; }
+html .ticket-detail-panel.is-page .ticket-process-stat span { font-size: .58rem; letter-spacing: .05em; }
+html .ticket-detail-panel.is-page .ticket-process-stat strong { font-size: .95rem; color: #0f172a; }
+@media (max-width: 1100px) {
+  html .ticket-detail-panel.is-page .ticket-process-hero { grid-template-columns: auto minmax(0, 1fr); }
+  html .ticket-detail-panel.is-page .ticket-process-next-card { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  html .ticket-detail-panel.is-page .ticket-process-hero { grid-template-columns: 1fr; }
+  html .ticket-detail-panel.is-page .ticket-process-meter { display: none; }
+  html .ticket-detail-panel.is-page .ticket-process-stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Lean Custodian / Maintenance dashboard: the smart-grid rule above hides
+   every plain .panel, so opt these back in and size them explicitly. */
+html .dashboard-grid-smart > .panel.dashboard-lean-panel { display: block !important; }
+html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-7 { grid-column: span 7; }
+html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-column: span 5; }
+@media (max-width: 960px) {
+  html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-7,
+  html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-column: 1 / -1; }
+}
+
+
+/* ── QA walkthrough fixes ─────────────────────────────────────────────── */
+/* Fleet Condition donut on the lean Custodian / Maintenance dashboards was a
+   64px ring with its centre label spilling over it. */
+html .dashboard-lean-panel .fleet-status-compact { gap: 28px; padding: 14px 22px 22px; justify-content: center; }
+html .dashboard-lean-panel .donut-chart-small .donut-chart { width: 150px; }
+html .dashboard-lean-panel .fleet-status-legend-col { min-width: 160px; }
+
+/* Two badges on one sidebar row (count + awaiting-review pill) pushed the
+   second one past the sidebar edge. */
+.module-nav button span:not(.module-nav-badge) { min-width: 0; overflow-wrap: anywhere; }
+.module-nav button span.module-nav-badge + span.module-nav-badge { margin-left: -2px; }
+
+/* ── Sidebar: fixed, like the top bar ─────────────────────────────────────
+   It used to be `position: sticky` beside a `position: fixed` top bar. Those
+   two are positioned by the browser differently, so on some graphics setups a
+   blank band flashed between the top bar and the sidebar/content while
+   scrolling (worst near the bottom of a page). A fixed sidebar is positioned
+   the same way as the top bar, so they can't drift apart. The grid column
+   still reserves the sidebar's width so the content doesn't move. */
+/* One width variable per theme (252px dark / 224px light, 76px collapsed or on
+   narrow screens) drives BOTH the grid column and the fixed sidebar. */
+.workspace { --sidebar-w: 252px; }
+html[data-theme="light"] .workspace { --sidebar-w: 224px; }
+.workspace.sidebar-collapsed,
+html[data-theme="light"] .workspace.sidebar-collapsed { --sidebar-w: 76px; }
+@media (max-width: 1100px) {
+  .workspace,
+  html[data-theme="light"] .workspace { --sidebar-w: 76px; }
+}
+.workspace,
+html[data-theme="light"] .workspace,
+.workspace.sidebar-collapsed,
+html[data-theme="light"] .workspace.sidebar-collapsed {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+}
+.workspace > .sidebar {
+  position: fixed;
+  top: var(--topbar-height, 64px);
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-w);
+  height: auto;
+  box-sizing: border-box;
+  z-index: 90;
+  transition: width 0.18s ease;
+}
+.workspace > .content-area { grid-column: 2; }
+
+
+/* Propose Ticket: a bigger, easier-to-read vehicle preview — the standard
+   .ticket-preview-card is quite small; this modifier only applies where the
+   --lg class is added (the Custodian's proposal form). */
+.ticket-preview-card.ticket-preview-card--lg {
+  padding: 20px;
+  gap: 20px;
+  background: #fff;
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+.ticket-preview-photo.ticket-preview-photo--lg {
+  width: 128px;
+  height: 128px;
+}
+.ticket-preview-body.ticket-preview-body--lg strong {
+  font-size: 1.3rem;
+}
+.ticket-preview-body.ticket-preview-body--lg span {
+  font-size: 0.95rem;
+}
+.ticket-preview-body.ticket-preview-body--lg span.muted {
+  font-size: 0.92rem;
+}
+
+/* Sidebar labels: wrap between words only, never mid-word ("Maintenanc / e").
+   A slightly tighter indent/gap/size keeps the longest single word on one line
+   even with a badge beside it. Kept last so it wins over the earlier themes. */
+.module-nav button { gap: 8px; font-size: 0.85rem; }
+.module-nav button > span:not(.module-nav-badge) {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  line-height: 1.25;
+}
+.module-nav-group > button:not(.module-nav-section),
+html[data-theme="light"] .module-nav-group > button:not(.module-nav-section) {
+  padding-left: 28px;
 }
