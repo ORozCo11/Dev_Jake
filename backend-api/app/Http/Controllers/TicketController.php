@@ -945,6 +945,15 @@ class TicketController extends Controller
             403,
             'This ticket is not assigned to you.'
         );
+
+        // Logging the last outstanding repair now advances the ticket on its
+        // own (advanceToVerificationIfReady()), so this manual button is a
+        // fallback — pressing it after that already happened is a no-op, not
+        // an error, and doesn't re-notify the Custodian.
+        if ($ticket->status === 'For Verification') {
+            return response()->json($ticket->fresh($this->eagerLoads()));
+        }
+
         abort_unless($ticket->status === 'Active', 422, "A ticket can only be submitted for verification while Active. Current status: {$ticket->status}.");
 
         $ticket->load('subIssues');
@@ -968,18 +977,61 @@ class TicketController extends Controller
                 $ticket->ticket_id
             );
 
-            $mechanicName = $request->user()->name;
-            $vehicleName = $ticket->vehicle->vehicle_name;
-            $this->notifyUser(
-                $ticket->assigned_custodian_id,
-                'Verification Required: Repairs Completed',
-                "Mechanic {$mechanicName} completed repairs for Ticket #{$ticket->ticket_id} ({$vehicleName}). Please verify.",
-                'repairs_completed',
-                $ticket->ticket_id
-            );
+            $this->notifyRepairReadyForVerification($ticket);
         });
 
         return response()->json($ticket->fresh($this->eagerLoads()));
+    }
+
+    /**
+     * Once every sub-issue on an Active ticket has its repair logged (For
+     * Inspection), the ticket moves to For Verification on its own and the
+     * assigned Custodian is told — the same transition submitForVerification()
+     * makes, but no longer dependent on the mechanic finding a second button
+     * after logging the last repair. That missed step is what left Custodians
+     * notified to verify a ticket that was still Active (and so not yet
+     * verifiable). Same readiness rule as submitForVerification(): anything
+     * not at For Inspection — including a cannibalized repair still awaiting
+     * Admin approval — keeps the ticket Active. Call inside the caller's
+     * transaction. Returns whether the ticket advanced.
+     */
+    private function advanceToVerificationIfReady(MaintenanceTicket $ticket, Request $request): bool
+    {
+        $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
+        if (!$locked || $locked->status !== 'Active') {
+            return false;
+        }
+
+        $subIssues = TicketSubIssue::where('ticket_id', $ticket->ticket_id)->get();
+        if ($subIssues->isEmpty() || $subIssues->contains(fn ($s) => $s->status !== 'For Inspection')) {
+            return false;
+        }
+
+        $locked->update(['status' => 'For Verification']);
+
+        $this->log(
+            $request,
+            'Submitted for Verification',
+            "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) — every repair logged; sent to the Custodian for verification.",
+            $ticket->ticket_id
+        );
+        $this->notifyRepairReadyForVerification($ticket);
+
+        return true;
+    }
+
+    // One wording for "this ticket is now waiting on you", whichever path
+    // got it there (automatic advance or the manual fallback button). Links
+    // to the ticket, which is where the Custodian's Verify section lives.
+    private function notifyRepairReadyForVerification(MaintenanceTicket $ticket): void
+    {
+        $this->notifyUser(
+            $ticket->assigned_custodian_id,
+            'Repair Ready for Verification',
+            "Ticket #{$ticket->ticket_id} — {$ticket->vehicle->vehicle_name}: the repair has been submitted and is ready for your verification.",
+            'repairs_completed',
+            $ticket->ticket_id
+        );
     }
 
     /**
@@ -1016,11 +1068,48 @@ class TicketController extends Controller
 
         abort_unless($ticket->status === 'For Verification', 422, "Verification can only be submitted when the ticket is For Verification. Current: {$ticket->status}.");
 
-        $request->validate([
-            'test_attested' => ['required', 'accepted'],
+        // Verification is a real functional test: the Custodian operates the
+        // vehicle against its vehicle-type checklist (the frontend's
+        // functionalTestChecklist()), then either approves — with the
+        // attestation — or returns it for repair. Every guard above applies
+        // to both outcomes. No verdict = Approved, so an attestation-only
+        // request (the original contract) still works unchanged.
+        $data = $request->validate([
+            'verification_verdict'     => ['nullable', Rule::in(['Approved', 'Rejected'])],
+            'verification_notes'       => ['nullable', 'string', 'max:5000'],
+            'functional_test'          => ['nullable', 'array'],
+            'functional_test.*.item'   => ['required', 'string', 'max:255'],
+            'functional_test.*.passed' => ['required', 'boolean'],
+            'test_attested'            => ['nullable', 'boolean'],
         ]);
+        $approved = ($data['verification_verdict'] ?? 'Approved') === 'Approved';
+        $functionalTest = $data['functional_test'] ?? null;
+        $failedChecks = collect($functionalTest ?? [])->reject(fn ($i) => $i['passed'])->pluck('item');
 
-        DB::transaction(function () use ($ticket, $request) {
+        if ($approved) {
+            abort_unless(
+                $request->boolean('test_attested'),
+                422,
+                'Before approving, you must attest that you personally operated and tested the vehicle.'
+            );
+            // The server re-checks the checklist itself rather than trusting
+            // the verdict: a failed check can never be approved.
+            abort_if(
+                $failedChecks->isNotEmpty(),
+                422,
+                'This functional test has a failed check — it cannot be approved. Return it for repair instead.'
+            );
+        } else {
+            abort_if(
+                $failedChecks->isEmpty() && blank($data['verification_notes'] ?? null),
+                422,
+                'Say what is wrong — mark the failing check or add a note — so the mechanic knows what to redo.'
+            );
+
+            return $this->returnTicketForRepair($ticket, $request, $data, $functionalTest, $failedChecks);
+        }
+
+        DB::transaction(function () use ($ticket, $request, $data, $functionalTest) {
             $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
             abort_unless($locked && $locked->status === 'For Verification', 422, 'This ticket was already verified or changed.');
 
@@ -1031,8 +1120,11 @@ class TicketController extends Controller
                 }
                 $subIssue->update([
                     'verification_verdict' => 'Approved',
+                    'verification_notes'    => $data['verification_notes'] ?? null,
                     'verified_by'           => $request->user()->id,
                     'verified_at'           => now(),
+                    'functional_test'       => $functionalTest,
+                    'test_attested'         => true,
                 ]);
                 $this->finalizeConfirmedSubIssue($ticket, $subIssue, $request->user()->id, null);
             }
@@ -1078,6 +1170,62 @@ class TicketController extends Controller
                 'Repair Verified & Closed',
                 "Your repair work on Ticket #{$ticket->ticket_id} ({$vehicleName}) was verified and the ticket is now closed.",
                 'ticket_verified',
+                $ticket->ticket_id
+            );
+        });
+
+        return response()->json($ticket->fresh($this->eagerLoads()));
+    }
+
+    /**
+     * The Custodian's functional test failed — the ticket goes back to its
+     * repair stage through the normal workflow, not a frontend status flip:
+     * ticket Active again, each logged line item Under Repair again (the
+     * only state logRepairs() accepts), with the Rejected verdict, the
+     * checklist result, who/when and the Custodian's notes recorded on
+     * every one. The same mechanic is notified with what failed; once they
+     * re-log, advanceToVerificationIfReady() brings it back to this same
+     * Custodian. Called from verifyTicket() after all its guards passed.
+     */
+    private function returnTicketForRepair(MaintenanceTicket $ticket, Request $request, array $data, ?array $functionalTest, $failedChecks)
+    {
+        DB::transaction(function () use ($ticket, $request, $data, $functionalTest, $failedChecks) {
+            $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
+            abort_unless($locked && $locked->status === 'For Verification', 422, 'This ticket was already verified or changed.');
+
+            $notes = $data['verification_notes'] ?? null;
+            foreach (TicketSubIssue::where('ticket_id', $ticket->ticket_id)->where('status', 'For Inspection')->get() as $subIssue) {
+                $subIssue->update([
+                    'status'               => 'Under Repair',
+                    'verification_verdict' => 'Rejected',
+                    'verification_notes'   => $notes,
+                    'verified_by'          => $request->user()->id,
+                    'verified_at'          => now(),
+                    'repair_completed_at'  => null,
+                    'functional_test'      => $functionalTest,
+                    'test_attested'        => false,
+                ]);
+            }
+
+            $locked->update(['status' => 'Active']);
+
+            $reason = collect([
+                $failedChecks->isNotEmpty() ? 'Failed checks: ' . $failedChecks->implode(', ') : null,
+                $notes ? "Notes: {$notes}" : null,
+            ])->filter()->implode('. ');
+
+            $this->log(
+                $request,
+                'Verification Failed — Returned for Repair',
+                "Ticket #{$ticket->ticket_id} ({$ticket->ticket_title}) failed Custodian verification and was returned for repair. {$reason}",
+                $ticket->ticket_id
+            );
+
+            $this->notifyUser(
+                $ticket->assigned_mechanic_id,
+                'Repair Returned for Rework',
+                "{$request->user()->name} returned Ticket #{$ticket->ticket_id} ({$ticket->vehicle->vehicle_name}) for repair after verification. {$reason}",
+                'repairs_rejected',
                 $ticket->ticket_id
             );
         });
@@ -1761,13 +1909,11 @@ class TicketController extends Controller
                     $ticket->vehicle->barangay_id
                 );
             } else {
-                $this->notifyUser(
-                    $ticket->assigned_custodian_id,
-                    'Verification Required: Repairs Completed',
-                    "Mechanic {$mechanicName} logged repair work for \"{$subIssue->title}\" on Ticket #{$ticket->ticket_id} ({$vehicleName}). Please verify.",
-                    'repairs_completed',
-                    $ticket->ticket_id
-                );
+                // Previously this told the Custodian "Please verify" on every
+                // individual log, while the ticket was still Active and so not
+                // yet verifiable. Now the ticket advances (and the Custodian
+                // is notified, once) only when the last repair is logged.
+                $this->advanceToVerificationIfReady($ticket, $request);
             }
         });
 
@@ -1859,13 +2005,10 @@ class TicketController extends Controller
                 'cannibalization_approved',
                 $ticket->ticket_id
             );
-            $this->notifyUser(
-                $ticket->assigned_custodian_id,
-                'Verification Required: Repairs Completed',
-                "A cannibalized repair for \"{$subIssue->title}\" on Ticket #{$ticket->ticket_id} ({$vehicleName}) was approved and is ready for your verification.",
-                'repairs_completed',
-                $ticket->ticket_id
-            );
+            // Approval releases this line item to For Inspection — if it was
+            // the last one outstanding, the whole ticket goes to the
+            // Custodian now (same rule as logRepairs()).
+            $this->advanceToVerificationIfReady($ticket, $request);
         });
 
         return $subIssue->fresh();

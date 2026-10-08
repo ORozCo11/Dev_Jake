@@ -1058,12 +1058,22 @@ function Workspace() {
   // (or navigates to) a different module first saw stale/zeroed badges until
   // they happened to visit Dashboard. Poll them independently so they reflect
   // live counts no matter what module is currently open.
+  // Also refreshed the moment the tab/window regains focus — otherwise work
+  // another user did while this tab sat in the background (a mechanic
+  // submitting a repair, an Admin approving) only showed up on the next
+  // 15s tick, so coming back to the tab briefly showed stale counts.
   useEffect(() => {
-    loadModule('dashboard').catch(() => {});
-    const interval = setInterval(() => {
-      loadModule('dashboard').catch(() => {});
-    }, 15000);
-    return () => clearInterval(interval);
+    const refreshBadges = () => { loadModule('dashboard').catch(() => {}); };
+    refreshBadges();
+    const interval = setInterval(refreshBadges, 15000);
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshBadges(); };
+    window.addEventListener('focus', refreshBadges);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshBadges);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [loadModule]);
 
   useEffect(() => {
@@ -3274,7 +3284,7 @@ function Workspace() {
               ticket={flattenSubIssueRows(records.ticketWorkOrders).find((r) => String(r.ticket_id) === String(logRepairsTicketId) && String(r.sub_issue_id) === String(logRepairsSubIssueId))}
               vehicleOptions={lookups.vehicles ?? []}
               onBack={() => returnToModule('ticketWorkOrders')}
-              onSubmit={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/log-repairs`, payload, 'Repair logs submitted. Sent for Custodian verification.').then((ok) => { if (ok) returnToModule('ticketWorkOrders'); })}
+              onSubmit={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/log-repairs`, payload, 'Repair logged. Once every repair on this ticket is logged, it goes to the Custodian for verification automatically.').then((ok) => { if (ok) returnToModule('ticketWorkOrders'); })}
               onExternalSend={(row, payload) => ticketAction(`/tickets/${row.ticket_id}/sub-issues/${row.sub_issue_id}/external-sent`, payload, 'Marked as sent to the shop.')}
               onExternalReturn={(row, payload) => ticketAction(`/tickets/${row.ticket_id}/sub-issues/${row.sub_issue_id}/external-returned`, payload, 'Marked as returned from the shop.')}
               onDirty={() => setHasUnsavedChanges(true)}
@@ -4781,7 +4791,7 @@ function Workspace() {
             tickets={visibleRows}
             editTarget={editTarget}
             setEditTarget={setEditTarget}
-            onVerify={(ticket, payload) => ticketAction(`/tickets/${ticket.ticket_id}/verify`, payload, 'Repair verified — ticket closed.')}
+            onVerify={(ticket, payload) => ticketAction(`/tickets/${ticket.ticket_id}/verify`, payload, verifyOutcomeMessage(payload))}
             onCancelEdit={() => setEditTarget(null)}
             categories={lookups.categories}
             vehicles={lookups.vehicles}
@@ -12420,6 +12430,8 @@ function VerificationForm({ target, onCancel, onSubmit }) {
               <button
                 type="button"
                 onClick={() => setResult(i, true)}
+                aria-pressed={r.passed === true}
+                aria-label={`Pass: ${r.item}`}
                 style={{ padding: '4px 12px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', border: `1px solid ${r.passed === true ? '#16a34a' : '#cbd5e1'}`, background: r.passed === true ? '#16a34a' : '#fff', color: r.passed === true ? '#fff' : '#64748b' }}
               >
                 Pass
@@ -12427,6 +12439,8 @@ function VerificationForm({ target, onCancel, onSubmit }) {
               <button
                 type="button"
                 onClick={() => setResult(i, false)}
+                aria-pressed={r.passed === false}
+                aria-label={`Fail: ${r.item}`}
                 style={{ padding: '4px 12px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', border: `1px solid ${r.passed === false ? '#dc2626' : '#cbd5e1'}`, background: r.passed === false ? '#dc2626' : '#fff', color: r.passed === false ? '#fff' : '#64748b' }}
               >
                 Fail
@@ -12435,6 +12449,7 @@ function VerificationForm({ target, onCancel, onSubmit }) {
                 type="button"
                 onClick={() => removeTest(i)}
                 title="Remove this test"
+                aria-label={`Remove check: ${r.item}`}
                 style={{ padding: '4px 8px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', border: '1px solid #fca5a5', background: '#fef2f2', color: '#dc2626' }}
               >
                 ✕
@@ -12466,8 +12481,8 @@ function VerificationForm({ target, onCancel, onSubmit }) {
           background: anyFailed ? '#fef2f2' : '#ecfdf5', color: anyFailed ? '#991b1b' : '#065f46', border: `1px solid ${anyFailed ? '#fecaca' : '#a7f3d0'}` }}>
           <Icon name={anyFailed ? 'alert' : 'checkCircle'} size={15} />
           {anyFailed
-            ? 'A check failed — this will be Rejected and sent back to the mechanic to redo.'
-            : 'All checks passed — this will be Approved for Admin confirmation.'}
+            ? 'A check failed — this will be returned to the mechanic for repair.'
+            : 'All checks passed — approving closes this ticket and returns the vehicle to service.'}
         </div>
       )}
 
@@ -12486,47 +12501,29 @@ function VerificationForm({ target, onCancel, onSubmit }) {
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
         <button type="button" className="ghost-button" onClick={onCancel}>Cancel</button>
         <button type="button" className={anyFailed ? 'danger-button' : 'primary-button'} onClick={submit} disabled={!canSubmit}>
-          {submitting ? 'Submitting…' : anyFailed ? 'Reject & Send Back' : 'Approve Repair'}
+          {submitting ? 'Submitting…' : anyFailed ? 'Return for Repair' : 'Approve Repair'}
         </button>
       </div>
     </div>
   );
 }
 
-// The Custodian's whole-ticket verification: one plain attestation, nothing
-// else — no checklist, no notes, no reject path. Replaces the old per-sub-
-// issue VerificationForm above for every NEW ticket (that form stays only
-// for historical sub-issue data that already has a recorded functional
-// test). If the repair genuinely wasn't done right, the fix is reassigning
-// the mechanic or cancelling the ticket, not a rejection verdict here.
-function TicketVerificationForm({ onCancel, onSubmit }) {
-  const [attested, setAttested] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+// Success toast for /verify — the same endpoint either closes the ticket or
+// sends it back, so the message has to follow the verdict actually sent.
+function verifyOutcomeMessage(payload) {
+  return payload?.verification_verdict === 'Rejected'
+    ? 'Returned for repair — the mechanic has been notified.'
+    : 'Repair verified — ticket closed.';
+}
 
-  const submit = async () => {
-    if (!attested || submitting) return;
-    setSubmitting(true);
-    try {
-      await onSubmit({ test_attested: true });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div>
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: '0.88rem', cursor: 'pointer' }}>
-        <input type="checkbox" checked={attested} onChange={(e) => setAttested(e.target.checked)} style={{ marginTop: 3 }} />
-        <span>I confirm I <strong>personally operated and tested</strong> this vehicle — this is not a paperwork-only sign-off.</span>
-      </label>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-        <button type="button" className="ghost-button" onClick={onCancel}>Cancel</button>
-        <button type="button" className="primary-button" onClick={submit} disabled={!attested || submitting}>
-          {submitting ? 'Submitting…' : 'Approve Repair'}
-        </button>
-      </div>
-    </div>
-  );
+// The Custodian's whole-ticket verification — the vehicle-type functional
+// test above (VerificationForm), not a bare checkbox: operate the vehicle,
+// mark each check, then either Approve (all pass + attestation; closes the
+// ticket) or Return for Repair (any failed check; ticket goes back to the
+// mechanic). POSTs to /tickets/{id}/verify, which re-checks all of it and
+// enforces who may verify (TicketController::verifyTicket).
+function TicketVerificationForm({ vehicle, onCancel, onSubmit }) {
+  return <VerificationForm target={{ vehicle }} onCancel={onCancel} onSubmit={onSubmit} />;
 }
 
 // =========================================================================
@@ -13332,7 +13329,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
               {subIssues.map((si, index) => {
                 const stageBanner = {
                   'Pending Approval': { color: '#d97706', bg: '#fffbeb', text: '#92400e', icon: 'alert', label: 'Cannibalized repair — awaiting Admin approval' },
-                  'For Inspection':   { color: '#7c3aed', bg: '#f5f3ff', text: '#5b21b6', icon: 'search', label: 'Repair logged — waiting on the rest of the ticket' },
+                  'For Inspection':   { color: '#7c3aed', bg: '#f5f3ff', text: '#5b21b6', icon: 'search', label: ticket.status === 'For Verification' ? 'Repair logged — awaiting Custodian verification' : 'Repair logged — waiting on the rest of the ticket' },
                 }[si.status];
 
                 return (
@@ -13567,13 +13564,14 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
             </section>
           )}
 
-          {/* The Custodian's one plain attestation for the whole ticket —
-              replaces the old per-sub-issue checklist entirely. */}
+          {/* The Custodian's verification for the whole ticket: the vehicle-type
+              functional test, then Approve (closes it) or Return for Repair. */}
           {canVerifyTicket && (
             <section className="ticket-section">
               <h4><Icon name="checkCircle" size={14} /> Verify Repair</h4>
               {verifying ? (
                 <TicketVerificationForm
+                  vehicle={ticket.vehicle}
                   onCancel={() => setVerifying(false)}
                   onSubmit={(payload) => onVerifyTicket(ticket, payload).then((ok) => { if (ok !== false) setVerifying(false); })}
                 />
@@ -13690,7 +13688,7 @@ function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDe
       onReassignCustodian={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/reassign-custodian`, payload, 'Custodian reassigned.').then(afterAction)}
       onReopenDone={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reopen-confirmed`, payload, 'Sub-issue reopened for re-verification.').then(afterAction)}
       onSubmitForVerification={(t) => sendTicketAction(`/tickets/${t.ticket_id}/submit-for-verification`, {}, 'Ticket submitted for verification.').then(afterAction)}
-      onVerifyTicket={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/verify`, payload, 'Repair verified — ticket closed.').then(afterAction)}
+      onVerifyTicket={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/verify`, payload, verifyOutcomeMessage(payload)).then(afterAction)}
       onApproveCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/approve-cannibalization`, payload, 'Cannibalized repair approved — a donor-vehicle issue report was opened.').then(afterAction)}
       onRejectCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reject-cannibalization`, payload, 'Cannibalized repair rejected.').then(afterAction)}
       onViewIssue={(id) => navigate(`${roleRoutes[user.role]}/issues/${id}`)}
@@ -16417,6 +16415,7 @@ function CustodianVerificationModule({
       <FormModal open={!!editTarget} title={`Verify Repair — ${editTarget?.ticket_title ?? `Ticket #${editTarget?.ticket_id}`}`} onClose={onCancelEdit}>
         <TicketVerificationForm
           key={editTarget?.ticket_id}
+          vehicle={editTarget?.vehicle}
           onCancel={onCancelEdit}
           onSubmit={(payload) => onVerify(editTarget, payload)}
         />
