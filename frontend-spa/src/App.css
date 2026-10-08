@@ -2081,9 +2081,16 @@ html[data-theme="light"] .sole-admin-flag { color: #d97706; }
   grid-column: 1;
   grid-row: 2;
   min-width: 0;
+  /* start, not stretch — the chart card sizes to its own (short) content
+     instead of being pulled down to match Latest Reports' height, which
+     used to leave a slab of dead space under the bar/legend. */
+  align-self: start;
 }
 .issue-summary-filters {
-  grid-column: 1 / -1;
+  /* Column 1 only, not full width — Latest Reports (col 2) now spans both
+     this row and the chart's row above (see below), so col 2 is already
+     spoken for here. */
+  grid-column: 1;
   grid-row: 3;
   min-width: 0;
 }
@@ -2095,20 +2102,17 @@ html[data-theme="light"] .sole-admin-flag { color: #d97706; }
   }
 }
 .latest-issue-card {
+  /* Spans the chart's row AND the filter row beneath it — its height
+     naturally matches however tall that compact chart + filter panel
+     stack turns out to be (default grid stretch), instead of a fixed
+     px guess that either left dead space below a short chart or a gap
+     before the filter row starts beneath a shorter Latest Reports. */
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 2 / span 2;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 20px 24px;
-  /* A max-height still lets this item's content size grow toward that
-     cap, and CSS Grid inflates the "auto" rows it spans to match — so
-     the stat-card/filter area kept getting taller with every new report
-     even with a cap in place. Only a fixed height fully decouples this
-     item's grid contribution from its content, so the section's
-     footprint truly never changes; see .latest-issue-timeline-list
-     below for the part that actually scrolls. */
-  height: 320px;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -5548,6 +5552,18 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
   display: none;
 }
 .veh-card-head .veh-seeall { color: var(--primary, #2563eb); }
+/* Create/Propose Ticket — section headers read blue, matching the Ticket
+   Detail page's own .ticket-section h4 (blue icon, same family of blue as
+   its text accents) instead of the plain-black/hidden-icon style every
+   other .veh-card header uses. Scoped to this form only. */
+.ticket-create-form .veh-card-head > svg {
+  display: inline-flex;
+  stroke: #2563eb;
+  color: #2563eb;
+}
+.ticket-create-form .veh-card-head h4 {
+  color: #2563eb;
+}
 .veh-seeall {
   margin-left: auto; background: none; border: none; cursor: pointer;
   color: var(--primary, #2563eb); font-size: 0.78rem; font-weight: 700;
@@ -5590,6 +5606,14 @@ html section.ticket-process-hero .ticket-detail-title { margin-bottom: 8px; colo
 .form-grid-2col.category-form-grid {
   max-width: 640px;
   margin: 0 auto;
+}
+/* Vehicle Type Name + Domain pair up fine in the 2-col grid, but Default
+   Criticality was the odd field left alone afterward — dense auto-flow
+   can't pull the (full-width) Description textarea up to fill the empty
+   cell beside it, so half of that row just sat blank. Full-width here too
+   closes the gap instead of leaving dead space mid-form. */
+.form-grid-2col.category-form-grid .smart-form label:has(select[name="default_criticality"]) {
+  grid-column: 1 / -1;
 }
 
 /* Inspect Ticket — Inspection Result/Notes on the left, the "Root Causes

@@ -87,7 +87,7 @@ class FleetController extends Controller
             'condition_results' => ['Good', 'Needs Repair'],
             'issue_statuses' => ['Pending', 'Under Review', 'In Maintenance', 'Resolved'],
             'maintenance_statuses' => ['Assigned', 'Under Repair', 'On Hold - Awaiting Parts', 'For Verification', 'Completed'],
-            'schedule_statuses' => ['Scheduled', 'Completed', 'Cancelled'],
+            'schedule_statuses' => ['Pending Approval', 'Declined', 'Scheduled', 'Completed', 'Cancelled'],
         ]);
     }
 
@@ -2434,9 +2434,12 @@ class FleetController extends Controller
 
         // A pure Maintenance Personnel account only sees schedules assigned
         // to them — Admin and Custodian keep the full barangay-wide list
-        // (VMS-IMPROVEMENT-PLAN.md Phase B3).
+        // (VMS-IMPROVEMENT-PLAN.md Phase B3). A Pending Approval/Declined
+        // schedule isn't really "theirs" yet (nothing's confirmed — see
+        // storeSchedule()'s deferred assignee notification), so it's held
+        // back until Admin approves it, same as the notification itself.
         if ($user->hasRole('Maintenance Personnel') && !$user->hasAnyRole(['Admin', 'Custodian'])) {
-            $query->where('assigned_to', $user->id);
+            $query->where('assigned_to', $user->id)->whereNotIn('status', ['Pending Approval', 'Declined']);
         }
 
         $query->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
@@ -2569,26 +2572,28 @@ class FleetController extends Controller
         }
 
         $schedule = DB::transaction(function () use ($data, $request, $vehicle) {
-            // A new schedule always starts Scheduled — Completed/Cancelled are
-            // only ever reached via completeSchedule()/updateSchedule(), never
-            // picked at creation time.
+            // A Custodian's schedule parks at Pending Approval until an Admin
+            // reviews it — same propose/approve/decline shape as a ticket
+            // proposal (see approveSchedule()/declineSchedule() below).
+            // Scheduled is only ever reached via approveSchedule() now;
+            // Completed/Cancelled are still only reached via
+            // completeSchedule()/deleteSchedule(). Any assignee isn't
+            // notified yet — nothing is confirmed until Admin approves.
             $schedule = VehicleMaintenanceSchedule::create($data + [
                 'created_by' => $request->user()->id,
-                'status' => 'Scheduled',
+                'status' => 'Pending Approval',
             ]);
 
-            $this->history($vehicle, 'Maintenance Scheduled', "{$data['maintenance_type']} was scheduled for {$vehicle->vehicle_name}.", 'vehicle_maintenance_schedules', $schedule->schedule_id, $request);
-            $this->log($request, 'Add', 'Vehicle Maintenance Schedule', $schedule->schedule_id, "Scheduled maintenance for {$vehicle->vehicle_name}");
+            $this->history($vehicle, 'Maintenance Schedule Proposed', "{$data['maintenance_type']} was proposed for {$vehicle->vehicle_name}, awaiting Admin approval.", 'vehicle_maintenance_schedules', $schedule->schedule_id, $request);
+            $this->log($request, 'Add', 'Vehicle Maintenance Schedule', $schedule->schedule_id, "Proposed {$data['maintenance_type']} for {$vehicle->vehicle_name}, submitted for Admin review.");
 
-            if (!empty($data['assigned_to'])) {
-                $this->notifyUser(
-                    (int) $data['assigned_to'],
-                    'Maintenance Assigned to You',
-                    "You've been assigned {$data['maintenance_type']} for {$vehicle->vehicle_name}, scheduled {$data['scheduled_date']}.",
-                    'schedule_assigned',
-                    ['schedule_id' => $schedule->schedule_id]
-                );
-            }
+            $this->notifyAdmins(
+                'New Maintenance Schedule Awaiting Approval',
+                "{$request->user()->name} scheduled {$data['maintenance_type']} for {$vehicle->vehicle_name} ({$data['scheduled_date']}). Review, then approve or decline.",
+                'schedule_proposed',
+                $vehicle->barangay_id,
+                ['schedule_id' => $schedule->schedule_id]
+            );
 
             return $schedule;
         });
@@ -2606,15 +2611,21 @@ class FleetController extends Controller
      */
     private function checkScheduleConflicts(Vehicle $vehicle, string $date, ?int $excludeScheduleId = null): ?array
     {
+        // Pending Approval counts as a real conflict too, not just Scheduled
+        // (approved) — a Custodian's own just-booked entry hasn't been
+        // reviewed yet, but it's still a genuine intent to use the vehicle
+        // that day, same as an already-approved one.
+        $conflictStatuses = ['Scheduled', 'Pending Approval'];
+
         $sameVehicleConflict = VehicleMaintenanceSchedule::where('vehicle_id', $vehicle->vehicle_id)
             ->whereDate('scheduled_date', $date)
-            ->where('status', 'Scheduled')
+            ->whereIn('status', $conflictStatuses)
             ->when($excludeScheduleId, fn ($q) => $q->where('schedule_id', '!=', $excludeScheduleId))
             ->exists();
 
         $dailyCount = VehicleMaintenanceSchedule::whereHas('vehicle', fn ($q) => $q->where('barangay_id', $vehicle->barangay_id))
             ->whereDate('scheduled_date', $date)
-            ->where('status', 'Scheduled')
+            ->whereIn('status', $conflictStatuses)
             ->when($excludeScheduleId, fn ($q) => $q->where('schedule_id', '!=', $excludeScheduleId))
             ->count();
 
@@ -2640,6 +2651,121 @@ class FleetController extends Controller
             'daily_volume_threshold' => $threshold,
             'message' => implode(' ', $messages) . ' Are you sure you want to add another?',
         ];
+    }
+
+    /**
+     * Admin reviews a Pending Approval schedule and approves it — the
+     * schedule goes live (status Scheduled) and, if an assignee was picked
+     * at creation, that person finally gets notified (deferred from
+     * storeSchedule() — nothing was confirmed until now). Mirrors
+     * TicketController::approveTicket()'s shape, minus the mechanic
+     * (re)assignment step tickets need — a schedule's assignee was already
+     * picked by the Custodian and doesn't change here.
+     */
+    public function approveSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
+    {
+        $this->requireAbility($request, 'schedule.approve');
+
+        // A previously Declined schedule can be approved directly — Admin
+        // doesn't have to undecline it first (same as a ticket proposal).
+        abort_unless(
+            in_array($schedule->status, ['Pending Approval', 'Declined'], true),
+            422,
+            "Only a Pending Approval or Declined schedule can be approved. Current: {$schedule->status}."
+        );
+
+        $schedule = DB::transaction(function () use ($schedule, $request) {
+            $locked = VehicleMaintenanceSchedule::where('schedule_id', $schedule->schedule_id)->lockForUpdate()->first();
+            abort_unless($locked && in_array($locked->status, ['Pending Approval', 'Declined'], true), 422, 'This schedule was already reviewed.');
+
+            $schedule->update(['status' => 'Scheduled', 'decline_reason' => null]);
+
+            $vehicle = $schedule->vehicle;
+            $this->history($vehicle, 'Maintenance Schedule Approved', "Schedule #{$schedule->schedule_id} ({$schedule->maintenance_type}) was approved.", 'vehicle_maintenance_schedules', $schedule->schedule_id, $request);
+            $this->log($request, 'Approve Schedule', 'Vehicle Maintenance Schedule', $schedule->schedule_id, "Approved schedule #{$schedule->schedule_id} for {$vehicle->vehicle_name}.");
+
+            $this->notifyUser(
+                (int) $schedule->created_by,
+                'Maintenance Schedule Approved',
+                "Your scheduled {$schedule->maintenance_type} for {$vehicle->vehicle_name} was approved.",
+                'schedule_approved',
+                ['schedule_id' => $schedule->schedule_id]
+            );
+            if ($schedule->assigned_to) {
+                $this->notifyUser(
+                    (int) $schedule->assigned_to,
+                    'Maintenance Assigned to You',
+                    "You've been assigned {$schedule->maintenance_type} for {$vehicle->vehicle_name}, scheduled {$schedule->scheduled_date}.",
+                    'schedule_assigned',
+                    ['schedule_id' => $schedule->schedule_id]
+                );
+            }
+
+            return $schedule;
+        });
+
+        return response()->json($schedule->fresh(['vehicle.category', 'createdBy', 'assignedToUser']));
+    }
+
+    /**
+     * Admin declines a Pending Approval schedule with a reason — mirrors
+     * TicketController::declineTicket() exactly: a visible, reversible
+     * status (not a delete), the Custodian who booked it can see why and
+     * either let it sit or ask Admin to reconsider.
+     */
+    public function declineSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
+    {
+        $this->requireAbility($request, 'schedule.decline');
+
+        abort_unless($schedule->status === 'Pending Approval', 422, "Only a Pending Approval schedule can be declined. Current: {$schedule->status}.");
+
+        $data = $request->validate([
+            'decline_reason' => ['required', 'string'],
+        ]);
+
+        $schedule->update([
+            'status' => 'Declined',
+            'decline_reason' => $data['decline_reason'],
+        ]);
+
+        $this->history($schedule->vehicle, 'Maintenance Schedule Declined', "Schedule #{$schedule->schedule_id} ({$schedule->maintenance_type}) was declined.", 'vehicle_maintenance_schedules', $schedule->schedule_id, $request);
+        $this->log($request, 'Decline Schedule', 'Vehicle Maintenance Schedule', $schedule->schedule_id, "Declined schedule #{$schedule->schedule_id}. Reason: {$data['decline_reason']}");
+
+        $this->notifyUser(
+            (int) $schedule->created_by,
+            'Maintenance Schedule Declined',
+            "Your scheduled {$schedule->maintenance_type} for {$schedule->vehicle->vehicle_name} was declined. Reason: {$data['decline_reason']}",
+            'schedule_declined',
+            ['schedule_id' => $schedule->schedule_id]
+        );
+
+        return response()->json($schedule->fresh(['vehicle.category', 'createdBy', 'assignedToUser']));
+    }
+
+    /**
+     * Admin changes their mind about a decline — puts the schedule back at
+     * Pending Approval for the Custodian to see it's live again, or for
+     * Admin to approve it properly. Mirrors TicketController::undeclineTicket().
+     */
+    public function undeclineSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
+    {
+        $this->requireAbility($request, 'schedule.decline');
+
+        abort_unless($schedule->status === 'Declined', 422, "Only a Declined schedule can be undeclined. Current: {$schedule->status}.");
+
+        $schedule->update(['status' => 'Pending Approval', 'decline_reason' => null]);
+
+        $this->log($request, 'Undecline Schedule', 'Vehicle Maintenance Schedule', $schedule->schedule_id, "Restored schedule #{$schedule->schedule_id} to Pending Approval.");
+
+        $this->notifyUser(
+            (int) $schedule->created_by,
+            'Maintenance Schedule Reconsidered',
+            "Your scheduled {$schedule->maintenance_type} for {$schedule->vehicle->vehicle_name} is back under review.",
+            'schedule_proposed',
+            ['schedule_id' => $schedule->schedule_id]
+        );
+
+        return response()->json($schedule->fresh(['vehicle.category', 'createdBy', 'assignedToUser']));
     }
 
     public function updateSchedule(Request $request, VehicleMaintenanceSchedule $schedule)

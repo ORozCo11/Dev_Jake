@@ -114,15 +114,18 @@ return [
     'record.confirm' => ['Admin'],
     'record.decision_close' => ['Admin'],
 
-    // Maintenance schedules — Spec §19 (2026-10-06, current): Admin controls
-    // create/update/reschedule/cancel; a Custodian only suggests one
-    // (schedule.suggest notifies Admin, books nothing — see
-    // FleetController::suggestSchedule()). This reverses an earlier,
-    // now-superseded Custodian-owned-creation model.
+    // Maintenance schedules — current model (2026-10-15): a Custodian books
+    // one directly (schedule.create), but it parks at 'Pending Approval'
+    // until an Admin reviews it (schedule.approve/.decline) — the same
+    // propose/approve/decline shape as ticket.propose/.approve/.decline, just
+    // for schedules. schedule.suggest (notify-only, books nothing) is unused
+    // while schedule.create covers the same need with a real booking.
     'schedule.create' => ['Custodian'],
     'schedule.suggest' => [],
-    // Admin-only, per the same 2026-10-06 reversal above — a Custodian no
-    // longer edits schedules directly, only suggests one.
+    'schedule.approve' => ['Admin'],
+    'schedule.decline' => ['Admin'],
+    // Custodian edits only the one they themselves created (ownership check
+    // in FleetController::updateSchedule) — matches schedule.create above.
     'schedule.edit' => ['Custodian'],
     'schedule.reassign' => ['Admin'],
     // Final senior system review (2026-10-05, §2/§12) — Admin no longer

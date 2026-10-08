@@ -129,6 +129,14 @@ export function HorizontalBarChart({ rows = [] }) {
 }
 
 export function ColumnChart({ rows = [] }) {
+  // Recharts' BarChart/XAxis/YAxis throw while computing an empty domain if
+  // handed zero data points (e.g. the Dashboard's first render, before its
+  // fetch resolves and vehicles_by_condition is still []) — same empty-state
+  // guard HorizontalBarChart already has, just missing here until now.
+  if (!rows.length) {
+    return <p className="empty-state">No graph data yet.</p>;
+  }
+
   const data = rows.map((row, i) => ({
     label: row.label,
     value: Number(row.value) || 0,

@@ -206,6 +206,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/maintenance-schedules', [FleetController::class, 'storeSchedule']);
     Route::post('/maintenance-schedules/suggest', [FleetController::class, 'suggestSchedule']);
     Route::put('/maintenance-schedules/{schedule}', [FleetController::class, 'updateSchedule']);
+    Route::put('/maintenance-schedules/{schedule}/approve', [FleetController::class, 'approveSchedule']);
+    Route::put('/maintenance-schedules/{schedule}/decline', [FleetController::class, 'declineSchedule']);
+    Route::put('/maintenance-schedules/{schedule}/undecline', [FleetController::class, 'undeclineSchedule']);
     Route::put('/maintenance-schedules/{schedule}/reassign', [FleetController::class, 'reassignSchedule']);
     Route::put('/maintenance-schedules/{schedule}/complete', [FleetController::class, 'completeSchedule']);
     Route::post('/maintenance-schedules/{schedule}/restore', [FleetController::class, 'restoreSchedule']);

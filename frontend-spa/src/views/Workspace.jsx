@@ -162,7 +162,12 @@ const modulesByRole = {
     ] },
   ],
   'Maintenance Personnel': [
-    { section: null, items: [['dashboard', 'Dashboard']] },
+    // "View Vehicles" used to sit alone under its own collapsible "Vehicles"
+    // section — a dropdown for exactly one row. With nothing else ever
+    // likely to join it (see the removed-items notes below), it's a plain
+    // top-level item next to Dashboard instead, same as the un-sectioned
+    // group above.
+    { section: null, items: [['dashboard', 'Dashboard'], ['vehicles', 'View Vehicles']] },
     { section: 'Maintenance', icon: 'wrench', items: [
       // Work Tracker used to be its own sidebar entry/page here — merged
       // into My Work Orders as an in-page Archive toggle (mirrors Admin's
@@ -182,10 +187,7 @@ const modulesByRole = {
     // No standalone "Vehicle Documents" sidebar item for any role — the
     // module lives only on the vehicle profile's own Files card now
     // (document.view/.create abilities). Maintenance Personnel reaches it
-    // the same way: open a vehicle from View Vehicles below.
-    { section: 'Vehicles', icon: 'vehicle', items: [
-      ['vehicles', 'View Vehicles'],
-    ] },
+    // the same way: open a vehicle from View Vehicles above.
   ],
 };
 
@@ -746,6 +748,9 @@ function Workspace() {
   // Admin-only) — hands a still-open schedule to a different Maintenance
   // Personnel without cancelling and re-booking it.
   const [reassignScheduleTarget, setReassignScheduleTarget] = useState(null);
+  // Admin's "Decline" action on a Pending Approval row (schedule.decline
+  // ability, Admin-only) — collects a reason, same modal pattern as Reassign.
+  const [declineScheduleTarget, setDeclineScheduleTarget] = useState(null);
   // After a Custodian passes a verification they're already standing at the
   // vehicle — offer the Readiness Check right then instead of making them
   // come back for a second visit. Holds the vehicle to check, or null.
@@ -761,8 +766,13 @@ function Workspace() {
     setMaintenanceViewMode(mode);
     localStorage.setItem('vms_maintenance_view', mode);
   };
+  // Admin's Maintenance Schedule defaults to the card ("ticket") view rather
+  // than the plain table — a schedule reads more like a ticket now that its
+  // row-level actions are ownership-gated (see scheduleColumns). Everyone
+  // else keeps the table default. Still just a default: the stored
+  // preference (and the view-mode toggle itself) override it either way.
   const [scheduleViewMode, setScheduleViewMode] = useState(
-    () => localStorage.getItem('vms_schedule_view') || 'table'
+    () => localStorage.getItem('vms_schedule_view') || (hasRole(user, 'Admin') ? 'card' : 'table')
   );
   const changeScheduleViewMode = (mode) => {
     setScheduleViewMode(mode);
@@ -861,7 +871,6 @@ function Workspace() {
   // rest so the module-switch reset effect can clear them all in one place.
   const [filterReadiness, setFilterReadiness] = useState([]); // vehicles: Ready to Respond
   const [filterIssueType, setFilterIssueType] = useState([]); // issues
-  const [filterNoTicket, setFilterNoTicket] = useState(false); // issues: still needs a ticket
   const [filterMaintType, setFilterMaintType] = useState([]); // maintenance
   const [filterSource, setFilterSource] = useState([]); // maintenance
   const [filterActive, setFilterActive] = useState([]); // users
@@ -1004,21 +1013,12 @@ function Workspace() {
     const response = await api.get(endpoint, { params });
     setRecords((current) => ({ ...current, [key]: response.data }));
 
-    // Phase B4 — Maintenance Personnel's Condition Monitoring and standalone
-    // Maintenance Schedule sidebar entries were removed (issue.edit dropped
-    // them entirely, and Maintenance Personnel never gets schedule.create
-    // either way); their assigned schedules instead surface as a second
-    // section on My Work Orders. This
-    // piggybacks a second fetch onto that same module load rather than
-    // giving Maintenance Personnel back a 'schedules' sidebar entry — the
-    // backend already scopes GET /maintenance-schedules to assigned_to = me
-    // for a pure Maintenance Personnel account.
-    if (key === 'ticketWorkOrders' && hasRole(user, 'Maintenance Personnel')) {
-      try {
-        const scheduleResponse = await api.get('/maintenance-schedules');
-        setRecords((current) => ({ ...current, mySchedules: scheduleResponse.data }));
-      } catch { /* optional secondary fetch — the work orders list still loaded fine */ }
-    }
+    // The "My Assigned Maintenance Schedules" card section that used to be
+    // piggybacked onto My Work Orders (for when Maintenance Personnel had no
+    // 'schedules' sidebar entry of their own) was removed — that entry is
+    // back, and GET /maintenance-schedules already scopes to assigned_to =
+    // me for a pure Maintenance Personnel account, so it was a plain
+    // duplicate of that page. No second fetch needed here anymore.
 
     // Admin no longer has a standalone Issue Reports sidebar entry (removed
     // as redundant — a report with no ticket just sits there for Admin to
@@ -1096,7 +1096,6 @@ function Workspace() {
      setFilterDomain([]);
      setFilterReadiness([]);
      setFilterIssueType([]);
-     setFilterNoTicket(false);
      setFilterMaintType([]);
      setFilterSource([]);
      setFilterActive([]);
@@ -1588,6 +1587,32 @@ function Workspace() {
     }
   };
 
+  // Admin reviews a Custodian's Pending Approval schedule — approve puts it
+  // live (Scheduled); decline collects a reason, same propose/approve/decline
+  // shape as a ticket proposal. Both work from Declined too (approve direct,
+  // or decline again is a no-op since it's already there).
+  const approveSchedule = async (target) => {
+    setNotice(null);
+    try {
+      await api.put(`/maintenance-schedules/${target.schedule_id}/approve`);
+      await refreshCurrent();
+      setNotice({ type: 'success', text: 'Schedule approved.' });
+    } catch (error) {
+      showError(error, setNotice);
+    }
+  };
+  const declineSchedule = async (target, payload) => {
+    setNotice(null);
+    try {
+      await api.put(`/maintenance-schedules/${target.schedule_id}/decline`, { decline_reason: payload.decline_reason });
+      await refreshCurrent();
+      setNotice({ type: 'success', text: 'Schedule declined.' });
+      setDeclineScheduleTarget(null);
+    } catch (error) {
+      showError(error, setNotice);
+    }
+  };
+
   // Shared success tail for submitFormPage, below — pulled out so the
   // confirm-and-resubmit branch (a Maintenance Schedule conflict warning)
   // can reach the exact same "what happens after this actually saves" path
@@ -1765,8 +1790,11 @@ function Workspace() {
       // Recurring schedules auto-regenerate every time one is completed
       // (Workflow 15), so Completed rows pile up indefinitely otherwise —
       // default view stays to just what's actually upcoming/actionable.
-      // Click the Completed or Cancelled stat card to see the rest.
-      result = result.filter((row) => row.status === 'Scheduled');
+      // Pending Approval is included so a newly-submitted schedule is
+      // visible immediately, not just after clicking its stat card — it
+      // needs timely action the same way Scheduled rows do. Click the
+      // Declined/Completed/Cancelled stat card to see the rest.
+      result = result.filter((row) => row.status === 'Scheduled' || row.status === 'Pending Approval');
     }
 
     if (activeModule === 'schedules' && filterStatus.includes('MyAssigned')) {
@@ -1869,11 +1897,6 @@ function Workspace() {
     // approved it graduates into "My Tickets" instead (see issueIsPreTicket).
     if (activeModule === 'issues') {
       result = result.filter((row) => issueIsPreTicket(row));
-    }
-
-    // "Needs a ticket" — reports nobody has turned into a ticket yet.
-    if (activeModule === 'issues' && filterNoTicket) {
-      result = result.filter((row) => issueNeedsTicket(row));
     }
 
     if (activeModule === 'maintenance') {
@@ -2040,7 +2063,7 @@ function Workspace() {
     }
 
     return result;
-  }, [rawRows, searchQuery, filterCategory, filterCapacity, filterLocation, filterDomain, filterStatus, filterPriority, filterReadiness, filterIssueType, filterNoTicket, filterMaintType, filterSource, filterActive, filterAssignedTo, filterVerdict, filterCheckedBy, filterActivityType, filterVehicle, filterMechanic, filterCustodian, filterDateStart, filterDateEnd, activeModule, condFilterStartDate, condFilterEndDate, archiveStart, archiveEnd, archiveStatusFilter]);
+  }, [rawRows, searchQuery, filterCategory, filterCapacity, filterLocation, filterDomain, filterStatus, filterPriority, filterReadiness, filterIssueType, filterMaintType, filterSource, filterActive, filterAssignedTo, filterVerdict, filterCheckedBy, filterActivityType, filterVehicle, filterMechanic, filterCustodian, filterDateStart, filterDateEnd, activeModule, condFilterStartDate, condFilterEndDate, archiveStart, archiveEnd, archiveStatusFilter]);
 
   // Status breakdown for the Vehicle Management stat cards — counted from the
   // full unfiltered fetch so the cards stay accurate regardless of the active
@@ -2063,7 +2086,7 @@ function Workspace() {
   );
 
   const scheduleStats = useMemo(() => {
-    const base = countByValues(records.schedules ?? [], (r) => r.status, ['Scheduled', 'Completed', 'Cancelled']);
+    const base = countByValues(records.schedules ?? [], (r) => r.status, ['Pending Approval', 'Declined', 'Scheduled', 'Completed', 'Cancelled']);
     // A schedule marked "Completed" only means the calendar task is done —
     // the record it produced might still be sitting unverified. Surface
     // that as its own count so it's findable instead of buried among
@@ -2313,7 +2336,7 @@ function Workspace() {
   const maintenanceStatusColumnChooser = useColumnChooser('vms_maintenance_status_columns', maintenanceStatusColumnDefs);
 
   const scheduleColumnDefs = useMemo(
-    () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile),
+    () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile, approveSchedule, setDeclineScheduleTarget),
     [navigate, user, deleteRecord, restoreRecord],
   );
   const scheduleColumnChooser = useColumnChooser('vms_schedule_columns', scheduleColumnDefs);
@@ -3402,6 +3425,26 @@ function Workspace() {
     );
   }
 
+  // Admin's "Decline" action on a Pending Approval row (new schedule.decline
+  // ability) — mirrors the ticket proposal decline form exactly: one
+  // required reason, visible to the Custodian afterward.
+  function renderDeclineScheduleModal() {
+    return (
+      <FormModal open={!!declineScheduleTarget} title={`Decline — ${declineScheduleTarget?.maintenance_type ?? ''}`} onClose={() => setDeclineScheduleTarget(null)}>
+        {declineScheduleTarget && (
+          <SmartForm
+            fields={[{ label: 'Decline Reason', name: 'decline_reason', type: 'textarea', rows: 2, required: true, placeholder: 'Let the Custodian know why this was declined' }]}
+            key={`decline-schedule-${declineScheduleTarget.schedule_id}`}
+            onCancel={() => setDeclineScheduleTarget(null)}
+            onSubmit={(payload) => declineSchedule(declineScheduleTarget, payload)}
+            submitLabel="Decline Schedule"
+            title=""
+          />
+        )}
+      </FormModal>
+    );
+  }
+
   function renderModule() {
     // Task 1 of the sidebar consolidation — Custodian's merged "My Tasks"
     // container. `activeModule` is still the literal real key here
@@ -4008,15 +4051,6 @@ function Workspace() {
           <div className="panel-header-bar">
             <h3>Issue Reports <span className="count-badge">{visibleRows.length}</span></h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            {(hasRole(user, 'Admin') || hasRole(user, 'Custodian')) && (
-              <label
-                title="Reports nobody has started a ticket from yet"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-              >
-                <input type="checkbox" checked={filterNoTicket} onChange={(e) => setFilterNoTicket(e.target.checked)} />
-                Needs a ticket ({(records.issues ?? []).filter(issueNeedsTicket).length})
-              </label>
-            )}
             <LocalSearchInput
               value={searchQuery}
               onChange={setSearchQuery}
@@ -4294,6 +4328,8 @@ function Workspace() {
                   onReassign={setReassignScheduleTarget}
                   onViewTicket={openTicketProfile}
                   onViewVehicle={openVehicleProfile}
+                  onApprove={approveSchedule}
+                  onDecline={setDeclineScheduleTarget}
                 />
               )}
             />
@@ -4309,6 +4345,7 @@ function Workspace() {
 
           {renderCompleteScheduleModal()}
           {renderReassignScheduleModal()}
+          {renderDeclineScheduleModal()}
         </ModulePanel>
       );
     }
@@ -4783,18 +4820,11 @@ function Workspace() {
             filterPriority={filterPriority}
             setFilterPriority={setFilterPriority}
             maintTypeOptions={lookups.maintenance_types}
-            onViewVehicle={openVehicleProfile}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             stats={workOrderStats}
             activeFilter={filterStatus}
             onFilterChange={setFilterStatus}
-            // Phase B4 — Maintenance Personnel's Condition Monitoring and
-            // standalone Maintenance Schedule sidebar entries were removed;
-            // their assigned schedules surface here instead, as a second
-            // section on the same page (see loadModule's mySchedules fetch).
-            mySchedules={hasRole(user, 'Maintenance Personnel') ? (records.mySchedules ?? []) : null}
-            onCompleteSchedule={openCompleteSchedule}
             currentUser={user}
           />
           {renderCompleteScheduleModal()}
@@ -5344,6 +5374,16 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
               <ChartLegend rows={vehicleCondition} />
             </div>
           </div>
+        </section>
+
+        {/* Same vehicle-condition data as the donut above, as a bar graph —
+            the donut reads the share (percent in good condition), this
+            reads the actual counts per bucket at a glance. */}
+        <section className="panel col-span-7 dashboard-lean-panel">
+          <div className="panel-header-bar">
+            <h3>Fleet Condition by Count</h3>
+          </div>
+          <ColumnChart rows={vehicleCondition} />
         </section>
       </div>
     );
@@ -6741,7 +6781,14 @@ function SelectOrAddNumberField({ field, value, onChange }) {
       />
       {open && (
         <div className="creatable-select-panel">
-          <div className="creatable-select-add creatable-select-add-pinned" onMouseDown={(e) => e.preventDefault()}>
+          {/* No onMouseDown preventDefault here (unlike elsewhere in this
+              file's dropdowns) — this row wraps a real <input>, and
+              preventDefault on mousedown blocks the browser's default
+              focus-on-click, so clicking into the number field silently
+              failed to focus it. The outside-click listener above already
+              checks containerRef.current.contains(e.target), so nothing
+              inside this panel needs it to stay open anyway. */}
+          <div className="creatable-select-add creatable-select-add-pinned">
             <Icon name="plus" size={13} />
             <input
               type={field.otherType ?? 'number'}
@@ -6752,6 +6799,7 @@ function SelectOrAddNumberField({ field, value, onChange }) {
               value={customDraft}
               onChange={(e) => setCustomDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyCustom(); } }}
+              autoFocus
             />
             {field.otherSuffix && <span className="muted">{field.otherSuffix}</span>}
             <button type="button" className="ghost-button" disabled={!customDraft} onClick={applyCustom}>
@@ -9112,12 +9160,19 @@ const ISSUE_STAT_CARDS = [
   { key: 'Resolved', label: 'Resolved', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
 ];
 
+// Severity filter chips — same colors as the Issue Reports bar chart's own
+// High/Medium/Low segments (see the StackedBarChart segments above).
+const ISSUE_SEVERITY_CHIP_BG = { High: '#fee2e2', Medium: '#fef3c7', Low: '#e0f2fe' };
+const ISSUE_SEVERITY_CHIP_COLOR = { High: '#dc2626', Medium: '#f59e0b', Low: '#0ea5e9' };
+
 // Simplified per product direction: the urgency breakdown (Overdue/1-3
 // Days/4-7 Days) was its own set of cards here — removed in favor of a
 // plain upcoming list elsewhere on the dashboard. Row-level "Overdue"
 // badges (isScheduleOverdue) still show urgency per-row; this stat row now
 // only tracks status.
 const SCHEDULE_STAT_CARDS = [
+  { key: 'Pending Approval', label: 'Pending Approval', icon: 'alert', bg: '#fef3c7', color: '#d97706' },
+  { key: 'Declined', label: 'Declined', icon: 'close', bg: '#fee2e2', color: '#dc2626' },
   { key: 'Completed', label: 'Completed', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
   // A schedule marked "Completed" only means the calendar task is done —
   // its record might still be sitting unverified. Its own filter so those
@@ -9172,16 +9227,22 @@ const TICKET_WORK_ORDER_STAT_CARDS = [
   { key: 'Submitted', label: 'Submitted', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
 ];
 
+// 'Pending' relabeled 'To Verify' — this is the Custodian's verification
+// queue (For Verification tickets), same term the Dashboard's own stat uses
+// for it; the old label read as just another ticket-status bucket instead
+// of the one that needs this Custodian's action.
 const TICKET_VERIFICATION_STAT_CARDS = [
   { key: 'Active', label: 'Active', icon: 'wrench', bg: '#fef9c3', color: '#a16207' },
-  { key: 'Pending', label: 'Pending', icon: 'checkCircle', bg: '#fef3c7', color: '#d97706' },
+  { key: 'Pending', label: 'To Verify', icon: 'checkCircle', bg: '#fef3c7', color: '#d97706' },
   { key: 'Verified', label: 'Verified', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
 ];
 
+// My Tasks -> History: a closed book, not a live board — every bucket here
+// is already finished, so the cards break down HOW it finished rather than
+// repeating "needs action"/"in progress" counts that would always read 0.
 const WORK_TRACKER_STAT_CARDS = [
-  { key: 'attention', label: 'Needs Your Action', icon: 'alert', bg: '#fef3c7', color: '#d97706' },
-  { key: 'progress', label: 'In Progress', icon: 'wrench', bg: '#e0f2fe', color: '#0284c7' },
-  { key: 'completed', label: 'Completed', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
+  { key: 'Done', label: 'Done', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
+  { key: 'Deferred', label: 'Deferred', icon: 'alert', bg: '#fef3c7', color: '#d97706' },
 ];
 
 // Reusable "Total + clickable status breakdown" card row, sitting above a
@@ -9712,7 +9773,7 @@ function IssueFilterPanel({
     capacity: filterCapacity ?? [],
     issueType: filterIssueType ?? [],
     status: filterStatus ?? [],
-    severityRange: severityRangeFromSelection(filterPriority, severityLevels),
+    severity: filterPriority ?? [],
     dateStart: filterDateStart || '2026-01-01',
     dateEnd: filterDateEnd || '2026-12-31',
   });
@@ -9723,7 +9784,7 @@ function IssueFilterPanel({
       capacity: filterCapacity ?? [],
       issueType: filterIssueType ?? [],
       status: filterStatus ?? [],
-      severityRange: severityRangeFromSelection(filterPriority, severityLevels),
+      severity: filterPriority ?? [],
       dateStart: filterDateStart || '2026-01-01',
       dateEnd: filterDateEnd || '2026-12-31',
     });
@@ -9744,22 +9805,32 @@ function IssueFilterPanel({
     });
   };
 
+  // Same "empty selection means every level is included" convention as
+  // status above — a severity checkbox reads checked by default until one
+  // gets explicitly unchecked.
+  const toggleDraftSeverity = (level) => {
+    setDraft((d) => {
+      const current = d.severity.length === 0 ? severityLevels : d.severity;
+      const next = current.includes(level) ? current.filter((s) => s !== level) : [...current, level];
+      return { ...d, severity: next.length === severityLevels.length ? [] : next };
+    });
+  };
+
   const applyFilters = () => {
     setFilterCategory(draft.category);
     setFilterCapacity(draft.capacity);
     setFilterIssueType(draft.issueType);
     setFilterStatus(draft.status);
-    setFilterPriority(severityLevels.slice(draft.severityRange[0], draft.severityRange[1] + 1));
+    setFilterPriority(draft.severity);
     setFilterDateStart(draft.dateStart);
     setFilterDateEnd(draft.dateEnd);
   };
 
-  const isFullSeverityRange = draft.severityRange[0] === 0 && draft.severityRange[1] === severityLevels.length - 1;
   const isDirty = !sameSelection(draft.category, filterCategory ?? [])
     || !sameSelection(draft.capacity, filterCapacity ?? [])
     || !sameSelection(draft.issueType, filterIssueType ?? [])
     || !sameSelection(draft.status, filterStatus ?? [])
-    || !isFullSeverityRange && !sameSelection(severityLevels.slice(draft.severityRange[0], draft.severityRange[1] + 1), filterPriority ?? [])
+    || !sameSelection(draft.severity, filterPriority ?? [])
     || draft.dateStart !== (filterDateStart || '2026-01-01')
     || draft.dateEnd !== (filterDateEnd || '2026-12-31');
 
@@ -9808,28 +9879,30 @@ function IssueFilterPanel({
         </div>
       </div>
 
+      {/* Low/Medium/High used to be a range slider (pick a contiguous span
+          of the scale) — plain checkboxes instead, same chip style as the
+          status group below, since severity is really just another
+          multi-select and the slider made picking e.g. "Low + High only"
+          impossible. Colors match the Issue Reports bar chart's own
+          High/Medium/Low segments. */}
       <div className="issue-filter-severity-card">
         <span className="issue-filter-severity-label">Severity</span>
-        <DualRangeSlider
-          labels={severityLevels}
-          minIndex={draft.severityRange[0]}
-          maxIndex={draft.severityRange[1]}
-          onChange={(min, max) => setDraft((d) => ({ ...d, severityRange: [min, max] }))}
-        />
-      </div>
-      {/* Second grid column of the BOTTOM row — chips + button grouped into
-          one cell so together they size to the same grid track as the
-          dates above, instead of the button flexing out to fill the whole
-          row on its own. */}
-      <div className="issue-filter-right-cluster">
         <div className="issue-filter-status-grid">
-          {ISSUE_STAT_CARDS.filter((c) => statusOptions.includes(c.key)).map((c) => (
-            <label key={c.key} className="issue-filter-status-chip" style={{ background: c.bg }}>
-              <input type="checkbox" checked={draft.status.length === 0 || draft.status.includes(c.key)} onChange={() => toggleDraftStatus(c.key)} />
-              <span style={{ color: c.color }}>{c.label}</span>
+          {severityLevels.map((level) => (
+            <label key={level} className="issue-filter-status-chip" style={{ background: ISSUE_SEVERITY_CHIP_BG[level] ?? '#f1f5f9' }}>
+              <input type="checkbox" checked={draft.severity.length === 0 || draft.severity.includes(level)} onChange={() => toggleDraftSeverity(level)} />
+              <span style={{ color: ISSUE_SEVERITY_CHIP_COLOR[level] ?? '#334155' }}>{level}</span>
             </label>
           ))}
         </div>
+      </div>
+      {/* The status chips (Pending/Under Review/In Maintenance/Resolved)
+          that used to live here were a plain duplicate of the stat cards
+          at the top of the page — same four statuses, same counts, just a
+          second way to toggle them. Removed; the Filter button keeps its
+          own row instead of sharing a cell with chips that no longer
+          exist. */}
+      <div className="issue-filter-right-cluster">
         <div className="issue-filter-actions">
           <button type="button" className="filter-apply-btn issue-filter-apply-btn" onClick={applyFilters} disabled={!isDirty}>Filter</button>
         </div>
@@ -10594,8 +10667,7 @@ function maintenanceStatusColumns(setEditTarget, currentUserId) {
   ];
 }
 
-function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord, onReassign, onViewTicket) {
-  const isAdmin = hasRole(currentUser, 'Admin');
+function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord, onReassign, onViewTicket, onApprove, onDecline) {
   const currentUserId = currentUser?.id;
   return [
     { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.schedule_id },
@@ -10634,7 +10706,11 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
       className: 'cell-center',
       render: (row) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <StatusBadge value={row.status} />
+          {/* TicketStatusBadge, not the plain StatusBadge — its colorMap
+              already covers Pending Approval/Declined (shared with tickets);
+              Scheduled/Completed/Cancelled fall back to the same plain
+              style StatusBadge gave them, so this is a strict addition. */}
+          <TicketStatusBadge value={row.status} />
           {/* #11 — a scheduled PM whose date has passed is overdue: flag it
               loudly instead of leaving it to sit silently on the calendar. */}
           {isScheduleOverdue(row) && (
@@ -10663,6 +10739,14 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
               </span>
             )
           )}
+          {row.status === 'Declined' && row.decline_reason && (
+            <span
+              style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', cursor: 'help' }}
+              title={`Reason: ${row.decline_reason}`}
+            >
+              Why? <Icon name="info" size={11} />
+            </span>
+          )}
         </span>
       ),
     },
@@ -10682,33 +10766,45 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
           {row.status === 'Completed' && row.resulting_maintenance_id && onViewRecord && (
             <button className="btn-view-action icon-btn" onClick={() => onViewRecord(row)} type="button" title="View Maintenance Record" aria-label="View Maintenance Record"><Icon name="wrench" size={14} /></button>
           )}
-          {/* Admin edits any schedule; a Custodian may only edit the one they
-              themselves created (matches the backend's ownership check on
-              schedule.edit). A Maintenance Personnel assigned to it only ever
-              gets to act on it via Mark as Done above. */}
-          {isAdmin && (
+          {/* Admin reviews a Custodian's booked schedule before it goes live
+              — same propose/approve/decline shape as a ticket proposal. A
+              Declined row can still be approved directly (no undecline
+              needed first), same as tickets. */}
+          {canDo(currentUser, 'schedule.approve') && ['Pending Approval', 'Declined'].includes(row.status) && onApprove && (
+            <button className="btn-confirm-action icon-btn" onClick={() => onApprove(row)} type="button" title="Approve" aria-label="Approve"><Icon name="checkCircle" size={14} /></button>
+          )}
+          {canDo(currentUser, 'schedule.decline') && row.status === 'Pending Approval' && onDecline && (
+            <button className="btn-delete-action icon-btn" onClick={() => onDecline(row)} type="button" title="Decline" aria-label="Decline"><Icon name="close" size={14} /></button>
+          )}
+          {/* Edit/Delete/Restore are Custodian-only abilities (config/
+              permissions.php: schedule.edit/.delete/.restore => ['Custodian']
+              — Admin doesn't hold them), gated by canDo rather than role so
+              this actually matches what the backend will accept. Edit also
+              carries the backend's ownership check — a Custodian may only
+              edit the schedule they themselves created, same pattern as
+              condition.edit. A Maintenance Personnel assigned to it only
+              ever gets to act on it via Mark as Done above. */}
+          {canDo(currentUser, 'schedule.edit') && String(row.createdBy?.id) === String(currentUserId) && (
             <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
           )}
-          {/* Reassigning/cancelling a schedule stays an Admin-only planning
-              decision, unaffected by the ownership change above. */}
-          {isAdmin && (
-            <>
-              {/* schedule.reassign ability (Admin only): hand a still-open
-                  Scheduled row to a different Maintenance Personnel without
-                  cancelling and re-booking it. */}
-              {row.status === 'Scheduled' && onReassign && (
-                <button className="btn-view-action icon-btn" onClick={() => onReassign(row)} type="button" title="Reassign" aria-label="Reassign"><Icon name="undo" size={14} /></button>
-              )}
-              {/* Cancelling a schedule is a soft cancel — the row survives — so a
-                  cancelled one gets Restore instead of a Delete that would do
-                  nothing. Same swap vehicleColumns makes for archived vehicles. */}
-              {row.status === 'Cancelled' && restoreRecord ? (
-                <button className="btn-confirm-action icon-btn" onClick={() => restoreRecord(`/maintenance-schedules/${row.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?')} type="button" title="Restore" aria-label="Restore"><Icon name="undo" size={14} /></button>
-              ) : (
-                <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/maintenance-schedules/${row.schedule_id}`, 'Schedule cancelled.', `Cancel the ${row.maintenance_type} schedule for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`)} type="button" title="Cancel Schedule" aria-label="Cancel Schedule"><Icon name="trash" size={14} /></button>
-              )}
-            </>
+          {/* schedule.reassign (Admin only, config/permissions.php) — Admin's
+              one remaining lever over an already-booked schedule: hand a
+              still-open Scheduled row to a different Maintenance Personnel
+              without cancelling and re-booking it (see the ability's own
+              comment there for why this stayed with Admin). */}
+          {canDo(currentUser, 'schedule.reassign') && row.status === 'Scheduled' && onReassign && (
+            <button className="btn-view-action icon-btn" onClick={() => onReassign(row)} type="button" title="Reassign" aria-label="Reassign"><Icon name="undo" size={14} /></button>
           )}
+          {/* Cancelling a schedule is a soft cancel — the row survives — so a
+              cancelled one gets Restore instead of a Delete that would do
+              nothing. Same swap vehicleColumns makes for archived vehicles. */}
+          {row.status === 'Cancelled'
+            ? canDo(currentUser, 'schedule.restore') && restoreRecord && (
+              <button className="btn-confirm-action icon-btn" onClick={() => restoreRecord(`/maintenance-schedules/${row.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?')} type="button" title="Restore" aria-label="Restore"><Icon name="undo" size={14} /></button>
+            )
+            : canDo(currentUser, 'schedule.delete') && (
+              <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/maintenance-schedules/${row.schedule_id}`, 'Schedule cancelled.', `Cancel the ${row.maintenance_type} schedule for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`)} type="button" title="Cancel Schedule" aria-label="Cancel Schedule"><Icon name="trash" size={14} /></button>
+            )}
         </div>
       ),
     },
@@ -10747,8 +10843,7 @@ function scheduleUrgencyBucket(row) {
 // Deliberately NOT one big click target: unlike a Maintenance Record, a
 // schedule has no detail page to open, and a whole-card click would fight
 // with the action buttons it needs to carry.
-function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign, onViewTicket, onViewVehicle }) {
-  const isAdmin = hasRole(currentUser, 'Admin');
+function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign, onViewTicket, onViewVehicle, onApprove, onDecline }) {
   const currentUserId = currentUser?.id;
   const isMine = currentUserId != null && String(row.assigned_to) === String(currentUserId);
   const overdue = isScheduleOverdue(row);
@@ -10777,7 +10872,7 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
           <div className="ticket-card-top">
             <span className="ticket-card-id">#{row.schedule_id}</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              <StatusBadge value={row.status} />
+              <TicketStatusBadge value={row.status} />
               {overdue && (
                 <span style={{ fontSize: '0.66rem', fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>OVERDUE</span>
               )}
@@ -10839,6 +10934,12 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
         </div>
       )}
 
+      {row.status === 'Declined' && row.decline_reason && (
+        <p className="muted" style={{ fontSize: '0.74rem', margin: '0 0 8px', color: '#991b1b' }}>
+          <strong>Declined:</strong> {row.decline_reason}
+        </p>
+      )}
+
       {/* ticket-card-bottom pins this to the bottom of the card (margin-top:
           auto) the same way TicketCard's own footer does, so action buttons
           line up across a row of cards regardless of how much optional
@@ -10854,27 +10955,38 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
         {row.status === 'Completed' && row.resulting_maintenance_id && onViewRecord && (
           <button className="btn-view-action icon-btn" onClick={() => onViewRecord(row)} type="button" title="View Maintenance Record" aria-label="View Maintenance Record"><Icon name="wrench" size={14} /></button>
         )}
-        {/* Admin edits any schedule; a Custodian may only edit the one they
-            themselves created — see scheduleColumns' matching Action column. */}
-        {(isAdmin || (currentUserId != null && String(row.createdBy?.id) === String(currentUserId))) && (
+        {/* Admin reviews a Custodian's booked schedule before it goes live —
+            see scheduleColumns' matching Action column for the full
+            reasoning. A Declined row can still be approved directly. */}
+        {canDo(currentUser, 'schedule.approve') && ['Pending Approval', 'Declined'].includes(row.status) && onApprove && (
+          <button className="btn-confirm-action icon-btn" onClick={() => onApprove(row)} type="button" title="Approve" aria-label="Approve"><Icon name="checkCircle" size={14} /></button>
+        )}
+        {canDo(currentUser, 'schedule.decline') && row.status === 'Pending Approval' && onDecline && (
+          <button className="btn-delete-action icon-btn" onClick={() => onDecline(row)} type="button" title="Decline" aria-label="Decline"><Icon name="close" size={14} /></button>
+        )}
+        {/* Edit/Delete/Restore are Custodian-only abilities (config/
+            permissions.php — Admin doesn't hold schedule.edit/.delete/
+            .restore), gated by canDo so this matches what the backend
+            actually accepts — see scheduleColumns' matching Action column
+            for the full reasoning. Edit also keeps the ownership check: a
+            Custodian may only edit the schedule they themselves created. */}
+        {canDo(currentUser, 'schedule.edit') && String(row.createdBy?.id) === String(currentUserId) && (
           <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
         )}
-        {/* Reassign/cancel stay Admin-only, unaffected by the ownership edit above. */}
-        {isAdmin && (
-          <>
-            {/* schedule.reassign ability (Admin only). */}
-            {row.status === 'Scheduled' && onReassign && (
-              <button className="btn-view-action icon-btn" onClick={() => onReassign(row)} type="button" title="Reassign" aria-label="Reassign"><Icon name="undo" size={14} /></button>
-            )}
-            {/* Same swap as the table: a cancelled schedule offers Restore, not a
-                Delete that would just re-cancel something already cancelled. */}
-            {row.status === 'Cancelled' && onRestore ? (
-              <button className="btn-confirm-action icon-btn" onClick={() => onRestore(row)} type="button" title="Restore" aria-label="Restore"><Icon name="undo" size={14} /></button>
-            ) : (
-              <button className="btn-delete-action icon-btn" onClick={() => onDelete(row)} type="button" title="Cancel Schedule" aria-label="Cancel Schedule"><Icon name="trash" size={14} /></button>
-            )}
-          </>
+        {/* schedule.reassign (Admin only) — Admin's one remaining lever over
+            an already-booked schedule. */}
+        {canDo(currentUser, 'schedule.reassign') && row.status === 'Scheduled' && onReassign && (
+          <button className="btn-view-action icon-btn" onClick={() => onReassign(row)} type="button" title="Reassign" aria-label="Reassign"><Icon name="undo" size={14} /></button>
         )}
+        {/* Same swap as the table: a cancelled schedule offers Restore, not a
+            Delete that would just re-cancel something already cancelled. */}
+        {row.status === 'Cancelled'
+          ? canDo(currentUser, 'schedule.restore') && onRestore && (
+            <button className="btn-confirm-action icon-btn" onClick={() => onRestore(row)} type="button" title="Restore" aria-label="Restore"><Icon name="undo" size={14} /></button>
+          )
+          : canDo(currentUser, 'schedule.delete') && (
+            <button className="btn-delete-action icon-btn" onClick={() => onDelete(row)} type="button" title="Cancel Schedule" aria-label="Cancel Schedule"><Icon name="trash" size={14} /></button>
+          )}
       </div>
     </div>
   );
@@ -12074,11 +12186,13 @@ function groupWorkTrackerByTicket(rows) {
     });
 }
 
-// "Vehicles you've worked on and where they stand now." A read-only feed that
-// unifies every workflow phase so a Custodian/Mechanic sees the OUTCOME of their
-// work (approved, rejected, confirmed, reopened) in one place — no notification
-// chasing. Scope: everything still in progress, plus items completed/deferred
-// within the last 30 days so recent outcomes stay visible without old clutter.
+// My Tasks -> History: a plain record of work that's actually finished — a
+// sub-issue reached Done (confirmed) or Deferred. Anything still Open/Under
+// Repair/For Inspection/etc. belongs in the My Tickets tab, not here; this
+// used to also surface in-progress work ("Work Tracker"'s original scope),
+// but that read as unfinished tickets showing up in a "History" list, so
+// it's completed-only now, with no 30-day cutoff — it's meant to be the
+// full record, not a recent-activity feed.
 function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onViewTicket, tabBar }) {
   const [activeFilter, setActiveFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -12088,37 +12202,23 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
   const [filterStatus, setFilterStatus] = useState([]);
   const [filterRole, setFilterRole] = useState([]);
   const [filterOutcome, setFilterOutcome] = useState([]);
-  // Captured once at mount (a 30-day window doesn't need per-render precision),
-  // keeping the filter memo below a pure function of its inputs.
-  const [nowTs] = useState(() => Date.now());
 
   const allRows = useMemo(() => {
-    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
     return flattenWorkTrackerRows(tickets, user)
-      .filter((row) => {
-        const isCompleted = row.status === 'Done' || row.status === 'Deferred';
-        if (!isCompleted) return true; // always show active/in-progress work
-        const ref = row.confirmed_at || row.deferred_at || row.lastActivityIso;
-        return ref ? (nowTs - new Date(ref).getTime()) <= THIRTY_DAYS : false;
-      })
-      // Action-needed first, then most-recent activity.
-      .sort((a, b) => {
-        const an = workTrackerNeedsAction(a) ? 1 : 0;
-        const bn = workTrackerNeedsAction(b) ? 1 : 0;
-        if (an !== bn) return bn - an;
-        return b.lastActivityTs - a.lastActivityTs;
-      });
-  }, [tickets, user, nowTs]);
+      .filter((row) => row.status === 'Done' || row.status === 'Deferred')
+      // Most recently finished first.
+      .sort((a, b) => b.lastActivityTs - a.lastActivityTs);
+  }, [tickets, user]);
 
   const counts = useMemo(() => {
-    const c = { attention: 0, progress: 0, completed: 0 };
-    allRows.forEach((row) => { c[workTrackerBucket(row)] += 1; });
+    const c = { Done: 0, Deferred: 0 };
+    allRows.forEach((row) => { c[row.status] += 1; });
     return c;
   }, [allRows]);
 
   const visibleRows = useMemo(() => {
     let result = allRows;
-    if (activeFilter) result = result.filter((row) => workTrackerBucket(row) === activeFilter);
+    if (activeFilter) result = result.filter((row) => row.status === activeFilter);
     if (filterCategory.length) result = result.filter((row) => filterCategory.includes(String(row.vehicle?.category_id)));
     if (filterCapacity.length) result = result.filter((row) => filterCapacity.includes(row.vehicle?.capacity));
     if (filterStatus.length) result = result.filter((row) => filterStatus.includes(row.status));
@@ -12178,13 +12278,13 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
           setFilterStatus={setFilterStatus}
           filterPriority={filterRole}
           setFilterPriority={setFilterRole}
-          statusOptions={['Open', 'Under Repair', 'Pending Approval', 'For Inspection', 'For Confirmation', 'Done', 'Deferred']}
+          statusOptions={['Done', 'Deferred']}
           priorityOptions={(hasRole(user, 'Custodian') && hasRole(user, 'Maintenance Personnel')) ? ['Mechanic', 'Custodian'] : []}
           priorityLabel="Role"
           extraFilters={[{
             key: 'outcome',
             label: 'Outcomes',
-            options: ['Confirmed — Done', 'Reopened by Admin', 'Approved — awaiting Admin', 'Rejected — redo repair', 'Awaiting your verification', 'In repair', 'Deferred', 'Awaiting assignment'],
+            options: ['Confirmed — Done', 'Deferred'],
             selected: filterOutcome,
             setSelected: setFilterOutcome,
           }]}
@@ -12193,9 +12293,9 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
       <section className="panel operations-board work-tracker-board">
         <div className="operations-board-head">
           <div>
-            <span className="operations-kicker">Service activity</span>
-            <h3>Work Tracker <span className="count-badge">{visibleRows.length}</span></h3>
-            <p>Follow each assigned repair from active work through verification and completion.</p>
+            <span className="operations-kicker">Service history</span>
+            <h3>History <span className="count-badge">{visibleRows.length}</span></h3>
+            <p>Every ticket you've worked on that's already done or deferred — still-open work stays on My Tickets.</p>
           </div>
           <LocalSearchInput
             value={search}
@@ -12213,16 +12313,11 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
             ], visibleRows)}
           />
         </div>
-        <p className="muted" style={{ margin: '0 0 14px', fontSize: '0.85rem' }}>
-          Every vehicle you've worked on and where it stands now — so you can see the outcome of your work
-          without hunting for the ticket. Items needing your action are pinned to the top.
-        </p>
         <div style={{ height: '16px' }} />
-        <div className="operations-board-note"><Icon name="alert" size={14} /> Items requiring your action are shown first. Select a vehicle to review every related issue.</div>
         <PaginatedCardGrid
           items={groupedTicketCards}
           keyOf={(t) => t.ticket_id}
-          emptyMessage="Nothing here yet — vehicles you repair or verify will show up here with their current status."
+          emptyMessage="Nothing here yet — tickets you've worked on will show up here once they're done or deferred."
           renderItem={(t) => <TicketCard ticket={t} onClick={() => onViewTicket(t)} />}
         />
       </section>
@@ -12610,7 +12705,7 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline, onUnd
             </label>
           </div>
           <label>
-            <span>Description / Details</span>
+            <span>Details</span>
             <textarea rows={3} value={fields.ticket_description} onChange={(e) => setField('ticket_description', e.target.value)} />
           </label>
           <label>
@@ -12734,9 +12829,13 @@ function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, mech
     if (draft.index === index) resetDraft();
   };
 
+  const subissueBoxStyle = { border: '1px solid #e2e8f0', borderRadius: 10, padding: 14, background: '#fff' };
+  const subissueBoxHeadStyle = { display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', marginBottom: 10 };
+
   return (
     <div className="subissue-two-col" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(260px, 1fr)', gap: 18, alignItems: 'start' }}>
-      <div>
+      <div style={subissueBoxStyle}>
+        <span style={subissueBoxHeadStyle}>Sub-Issue</span>
         <label>
           <span>Subissue</span>
           <input
@@ -12777,8 +12876,8 @@ function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, mech
         </div>
       </div>
 
-      <div>
-        <span style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: 6 }}>Saved Subissues</span>
+      <div style={subissueBoxStyle}>
+        <span style={subissueBoxHeadStyle}>Saved Subissues</span>
         {items.length === 0 ? (
           <p className="muted" style={{ fontSize: '0.85rem' }}>Nothing added yet.</p>
         ) : (
@@ -13174,54 +13273,48 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 <p className="muted">No sub-issues — inspection found nothing to repair.</p>
               )}
 
-              {/* One mechanic for the whole ticket, picked once at Admin
-                  approval (see TicketProposalReviewForm) — a sub-issue added
-                  afterward inherits that same mechanic automatically
-                  (addSubIssue() on the backend), so there's nothing left to
-                  dispatch per sub-issue here. Admin can still hand the whole
-                  ticket to someone else via Reassign Mechanic below. */}
-              {onAddSubIssue && ticket.status === 'Active' && canDo(user, 'subissue.manage') && (hasRole(user, 'Admin') || String(ticket.assigned_custodian_id) === String(userId)) && (
+              {/* Adding a brand-new sub-issue to an already-Active ticket is
+                  deliberately not offered — every sub-issue is supposed to be
+                  settled at Admin approval, before repair starts. This inline
+                  form still renders for editing an existing sub-issue (the
+                  pencil icon below sets subDraft with its id), since that's
+                  unchanged — only the "Add Sub-issue" entry point is gone. */}
+              {subDraft && (
                 <div className="ticket-inline-form" style={{ marginBottom: 10, padding: '10px 12px' }}>
-                  {!subDraft ? (
-                    <button type="button" className="primary-button" onClick={() => setSubDraft({ id: null, title: '', maintenance_type: '' })}>
-                      <Icon name="plus" size={12} /> Add Sub-issue
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="What else is wrong?"
+                      value={subDraft.title}
+                      onChange={(e) => setSubDraft({ ...subDraft, title: e.target.value })}
+                      style={{ flex: '2 1 240px' }}
+                    />
+                    <input
+                      type="text"
+                      list="subissue-maintenance-types"
+                      placeholder="Maintenance type (optional)"
+                      value={subDraft.maintenance_type}
+                      onChange={(e) => setSubDraft({ ...subDraft, maintenance_type: e.target.value })}
+                      style={{ flex: '1 1 180px' }}
+                    />
+                    <datalist id="subissue-maintenance-types">
+                      {(lookups.maintenance_types ?? []).map((t) => <option key={t.name ?? t} value={t.name ?? t} />)}
+                    </datalist>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={!subDraft.title.trim()}
+                      onClick={async () => {
+                        const payload = { title: subDraft.title.trim(), maintenance_type: subDraft.maintenance_type.trim() || null };
+                        const ok = subDraft.id ? await onEditSubIssue(ticket, subDraft.id, payload) : await onAddSubIssue(ticket, payload);
+                        if (ok !== false) setSubDraft(null);
+                      }}
+                    >
+                      {subDraft.id ? 'Save' : 'Add'}
                     </button>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="What else is wrong?"
-                        value={subDraft.title}
-                        onChange={(e) => setSubDraft({ ...subDraft, title: e.target.value })}
-                        style={{ flex: '2 1 240px' }}
-                      />
-                      <input
-                        type="text"
-                        list="subissue-maintenance-types"
-                        placeholder="Maintenance type (optional)"
-                        value={subDraft.maintenance_type}
-                        onChange={(e) => setSubDraft({ ...subDraft, maintenance_type: e.target.value })}
-                        style={{ flex: '1 1 180px' }}
-                      />
-                      <datalist id="subissue-maintenance-types">
-                        {(lookups.maintenance_types ?? []).map((t) => <option key={t.name ?? t} value={t.name ?? t} />)}
-                      </datalist>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        disabled={!subDraft.title.trim()}
-                        onClick={async () => {
-                          const payload = { title: subDraft.title.trim(), maintenance_type: subDraft.maintenance_type.trim() || null };
-                          const ok = subDraft.id ? await onEditSubIssue(ticket, subDraft.id, payload) : await onAddSubIssue(ticket, payload);
-                          if (ok !== false) setSubDraft(null);
-                        }}
-                      >
-                        {subDraft.id ? 'Save' : 'Add'}
-                      </button>
-                      <button type="button" className="ghost-button" onClick={() => setSubDraft(null)}>Cancel</button>
-                    </div>
-                  )}
+                    <button type="button" className="ghost-button" onClick={() => setSubDraft(null)}>Cancel</button>
+                  </div>
                 </div>
               )}
 
@@ -13732,7 +13825,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
     if (!liveValues.vehicle_id) errors.push('Vehicle is required.');
     if (!liveValues.assigned_custodian_id) errors.push('Assign to Custodian is required.');
     if (!(liveValues.ticket_title ?? '').trim()) errors.push('Ticket Title is required.');
-    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Description / Details is required.');
+    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Details is required.');
     if (!liveValues.priority) errors.push('Priority is required.');
     if (preDiagnosed && !subIssueRows.some((row) => row.trim())) {
       errors.push(`At least one ${isSingleIssueMode ? 'issue' : 'sub-issue'} is required.`);
@@ -13988,7 +14081,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
               </label>
             </div>
             <label>
-              <span>Description / Details <span className="required-asterisk">*</span></span>
+              <span>Details <span className="required-asterisk">*</span></span>
               <textarea required rows={3} value={liveValues.ticket_description ?? ''} onChange={(e) => setField('ticket_description', e.target.value)} />
             </label>
             <label style={{ maxWidth: 260 }}>
@@ -14157,7 +14250,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
     e.preventDefault();
     const errors = [];
     if (!liveValues.vehicle_id) errors.push('Vehicle is required.');
-    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Description / Details is required.');
+    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Details is required.');
     if (!liveValues.priority) errors.push('Priority is required.');
     if (!entryMode) errors.push('Pick how this is being reported, above.');
     const cleanedRows = subIssueRows.filter((row) => (row.title ?? '').trim());
@@ -14337,6 +14430,9 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
 
         <section className="veh-card">
           <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Vehicle</h4></div>
+          {/* The picker and the selected vehicle's info now sit side by side
+              (one .ticket-form-grid-2 row) instead of the preview stacking
+              full-width underneath — picker on the left, info on the right. */}
           <div className="ticket-form-grid-2">
             <label>
               <span>Vehicle <span className="required-asterisk">*</span></span>
@@ -14345,10 +14441,8 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
                 {vehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
               </select>
             </label>
-          </div>
-          {selectedVehicle && (
-            <div className="ticket-selection-preview">
-              <div className="ticket-preview-card ticket-preview-card--lg">
+            {selectedVehicle && (
+              <div className="ticket-preview-card ticket-preview-card--lg" style={{ alignSelf: 'start' }}>
                 {selectedVehicle.photo_url ? (
                   <img className="ticket-preview-photo ticket-preview-photo--lg" src={resolvePhotoUrl(selectedVehicle.photo_url)} alt={selectedVehicle.vehicle_name} />
                 ) : (
@@ -14360,8 +14454,8 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
                   <span className="muted">{[selectedVehicle.brand, selectedVehicle.model].filter(Boolean).join(' ') || '—'} &middot; {selectedVehicle.current_location ?? 'No location on file'}</span>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
           {!fromFlag && openReports.length > 0 && (
             <div style={{ margin: '0 18px 18px', padding: '12px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8 }}>
               <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 2 }}>This vehicle has open reports — is this repair for one of them?</div>
@@ -14403,7 +14497,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
             {/* No Ticket Title field — it's automatic (vehicle + repair type),
                 and the Admin folds the ticket's own # into it on approval. */}
             <label>
-              <span>Description / Details <span className="required-asterisk">*</span></span>
+              <span>Details <span className="required-asterisk">*</span></span>
               <textarea required rows={3} value={liveValues.ticket_description ?? ''} onChange={(e) => setField('ticket_description', e.target.value)} />
             </label>
             <label style={{ maxWidth: 260 }}>
@@ -16153,6 +16247,7 @@ function CustodianVerificationModule({
       : activeFilter.includes('Pending')
         ? 'Pending Verifications'
         : 'My Tickets';
+  const isMyTicketsView = panelTitle === 'My Tickets';
   const emptyStateText = activeFilter.includes('Active')
     ? 'No tickets currently active.'
     : activeFilter.includes('Verified')
@@ -16242,7 +16337,9 @@ function CustodianVerificationModule({
   return (
     <div className="module-grid">
       <DismissibleHint description="Review a mechanic's completed work and give the one verification attestation that closes the ticket — check back here to see what you've already verified." />
-      {tabBar}
+      {/* Stat cards swapped above the My Tickets/History tab bar — they read
+          as the page's headline now, with the tabs as a secondary switch
+          underneath instead of sitting above everything. */}
       <ModuleStatCards
         totalLabel="Total Assigned"
         total={stats.total}
@@ -16251,6 +16348,7 @@ function CustodianVerificationModule({
         activeFilter={activeFilter}
         onFilterChange={onFilterChange}
       />
+      {tabBar}
       <section className="panel module-filter-panel">
         <FilterBar
           categories={categories}
@@ -16275,12 +16373,23 @@ function CustodianVerificationModule({
       <section className="panel">
         <div className="panel-header-bar">
           <h3>{panelTitle} <span className="count-badge">{tickets.length}</span></h3>
-          <ColumnChooserButton {...verificationColumnChooser} />
+          {!isMyTicketsView && <ColumnChooserButton {...verificationColumnChooser} />}
         </div>
         <div style={{ height: '16px' }} />
         {tickets.length === 0
           ? <p className="empty-state">{emptyStateText}</p>
-          : (
+          : isMyTicketsView ? (
+            // The plain "My Tickets" view (no Active/Pending/Verified filter
+            // picked) reads as tickets, same as the Admin's own ticket list —
+            // the verification-focused table (repair log, parts, verify
+            // action) only makes sense once a specific status is picked.
+            <PaginatedCardGrid
+              items={tickets}
+              keyOf={(t) => t.ticket_id}
+              emptyMessage={emptyStateText}
+              renderItem={(t) => <TicketCard ticket={t} onClick={() => (onViewTicket ? onViewTicket(t) : (t.vehicle && onViewVehicle(t.vehicle)))} />}
+            />
+          ) : (
             <DataTable
               columns={verificationColumnChooser.visibleColumns}
               onReorderColumn={verificationColumnChooser.reorderColumn}
@@ -16404,13 +16513,7 @@ function MechanicWorkOrderModule({
   stats,
   activeFilter,
   onFilterChange,
-  // Phase B4 — a Maintenance Personnel account's assigned Maintenance
-  // Schedules, shown as a second section on this same page (null for every
-  // other role, which never sees this section at all).
-  mySchedules = null,
-  onCompleteSchedule,
   currentUser,
-  onViewVehicle,
 }) {
   const isPendingView = activeFilter !== 'Submitted';
   // Merge 2 — "Work Tracker" is no longer its own sidebar entry; it's this
@@ -16577,39 +16680,12 @@ function MechanicWorkOrderModule({
         </section>
       )}
 
-      {/* Phase B4 — Condition Monitoring and the standalone Maintenance
-          Schedule module were both removed from Maintenance Personnel's
-          sidebar; their assigned schedules (already scoped server-side to
-          assigned_to = me) surface here instead, as a clearly-labeled second
-          section on the same page — shown regardless of the Archive toggle,
-          same as before. */}
-      {mySchedules !== null && (
-        <section className="panel operations-board work-order-board">
-          <div className="operations-board-head">
-            <div>
-              <span className="operations-kicker">Preventive maintenance</span>
-              <h3>My Assigned Maintenance Schedules <span className="count-badge">{mySchedules.length}</span></h3>
-              <p>Vehicles scheduled for preventive maintenance and assigned to you.</p>
-            </div>
-          </div>
-          <div className="work-tracker-grid operations-card-grid">
-            {mySchedules.length === 0 ? (
-              <p className="empty-state" style={{ gridColumn: '1 / -1' }}>No maintenance schedules assigned to you.</p>
-            ) : (
-              mySchedules.map((row) => (
-                <MaintenanceScheduleCard
-                  key={row.schedule_id}
-                  row={row}
-                  currentUser={currentUser}
-                  onComplete={onCompleteSchedule}
-                  onViewTicket={onViewTicket}
-                  onViewVehicle={onViewVehicle}
-                />
-              ))
-            )}
-          </div>
-        </section>
-      )}
+      {/* The old "My Assigned Maintenance Schedules" card section that used
+          to live here (a duplicate of the real Maintenance Schedule sidebar
+          page) was removed — that page is back in this role's sidebar, and
+          GET /maintenance-schedules already scopes to assigned_to = me for
+          a pure Maintenance Personnel account, so this was showing the same
+          data twice. */}
     </div>
   );
 }
@@ -16704,15 +16780,27 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
         </div>
       )}
 
-      <form className="smart-form" onSubmit={handleSubmit} noValidate>
-        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
-          <h4 style={{ margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', fontSize: '0.85rem' }}><Icon name="clipboard" size={14} /> Repair Log Entry</h4>
-          <textarea required rows={2} value={repairLogs} onChange={(e) => { setRepairLogs(e.target.value); onDirty?.(); }} style={{ width: '100%' }} />
+      {/* Context first, inputs second — what the ticket actually asked for
+          (and anything already logged) used to sit at the very bottom, after
+          every field, which meant reading the instructions meant scrolling
+          past the whole form first. */}
+      <section className="veh-card" style={{ marginBottom: 16 }}>
+        <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Work Order</h4></div>
+        <div style={{ padding: 18 }}>
+          <p className="muted" style={{ margin: ticket.repair_logs ? '0 0 12px' : 0 }}>{ticket.work_order_notes ?? ticket.ticket_description}</p>
+          {ticket.repair_logs && (
+            <>
+              <p style={{ margin: '0 0 6px', fontSize: '0.82rem', fontWeight: 700, color: '#475569' }}>Previous Logs</p>
+              <RepairLogEntries text={ticket.repair_logs} />
+            </>
+          )}
         </div>
+      </section>
 
-        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
-          <h4 style={{ margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', fontSize: '0.85rem' }}><Icon name="wrench" size={14} /> Repair Type</h4>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+      <form className="smart-form" onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <section className="veh-card veh-card-form">
+          <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Repair Type</h4></div>
+          <div style={{ padding: 18, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <select
               required
               disabled
@@ -16755,24 +16843,34 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
               </>
             )}
           </div>
-        </div>
+        </section>
+
+        <section className="veh-card veh-card-form">
+          <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Repair Log Entry</h4></div>
+          <div style={{ padding: 18 }}>
+            <textarea required rows={3} placeholder="What did you actually do to fix this?" value={repairLogs} onChange={(e) => { setRepairLogs(e.target.value); onDirty?.(); }} style={{ width: '100%' }} />
+          </div>
+        </section>
 
         {repairType === 'cannibalized' && (
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8 }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.85rem' }}>Part Taken From Donor</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
-              <input type="text" placeholder="Part (e.g. Radiator)" value={partNeeded} onChange={(e) => { setPartNeeded(e.target.value); onDirty?.(); }} />
-              <input type="number" min="1" placeholder="Quantity" value={partQuantity} onChange={(e) => { setPartQuantity(e.target.value); onDirty?.(); }} />
-              <input type="text" placeholder="Part condition" value={partCondition} onChange={(e) => { setPartCondition(e.target.value); onDirty?.(); }} />
-              <span title="Date installed"><DateFilterInput value={partInstalledAt} onChange={(v) => { setPartInstalledAt(v); onDirty?.(); }} /></span>
+          <section className="veh-card veh-card-form">
+            <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Part Taken From Donor</h4></div>
+            <div style={{ padding: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
+                <input type="text" placeholder="Part (e.g. Radiator)" value={partNeeded} onChange={(e) => { setPartNeeded(e.target.value); onDirty?.(); }} />
+                <input type="number" min="1" placeholder="Quantity" value={partQuantity} onChange={(e) => { setPartQuantity(e.target.value); onDirty?.(); }} />
+                <input type="text" placeholder="Part condition" value={partCondition} onChange={(e) => { setPartCondition(e.target.value); onDirty?.(); }} />
+                <span title="Date installed"><DateFilterInput value={partInstalledAt} onChange={(v) => { setPartInstalledAt(v); onDirty?.(); }} /></span>
+              </div>
+              <textarea rows={2} placeholder="Why this donor / why not buy the part?" value={cannibalReason} onChange={(e) => { setCannibalReason(e.target.value); onDirty?.(); }} style={{ width: '100%', marginTop: 8 }} />
             </div>
-            <textarea rows={2} placeholder="Why this donor / why not buy the part?" value={cannibalReason} onChange={(e) => { setCannibalReason(e.target.value); onDirty?.(); }} style={{ width: '100%', marginTop: 8 }} />
-          </div>
+          </section>
         )}
 
         {repairType === 'external' && onExternalSend && (
-          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: 10, marginBottom: 8 }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.85rem' }}>External Shop</h4>
+          <section className="veh-card veh-card-form">
+            <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>External Shop</h4></div>
+            <div style={{ padding: 18 }}>
             {!ticket.external_sent_at ? (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
@@ -16812,7 +16910,8 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
             ) : (
               <p style={{ margin: 0, fontSize: '0.85rem' }}>Returned from <strong>{ticket.external_vendor}</strong> on {formatDate(ticket.external_returned_at)}. {ticket.external_return_notes}</p>
             )}
-          </div>
+            </div>
+          </section>
         )}
 
         {awaitingShopReturn && (
@@ -16820,10 +16919,16 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
             The fields below apply once the vehicle is back from the shop — mark it Returned above when it comes in.
           </p>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 190px', gap: 8, marginBottom: 12, alignItems: 'start', opacity: awaitingShopReturn ? 0.5 : 1 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-              <h4 style={{ margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', fontSize: '0.85rem' }}><Icon name="tools" size={14} /> Parts & Materials Used</h4>
+        {/* Parts/Attachment (what was used, proof of work) and Schedule
+            (when) are the two things logged once the repair is actually
+            done — grouped side by side as their own card instead of sitting
+            as bare unlabeled divs. */}
+        <section className="veh-card veh-card-form" style={{ opacity: awaitingShopReturn ? 0.5 : 1 }}>
+          <div className="veh-card-head"><Icon name="tools" size={16} /><h4>Parts, Materials &amp; Schedule</h4></div>
+          <div style={{ padding: 18, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 16, alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <h4 style={{ margin: '0 0 6px 0', fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>Parts &amp; Materials Used</h4>
               {parts.map((part, index) => (
                 <div key={index} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
                   <input
@@ -16896,23 +17001,14 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
               <DateFilterInput value={repairCompletedAt} onChange={(v) => { setRepairCompletedAt(v); onDirty?.(); }} />
             </label>
           </div>
-        </div>
+          </div>
+        </section>
 
         <div className="form-actions">
           <button className="ghost-button" onClick={onBack} type="button">Cancel</button>
           <button className="primary-button" type="submit">Submit Repair Log</button>
         </div>
       </form>
-
-      <div style={{marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)'}}>
-        <p className="muted"><strong>Work Order Instructions:</strong> {ticket.work_order_notes ?? ticket.ticket_description}</p>
-        {ticket.repair_logs && (
-          <>
-            <p className="muted" style={{marginTop: '8px'}}><strong>Previous Logs:</strong></p>
-            <RepairLogEntries text={ticket.repair_logs} />
-          </>
-        )}
-      </div>
     </ModulePanel>
   );
 }

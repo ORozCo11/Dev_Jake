@@ -248,7 +248,7 @@ class ScheduleCompletionTest extends TestCase
     }
 
     #[Test]
-    public function a_new_schedule_always_starts_scheduled_even_if_a_different_status_is_submitted(): void
+    public function a_new_schedule_always_starts_pending_approval_even_if_a_different_status_is_submitted(): void
     {
         $vehicle = $this->vehicle();
         // This test only cares about the status-ignored behavior, not role
@@ -262,7 +262,9 @@ class ScheduleCompletionTest extends TestCase
             'status' => 'Completed', // must be silently ignored — not a valid create input
         ])->assertCreated();
 
-        $this->assertSame('Scheduled', $response->json('status'));
+        // Parks at Pending Approval until an Admin reviews it — see
+        // approveSchedule()/declineSchedule() in FleetController.
+        $this->assertSame('Pending Approval', $response->json('status'));
     }
 
     #[Test]

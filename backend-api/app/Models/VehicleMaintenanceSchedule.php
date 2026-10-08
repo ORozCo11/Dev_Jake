@@ -19,6 +19,7 @@ class VehicleMaintenanceSchedule extends Model
         'service_location',
         'notes',
         'status',
+        'decline_reason',
         'created_by',
         'assigned_to',
         'recurrence_months',
