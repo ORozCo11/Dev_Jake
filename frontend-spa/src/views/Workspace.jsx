@@ -525,7 +525,7 @@ function Workspace() {
     || (isNewUserPage && 'Add User')
     || (editUserId && 'Update User')
     || (viewUserId && 'User Profile')
-    || (logRepairsTicketId && 'Log Repairs')
+    || (logRepairsTicketId && 'Record Repair Work')
     || (inspectTicketId && 'Inspect Vehicle')
     || (isProfilePage && 'My Profile')
     || (isNewLocationPage && 'Add Location')
@@ -11844,7 +11844,11 @@ function formatTime(value) {
 // the form "[YYYY-MM-DD HH:MM] message", separated by a blank line. Parse
 // that back out so each entry can show a proper DateBadge instead of a raw
 // bracketed timestamp buried in a wall of text.
-function RepairLogEntries({ text, compact = false }) {
+// `limit` (compact mode only, optional): show just the latest N entries
+// with a toggle to reveal the rest, so a long history stays one line tall.
+function RepairLogEntries({ text, compact = false, limit = null }) {
+  const [showAll, setShowAll] = useState(false);
+
   if (!text) {
     return <p className="empty-state">No logs yet.</p>;
   }
@@ -11858,14 +11862,21 @@ function RepairLogEntries({ text, compact = false }) {
   }).filter((entry) => entry.message || entry.iso);
 
   if (compact) {
+    const collapsed = limit != null && !showAll && entries.length > limit;
+    const shown = collapsed ? entries.slice(-limit) : entries;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {entries.map((entry, i) => (
+        {shown.map((entry, i) => (
           <p key={i} style={{ margin: 0, fontSize: '0.82rem', color: '#334155' }}>
             {entry.iso && <span className="muted" style={{ fontSize: '0.7rem', marginRight: 6 }}>{formatDate(entry.iso)}</span>}
             {entry.message}
           </p>
         ))}
+        {limit != null && entries.length > limit && (
+          <button type="button" className="lr-link-btn" style={{ alignSelf: 'flex-start' }} onClick={() => setShowAll((v) => !v)}>
+            {showAll ? 'Show latest only' : `View full repair history (${entries.length})`}
+          </button>
+        )}
       </div>
     );
   }
@@ -16761,253 +16772,321 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
     });
   };
 
+  // Display-only helpers for the workspace below — none of them feed into
+  // handleSubmit, which still sends exactly the same payload as before.
+  const REPAIR_TYPE_LABEL = { in_house: 'In-House Repair', cannibalized: 'Used Cannibalized Part', external: 'Sent to External Shop' };
+  const idBase = `lr-${ticket.sub_issue_id ?? ticket.ticket_id}`;
+  const workDescription = ticket.work_order_notes ?? ticket.ticket_description;
+  const namedPartCount = parts.filter((p) => p.name.trim()).length;
+  const formatFileSize = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+  const dimWhileAtShop = { opacity: awaitingShopReturn ? 0.5 : 1 };
+
+  // One workspace instead of a stack of cards: a compact header (vehicle /
+  // ticket / status said once), then a two-column body — the repair task
+  // itself on the left, the supporting record (parts, dates, total) plus
+  // the submit action on the right, which stays in view while scrolling.
   return (
-    <ModulePanel description="Execute the repair and log it. Once every sub-issue on this ticket is logged, submit it for Custodian verification.">
-      <div className="vehicle-profile-header">
-        <h3 className="ticket-detail-title" style={{ margin: 0 }}>Log Repairs — {ticket.title}</h3>
-      </div>
-      <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>Main Issue: <strong>{ticket.ticket_title}</strong> (Ticket #{ticket.ticket_id}) — {ticket.maintenance_type}</p>
+    <ModulePanel>
+      <header className="lr-header">
+        <div className="lr-header-main">
+          <h3 className="lr-vehicle">{ticket.vehicle?.vehicle_name ?? 'Vehicle'}</h3>
+          <p className="lr-header-meta">
+            {[ticket.vehicle?.plate_number, ticket.maintenance_type, `Ticket #${ticket.ticket_id}`].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <TicketStatusBadge value={ticket.status} />
+      </header>
+
       {ticket.confirmation_verdict === 'Reopened' && (
-        <div className="notice danger" style={{ marginBottom: 16 }}>
-          <h4 style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon name="alert" size={16} /> Reopened by Admin ({ticket.confirmed_by?.name ?? 'Admin'})</h4>
-          <p><strong>Feedback/Reason:</strong> {ticket.confirmation_notes ?? 'No feedback notes provided.'}</p>
+        <div className="lr-alert lr-alert-danger" role="alert">
+          <Icon name="alert" size={16} />
+          <div>
+            <strong>Reopened by Admin ({ticket.confirmed_by?.name ?? 'Admin'})</strong>
+            <p>{ticket.confirmation_notes ?? 'No feedback notes provided.'}</p>
+          </div>
         </div>
       )}
       {ticket.verification_verdict === 'Rejected' && (
-        <div className="notice warning" style={{ marginBottom: 16 }}>
-          <h4 style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon name="alert" size={16} /> Rejected by Custodian ({ticket.verified_by?.name ?? 'Custodian'})</h4>
-          <p><strong>Feedback/Reason:</strong> {ticket.verification_notes ?? 'No feedback notes provided.'}</p>
+        <div className="lr-alert lr-alert-warning" role="alert">
+          <Icon name="alert" size={16} />
+          <div>
+            <strong>Rejected by Custodian ({ticket.verified_by?.name ?? 'Custodian'})</strong>
+            <p>{ticket.verification_notes ?? 'No feedback notes provided.'}</p>
+          </div>
         </div>
       )}
 
-      {/* Context first, inputs second — what the ticket actually asked for
-          (and anything already logged) used to sit at the very bottom, after
-          every field, which meant reading the instructions meant scrolling
-          past the whole form first. */}
-      <section className="veh-card" style={{ marginBottom: 16 }}>
-        <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Work Order</h4></div>
-        <div style={{ padding: 18 }}>
-          <p className="muted" style={{ margin: ticket.repair_logs ? '0 0 12px' : 0 }}>{ticket.work_order_notes ?? ticket.ticket_description}</p>
-          {ticket.repair_logs && (
-            <>
-              <p style={{ margin: '0 0 6px', fontSize: '0.82rem', fontWeight: 700, color: '#475569' }}>Previous Logs</p>
-              <RepairLogEntries text={ticket.repair_logs} />
-            </>
-          )}
-        </div>
-      </section>
+      <form className="smart-form lr-workspace" onSubmit={handleSubmit} noValidate>
+        <div className="lr-main">
+          {/* Work order — only as tall as its content. Vehicle, ticket #,
+              type and status already live in the header above, so this
+              only carries what the header doesn't: what to fix and why. */}
+          <section className="lr-group lr-workorder" aria-labelledby={`${idBase}-wo`}>
+            <h4 className="lr-section-label" id={`${idBase}-wo`}>Work Order</h4>
+            <dl className="lr-kv">
+              <div><dt>Repair Item</dt><dd>{ticket.title}</dd></div>
+              <div><dt>Main Issue</dt><dd>{ticket.ticket_title}</dd></div>
+              {workDescription && <div className="lr-kv-wide"><dt>Description</dt><dd>{workDescription}</dd></div>}
+            </dl>
+            {ticket.repair_logs && (
+              <div className="lr-history">
+                <span className="lr-mini-label">Previous repair</span>
+                <RepairLogEntries text={ticket.repair_logs} compact limit={2} />
+              </div>
+            )}
+          </section>
 
-      <form className="smart-form" onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <section className="veh-card veh-card-form">
-          <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Repair Type</h4></div>
-          <div style={{ padding: 18, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select
-              required
-              disabled
-              value={repairType}
-              style={{ maxWidth: 260, background: '#f1f5f9', color: '#475569', cursor: 'not-allowed' }}
-              title="Set when this ticket was proposed — it isn't changed here."
-            >
-              <option value="">Select</option>
-              <option value="in_house">In-House Repair</option>
-              <option value="cannibalized">Used Cannibalized Part</option>
-              <option value="external">Sent to External Shop</option>
-            </select>
-            <span className="muted" style={{ fontSize: '0.78rem' }}>Set when this ticket was proposed.</span>
+          {/* The primary task — visually the heaviest group on the page. */}
+          <section className="lr-group lr-primary" aria-labelledby={`${idBase}-rw`}>
+            <h4 className="lr-section-label" id={`${idBase}-rw`}>Repair Work</h4>
+            <div className="lr-field">
+              <span className="lr-label" id={`${idBase}-type`}>Repair Type</span>
+              {/* Read-only on purpose: decided when the ticket was proposed
+                  and never changed here — shown as a value, not a disabled
+                  dropdown that looks clickable. */}
+              <p className="lr-readonly" aria-labelledby={`${idBase}-type`}>
+                {REPAIR_TYPE_LABEL[repairType] ?? 'Not set'}
+                <span className="lr-hint"> · set when the ticket was proposed</span>
+              </p>
+            </div>
+
             {repairType === 'cannibalized' && (
-              <select
-                required
-                value={sourceVehicleId}
-                onChange={(e) => { setSourceVehicleId(e.target.value); onDirty?.(); }}
-                style={{ maxWidth: 260 }}
-              >
-                <option value="">Select source vehicle</option>
-                {sourceVehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
-              </select>
+              <div className="lr-field">
+                <label className="lr-label" htmlFor={`${idBase}-source`}>Source Vehicle <abbr className="required-asterisk" title="required">*</abbr></label>
+                <select
+                  id={`${idBase}-source`}
+                  required
+                  value={sourceVehicleId}
+                  onChange={(e) => { setSourceVehicleId(e.target.value); onDirty?.(); }}
+                >
+                  <option value="">Select source vehicle</option>
+                  {sourceVehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
+                </select>
+              </div>
             )}
             {repairType === 'external' && (
-              <>
-                <input
-                  type="text"
-                  placeholder="External shop name"
-                  value={externalVendor}
-                  onChange={(e) => { setExternalVendor(e.target.value); onDirty?.(); }}
-                  style={{ maxWidth: 220 }}
-                />
-                <span title="Warranty Until" style={{ maxWidth: 180, display: 'inline-block' }}>
-                  <DateFilterInput
-                    value={warrantyUntil}
-                    onChange={(v) => { setWarrantyUntil(v); onDirty?.(); }}
+              <div className="lr-two-col">
+                <div className="lr-field">
+                  <label className="lr-label" htmlFor={`${idBase}-vendor`}>External Shop Name</label>
+                  <input
+                    id={`${idBase}-vendor`}
+                    type="text"
+                    placeholder="e.g. Dela Cruz Auto Repair"
+                    value={externalVendor}
+                    onChange={(e) => { setExternalVendor(e.target.value); onDirty?.(); }}
                   />
-                </span>
-              </>
-            )}
-          </div>
-        </section>
-
-        <section className="veh-card veh-card-form">
-          <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Repair Log Entry</h4></div>
-          <div style={{ padding: 18 }}>
-            <textarea required rows={3} placeholder="What did you actually do to fix this?" value={repairLogs} onChange={(e) => { setRepairLogs(e.target.value); onDirty?.(); }} style={{ width: '100%' }} />
-          </div>
-        </section>
-
-        {repairType === 'cannibalized' && (
-          <section className="veh-card veh-card-form">
-            <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Part Taken From Donor</h4></div>
-            <div style={{ padding: 18 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
-                <input type="text" placeholder="Part (e.g. Radiator)" value={partNeeded} onChange={(e) => { setPartNeeded(e.target.value); onDirty?.(); }} />
-                <input type="number" min="1" placeholder="Quantity" value={partQuantity} onChange={(e) => { setPartQuantity(e.target.value); onDirty?.(); }} />
-                <input type="text" placeholder="Part condition" value={partCondition} onChange={(e) => { setPartCondition(e.target.value); onDirty?.(); }} />
-                <span title="Date installed"><DateFilterInput value={partInstalledAt} onChange={(v) => { setPartInstalledAt(v); onDirty?.(); }} /></span>
+                </div>
+                <div className="lr-field">
+                  <label className="lr-label" htmlFor={`${idBase}-warranty`}>Warranty Until</label>
+                  <DateFilterInput id={`${idBase}-warranty`} value={warrantyUntil} onChange={(v) => { setWarrantyUntil(v); onDirty?.(); }} />
+                </div>
               </div>
-              <textarea rows={2} placeholder="Why this donor / why not buy the part?" value={cannibalReason} onChange={(e) => { setCannibalReason(e.target.value); onDirty?.(); }} style={{ width: '100%', marginTop: 8 }} />
+            )}
+
+            <div className="lr-field">
+              <label className="lr-label" htmlFor={`${idBase}-work`}>Work Performed <abbr className="required-asterisk" title="required">*</abbr></label>
+              <textarea
+                id={`${idBase}-work`}
+                className="lr-textarea"
+                required
+                rows={4}
+                placeholder="Describe what you repaired, what you found, what you replaced, adjustments made, and testing performed."
+                value={repairLogs}
+                onChange={(e) => { setRepairLogs(e.target.value); onDirty?.(); }}
+              />
             </div>
           </section>
-        )}
 
-        {repairType === 'external' && onExternalSend && (
-          <section className="veh-card veh-card-form">
-            <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>External Shop</h4></div>
-            <div style={{ padding: 18 }}>
-            {!ticket.external_sent_at ? (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
-                  <input type="text" placeholder="Shop name *" value={sendForm.external_vendor} onChange={(e) => setSendForm({ ...sendForm, external_vendor: e.target.value })} />
-                  <input type="text" placeholder="Why outside? *" value={sendForm.external_reason} onChange={(e) => setSendForm({ ...sendForm, external_reason: e.target.value })} />
-                  <input type="text" placeholder="Shop contact" value={sendForm.external_shop_contact} onChange={(e) => setSendForm({ ...sendForm, external_shop_contact: e.target.value })} />
-                  <input type="number" min="0" placeholder="Estimated cost (₱)" value={sendForm.external_estimated_cost} onChange={(e) => setSendForm({ ...sendForm, external_estimated_cost: e.target.value })} />
+          {repairType === 'cannibalized' && (
+            <section className="lr-group" aria-labelledby={`${idBase}-donor`}>
+              <h4 className="lr-section-label" id={`${idBase}-donor`}>Part Taken From Donor</h4>
+              <div className="lr-two-col">
+                <div className="lr-field">
+                  <label className="lr-label" htmlFor={`${idBase}-pn`}>Part</label>
+                  <input id={`${idBase}-pn`} type="text" placeholder="e.g. Radiator" value={partNeeded} onChange={(e) => { setPartNeeded(e.target.value); onDirty?.(); }} />
                 </div>
-                <textarea rows={2} placeholder="Work to be done *" value={sendForm.external_work_scope} onChange={(e) => setSendForm({ ...sendForm, external_work_scope: e.target.value })} style={{ width: '100%', marginTop: 8 }} />
-                <button
-                  type="button"
-                  className="primary-button"
-                  style={{ marginTop: 8 }}
-                  disabled={!sendForm.external_vendor.trim() || !sendForm.external_reason.trim() || !sendForm.external_work_scope.trim()}
-                  onClick={() => onExternalSend(ticket, Object.fromEntries(Object.entries(sendForm).filter(([, v]) => String(v).trim() !== '')))}
-                >
-                  Mark as Sent to Shop
-                </button>
-              </>
-            ) : !ticket.external_returned_at ? (
-              <>
-                <p style={{ margin: '0 0 8px', fontSize: '0.85rem' }}>Sent to <strong>{ticket.external_vendor}</strong> on {formatDate(ticket.external_sent_at)} — waiting for it to come back.</p>
-                <textarea rows={2} placeholder="Result / condition on return *" value={returnForm.external_return_notes} onChange={(e) => setReturnForm({ ...returnForm, external_return_notes: e.target.value })} style={{ width: '100%' }} />
-                <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                  <input type="number" min="0" placeholder="Actual cost (₱)" value={returnForm.external_actual_cost} onChange={(e) => setReturnForm({ ...returnForm, external_actual_cost: e.target.value })} />
-                  <span title="Warranty until"><DateFilterInput value={returnForm.warranty_until} onChange={(v) => setReturnForm({ ...returnForm, warranty_until: v })} /></span>
+                <div className="lr-field">
+                  <label className="lr-label" htmlFor={`${idBase}-pq`}>Quantity</label>
+                  <input id={`${idBase}-pq`} type="number" min="1" value={partQuantity} onChange={(e) => { setPartQuantity(e.target.value); onDirty?.(); }} />
+                </div>
+                <div className="lr-field">
+                  <label className="lr-label" htmlFor={`${idBase}-pc`}>Part Condition</label>
+                  <input id={`${idBase}-pc`} type="text" value={partCondition} onChange={(e) => { setPartCondition(e.target.value); onDirty?.(); }} />
+                </div>
+                <div className="lr-field">
+                  <label className="lr-label" htmlFor={`${idBase}-pi`}>Date Installed</label>
+                  <DateFilterInput id={`${idBase}-pi`} value={partInstalledAt} onChange={(v) => { setPartInstalledAt(v); onDirty?.(); }} />
+                </div>
+              </div>
+              <div className="lr-field">
+                <label className="lr-label" htmlFor={`${idBase}-cr`}>Why this donor / why not buy the part?</label>
+                <textarea id={`${idBase}-cr`} className="lr-textarea" rows={2} value={cannibalReason} onChange={(e) => { setCannibalReason(e.target.value); onDirty?.(); }} />
+              </div>
+            </section>
+          )}
+
+          {repairType === 'external' && onExternalSend && (
+            <section className="lr-group" aria-labelledby={`${idBase}-shop`}>
+              <h4 className="lr-section-label" id={`${idBase}-shop`}>External Shop</h4>
+              {!ticket.external_sent_at ? (
+                <>
+                  <div className="lr-two-col">
+                    <div className="lr-field">
+                      <label className="lr-label" htmlFor={`${idBase}-sv`}>Shop Name <abbr className="required-asterisk" title="required">*</abbr></label>
+                      <input id={`${idBase}-sv`} type="text" value={sendForm.external_vendor} onChange={(e) => setSendForm({ ...sendForm, external_vendor: e.target.value })} />
+                    </div>
+                    <div className="lr-field">
+                      <label className="lr-label" htmlFor={`${idBase}-sr`}>Why Outside? <abbr className="required-asterisk" title="required">*</abbr></label>
+                      <input id={`${idBase}-sr`} type="text" value={sendForm.external_reason} onChange={(e) => setSendForm({ ...sendForm, external_reason: e.target.value })} />
+                    </div>
+                    <div className="lr-field">
+                      <label className="lr-label" htmlFor={`${idBase}-sc`}>Shop Contact</label>
+                      <input id={`${idBase}-sc`} type="text" value={sendForm.external_shop_contact} onChange={(e) => setSendForm({ ...sendForm, external_shop_contact: e.target.value })} />
+                    </div>
+                    <div className="lr-field">
+                      <label className="lr-label" htmlFor={`${idBase}-se`}>Estimated Cost (₱)</label>
+                      <input id={`${idBase}-se`} type="number" min="0" value={sendForm.external_estimated_cost} onChange={(e) => setSendForm({ ...sendForm, external_estimated_cost: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="lr-field">
+                    <label className="lr-label" htmlFor={`${idBase}-sw`}>Work to Be Done <abbr className="required-asterisk" title="required">*</abbr></label>
+                    <textarea id={`${idBase}-sw`} className="lr-textarea" rows={2} value={sendForm.external_work_scope} onChange={(e) => setSendForm({ ...sendForm, external_work_scope: e.target.value })} />
+                  </div>
                   <button
                     type="button"
                     className="primary-button"
+                    style={{ alignSelf: 'flex-start' }}
+                    disabled={!sendForm.external_vendor.trim() || !sendForm.external_reason.trim() || !sendForm.external_work_scope.trim()}
+                    onClick={() => onExternalSend(ticket, Object.fromEntries(Object.entries(sendForm).filter(([, v]) => String(v).trim() !== '')))}
+                  >
+                    Mark as Sent to Shop
+                  </button>
+                </>
+              ) : !ticket.external_returned_at ? (
+                <>
+                  <p className="lr-note">Sent to <strong>{ticket.external_vendor}</strong> on {formatDate(ticket.external_sent_at)} — waiting for it to come back.</p>
+                  <div className="lr-field">
+                    <label className="lr-label" htmlFor={`${idBase}-rn`}>Result / Condition on Return <abbr className="required-asterisk" title="required">*</abbr></label>
+                    <textarea id={`${idBase}-rn`} className="lr-textarea" rows={2} value={returnForm.external_return_notes} onChange={(e) => setReturnForm({ ...returnForm, external_return_notes: e.target.value })} />
+                  </div>
+                  <div className="lr-two-col">
+                    <div className="lr-field">
+                      <label className="lr-label" htmlFor={`${idBase}-ra`}>Actual Cost (₱)</label>
+                      <input id={`${idBase}-ra`} type="number" min="0" value={returnForm.external_actual_cost} onChange={(e) => setReturnForm({ ...returnForm, external_actual_cost: e.target.value })} />
+                    </div>
+                    <div className="lr-field">
+                      <label className="lr-label" htmlFor={`${idBase}-rw2`}>Warranty Until</label>
+                      <DateFilterInput id={`${idBase}-rw2`} value={returnForm.warranty_until} onChange={(v) => setReturnForm({ ...returnForm, warranty_until: v })} />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ alignSelf: 'flex-start' }}
                     disabled={!returnForm.external_return_notes.trim()}
                     onClick={() => onExternalReturn(ticket, Object.fromEntries(Object.entries(returnForm).filter(([, v]) => String(v).trim() !== '')))}
                   >
                     Mark as Returned
                   </button>
-                </div>
-              </>
-            ) : (
-              <p style={{ margin: 0, fontSize: '0.85rem' }}>Returned from <strong>{ticket.external_vendor}</strong> on {formatDate(ticket.external_returned_at)}. {ticket.external_return_notes}</p>
-            )}
-            </div>
-          </section>
-        )}
+                </>
+              ) : (
+                <p className="lr-note">Returned from <strong>{ticket.external_vendor}</strong> on {formatDate(ticket.external_returned_at)}. {ticket.external_return_notes}</p>
+              )}
+            </section>
+          )}
 
-        {awaitingShopReturn && (
-          <p className="muted" style={{ margin: '0 0 8px', fontSize: '0.8rem' }}>
-            The fields below apply once the vehicle is back from the shop — mark it Returned above when it comes in.
-          </p>
-        )}
-        {/* Parts/Attachment (what was used, proof of work) and Schedule
-            (when) are the two things logged once the repair is actually
-            done — grouped side by side as their own card instead of sitting
-            as bare unlabeled divs. */}
-        <section className="veh-card veh-card-form" style={{ opacity: awaitingShopReturn ? 0.5 : 1 }}>
-          <div className="veh-card-head"><Icon name="tools" size={16} /><h4>Parts, Materials &amp; Schedule</h4></div>
-          <div style={{ padding: 18, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 16, alignItems: 'start' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-              <h4 style={{ margin: '0 0 6px 0', fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>Parts &amp; Materials Used</h4>
+          {awaitingShopReturn && (
+            <p className="lr-note">Evidence, parts and dates apply once the vehicle is back from the shop — mark it Returned above when it comes in.</p>
+          )}
+
+          {/* Compact uploader — a button, not a giant drop rectangle. Same
+              single-file `attachment` state and accept list as before. */}
+          <section className="lr-group" style={dimWhileAtShop} aria-labelledby={`${idBase}-ev`}>
+            <h4 className="lr-section-label" id={`${idBase}-ev`}>Repair Evidence</h4>
+            {attachment ? (
+              <div className="lr-file-row">
+                {attachment.type.startsWith('image/') ? (
+                  <img src={URL.createObjectURL(attachment)} alt="" className="lr-file-thumb" />
+                ) : (
+                  <span className="lr-file-thumb lr-file-thumb-icon"><Icon name="archive" size={15} /></span>
+                )}
+                <span className="lr-file-name">{attachment.name}</span>
+                <span className="lr-hint">{formatFileSize(attachment.size)}</span>
+                <button type="button" className="lr-icon-btn" onClick={() => setAttachment(null)} title="Remove attachment" aria-label={`Remove ${attachment.name}`}>
+                  <Icon name="close" size={13} />
+                </button>
+              </div>
+            ) : (
+              <div className="lr-upload-line">
+                <label className="lr-upload-btn">
+                  <Icon name="plus" size={14} /> Add Photo / Document
+                  <input type="file" className="lr-file-input" accept="image/*,.pdf,.doc,.docx" onChange={(e) => { setAttachment(e.target.files[0] ?? null); onDirty?.(); }} />
+                </label>
+                <span className="lr-hint">JPG, PNG, PDF, or DOC · up to 8 MB</span>
+              </div>
+            )}
+          </section>
+        </div>
+
+        <aside className="lr-side" aria-label="Repair record and submission">
+          {/* Part name takes the row, cost is a fixed narrow column — no
+              more fields pinned to opposite edges of the page. Same
+              Part Name + Cost model the backend stores (a joined string +
+              one total), so no quantity/unit-cost fields are invented. */}
+          <section className="lr-side-group" style={dimWhileAtShop} aria-labelledby={`${idBase}-parts`}>
+            <h4 className="lr-section-label" id={`${idBase}-parts`}>Parts &amp; Materials</h4>
+            <div className="lr-parts" role="table" aria-labelledby={`${idBase}-parts`}>
+              <div className="lr-parts-head" role="row">
+                <span role="columnheader">Part / Material</span>
+                <span role="columnheader">Cost (₱)</span>
+                <span aria-hidden="true" />
+              </div>
               {parts.map((part, index) => (
-                <div key={index} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                  <input
-                    type="text"
-                    placeholder="Part name"
-                    value={part.name}
-                    onChange={(e) => updatePart(index, 'name', e.target.value)}
-                    style={{ flex: 2 }}
-                  />
-                  <input
-                    type="number"
-                    placeholder="Cost (₱)"
-                    min="0"
-                    step="0.01"
-                    value={part.cost}
-                    onChange={(e) => updatePart(index, 'cost', e.target.value)}
-                    style={{ flex: 1 }}
-                  />
+                <div className="lr-parts-row" role="row" key={index}>
+                  <input type="text" aria-label={`Part ${index + 1} name`} placeholder="e.g. A/C compressor" value={part.name} onChange={(e) => updatePart(index, 'name', e.target.value)} />
+                  <input type="number" aria-label={`Part ${index + 1} cost`} placeholder="0.00" min="0" step="0.01" value={part.cost} onChange={(e) => updatePart(index, 'cost', e.target.value)} />
                   <button
                     type="button"
-                    className="btn-delete-action icon-btn"
+                    className="lr-icon-btn"
                     onClick={() => removePart(index)}
                     disabled={parts.length === 1}
                     title="Remove part"
-                    aria-label="Remove part"
+                    aria-label={`Remove part ${index + 1}`}
                   >
                     <Icon name="close" size={13} />
                   </button>
                 </div>
               ))}
-              <button type="button" className="primary-button" onClick={addPart}><Icon name="plus" size={14} /> Add another part</button>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Total Cost</span>
-                <strong style={{ fontSize: '1rem', color: '#16a34a' }}>₱{totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+            </div>
+            <button type="button" className="lr-link-btn" onClick={addPart}><Icon name="plus" size={13} /> Add Part</button>
+            <div className="lr-total">
+              <span>Total Repair Cost</span>
+              <strong>₱{totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+            </div>
+          </section>
+
+          <section className="lr-side-group" style={dimWhileAtShop} aria-labelledby={`${idBase}-dates`}>
+            <h4 className="lr-section-label" id={`${idBase}-dates`}>Repair Date</h4>
+            <div className="lr-dates">
+              <div className="lr-field">
+                <label className="lr-label" htmlFor={`${idBase}-start`}>Start</label>
+                <DateFilterInput id={`${idBase}-start`} value={repairStartedAt} onChange={(v) => { setRepairStartedAt(v); onDirty?.(); }} />
+              </div>
+              <div className="lr-field">
+                <label className="lr-label" htmlFor={`${idBase}-done`}>Completion</label>
+                <DateFilterInput id={`${idBase}-done`} value={repairCompletedAt} onChange={(v) => { setRepairCompletedAt(v); onDirty?.(); }} />
               </div>
             </div>
+          </section>
 
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-              {attachment ? (
-                <div className="file-cabinet-drawer">
-                  {attachment.type.startsWith('image/') ? (
-                    <img src={URL.createObjectURL(attachment)} alt="Attachment preview" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', flexShrink: 0 }} />
-                  ) : (
-                    <span className="file-cabinet-drawer-icon"><Icon name="archive" size={17} /></span>
-                  )}
-                  <span style={{ flex: 1, fontSize: '0.82rem', color: '#334155', wordBreak: 'break-all', fontWeight: 500 }}>{attachment.name}</span>
-                  <button type="button" className="btn-delete-action icon-btn" onClick={() => setAttachment(null)} title="Remove attachment" aria-label="Remove attachment">
-                    <Icon name="close" size={13} />
-                  </button>
-                </div>
-              ) : (
-                <label className="file-cabinet-dropzone">
-                  <span className="file-cabinet-dropzone-icon"><Icon name="archive" size={20} /></span>
-                  <span className="file-cabinet-dropzone-title">Click to file a photo or document</span>
-                  <span className="file-cabinet-dropzone-hint">JPG, PNG, PDF, or DOC — up to 8MB</span>
-                  <input type="file" accept="image/*,.pdf,.doc,.docx" onChange={(e) => { setAttachment(e.target.files[0] ?? null); onDirty?.(); }} style={{ display: 'none' }} />
-                </label>
-              )}
-            </div>
+          <div className="lr-side-actions">
+            <p className="lr-hint">
+              Recorded under Ticket #{ticket.ticket_id} · {namedPartCount} part{namedPartCount === 1 ? '' : 's'} · {attachment ? '1 file attached' : 'no evidence attached'}
+            </p>
+            <button className="primary-button lr-submit" type="submit">Submit Repair Log</button>
+            <button className="ghost-button lr-cancel" onClick={onBack} type="button">Cancel</button>
           </div>
-
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 8px' }}>
-            <h4 style={{ margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', fontSize: '0.85rem' }}><Icon name="calendar" size={14} /> Schedule</h4>
-            <label style={{ marginBottom: 6 }}>
-              <span style={{ fontSize: '0.68rem' }}>Start Date</span>
-              <DateFilterInput value={repairStartedAt} onChange={(v) => { setRepairStartedAt(v); onDirty?.(); }} />
-            </label>
-            <label style={{ marginBottom: 6 }}>
-              <span style={{ fontSize: '0.68rem' }}>Completion Date</span>
-              <DateFilterInput value={repairCompletedAt} onChange={(v) => { setRepairCompletedAt(v); onDirty?.(); }} />
-            </label>
-          </div>
-          </div>
-        </section>
-
-        <div className="form-actions">
-          <button className="ghost-button" onClick={onBack} type="button">Cancel</button>
-          <button className="primary-button" type="submit">Submit Repair Log</button>
-        </div>
+        </aside>
       </form>
     </ModulePanel>
   );
@@ -17196,7 +17275,9 @@ function displayDateToIso(display) {
 // calendar picker, launched via showPicker()) behind a visible text field
 // that is always typed and displayed as MM/DD/YYYY, so the format is
 // guaranteed regardless of the browser/OS locale.
-function DateFilterInput({ value, onChange, placeholder = 'mm/dd/yyyy' }) {
+// `id` lets a standalone <label htmlFor> point at the visible text input;
+// both are optional and unused by every existing caller.
+function DateFilterInput({ value, onChange, placeholder = 'mm/dd/yyyy', id, ariaLabel }) {
   const hiddenRef = useRef(null);
   const [text, setText] = useState(() => isoDateToDisplay(value));
 
@@ -17219,6 +17300,8 @@ function DateFilterInput({ value, onChange, placeholder = 'mm/dd/yyyy' }) {
     <div className="date-filter-input">
       <input
         type="text"
+        id={id}
+        aria-label={ariaLabel}
         className="filter-select"
         placeholder={placeholder}
         value={text}

@@ -14000,3 +14000,297 @@ html[data-theme="light"] .workspace.sidebar-collapsed {
 html[data-theme="light"] .module-nav-group > button:not(.module-nav-section) {
   padding-left: 28px;
 }
+
+/* =========================================================================
+   RECORD REPAIR WORK (Maintenance Personnel "Log Repairs") — one workspace
+   instead of a stack of bordered cards. Hierarchy comes from spacing,
+   small section labels and one tinted side column, not from borders.
+   Scoped under .lr-* so nothing else in the app is affected.
+   ========================================================================= */
+.lr-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+}
+.lr-header .lr-vehicle {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-strong, #0f172a);
+  line-height: 1.25;
+}
+.lr-header-meta {
+  margin: 3px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted, #64748b);
+}
+
+/* Reopened / rejected feedback — visible, but one compact strip. */
+.lr-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  border-left: 4px solid;
+  font-size: 0.84rem;
+}
+.lr-alert svg { flex-shrink: 0; margin-top: 1px; }
+.lr-alert strong { display: block; font-size: 0.84rem; }
+.lr-alert p { margin: 2px 0 0; }
+.lr-alert-danger { background: #fef2f2; border-color: #dc2626; color: #991b1b; }
+.lr-alert-warning { background: #fffbeb; border-color: #d97706; color: #92400e; }
+
+/* Two-column workspace: the task (left) and its supporting record (right).
+   Fills the panel; individual fields (file row, upload button, parts
+   columns) carry their own sensible widths instead of a page-wide cap. */
+.smart-form.lr-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  align-items: start;
+}
+.lr-main { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.lr-group { display: flex; flex-direction: column; gap: 12px; }
+.lr-group + .lr-group { padding-top: 20px; border-top: 1px solid var(--border-subtle, #e2e8f0); }
+
+.lr-section-label {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--primary, #2563eb);
+}
+.lr-mini-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 4px;
+}
+
+/* Static labels above fields. Specific enough to beat the shared floating
+   label rule (.smart-form label:not(:has(...)):not(:has(...)) > span),
+   which these labels avoid anyway by not wrapping a <span>. */
+.lr-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.smart-form.lr-workspace .lr-field > label.lr-label,
+.lr-field > .lr-label {
+  position: static;
+  margin: 0;
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #334155;
+}
+.lr-label .required-asterisk { text-decoration: none; border: 0; color: #ef4444; }
+.lr-hint { font-size: 0.74rem; color: var(--text-muted, #64748b); font-weight: 400; }
+.lr-note { margin: 0; font-size: 0.82rem; color: var(--text-muted, #64748b); }
+
+/* Work order summary — content-height only. */
+.lr-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 24px;
+}
+.lr-kv > div { min-width: 0; }
+.lr-kv-wide { grid-column: 1 / -1; }
+.lr-kv dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted, #64748b);
+}
+.lr-kv dd { margin: 2px 0 0; font-size: 0.88rem; font-weight: 600; color: var(--text-strong, #0f172a); overflow-wrap: anywhere; }
+.lr-kv-wide dd { font-weight: 400; color: #334155; }
+.lr-history { padding: 10px 12px; background: var(--surface-2, #f8fafc); border-radius: 8px; }
+
+/* Repair Work — the primary group gets a subtle tint to lead the eye. */
+.lr-primary {
+  padding: 16px;
+  background: #f5f9ff;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+}
+.lr-group + .lr-primary { border-top: 1px solid #dbeafe; }
+.lr-readonly {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-strong, #0f172a);
+}
+.smart-form.lr-workspace .lr-textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.lr-two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+/* Evidence — a button and a file row, not a drop rectangle. */
+.lr-upload-line { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.smart-form.lr-workspace label.lr-upload-btn {
+  position: relative;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 14px;
+  border: 1px dashed #93c5fd;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.smart-form.lr-workspace label.lr-upload-btn:hover { background: #dbeafe; }
+.smart-form.lr-workspace label.lr-upload-btn:focus-within { outline: 2px solid #2563eb; outline-offset: 2px; }
+.lr-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.lr-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 520px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 8px;
+}
+.lr-file-thumb { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.lr-file-thumb-icon { display: inline-flex; align-items: center; justify-content: center; background: #eff6ff; color: #2563eb; }
+.lr-file-name { flex: 1; min-width: 0; font-size: 0.82rem; font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Side column — the supporting record + the submit action, kept in view. */
+.lr-side {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px;
+  background: var(--surface-2, #f8fafc);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 10px;
+}
+.lr-side-group { display: flex; flex-direction: column; gap: 10px; }
+.lr-side-group + .lr-side-group { padding-top: 16px; border-top: 1px solid var(--border-subtle, #e2e8f0); }
+
+.lr-parts { display: flex; flex-direction: column; gap: 6px; }
+.lr-parts-head,
+.lr-parts-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 28px;
+  gap: 6px;
+  align-items: center;
+}
+.lr-parts-head span {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted, #64748b);
+}
+.smart-form.lr-workspace .lr-parts-row input:not([type="file"]) {
+  height: 34px;
+  min-width: 0;
+  width: 100%;
+  font-size: 0.82rem;
+}
+.lr-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.lr-icon-btn:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
+.lr-icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.lr-icon-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.lr-link-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--primary, #2563eb);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.lr-link-btn:hover { text-decoration: underline; }
+.lr-link-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.lr-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border, #cbd5e1);
+  font-size: 0.82rem;
+  color: #334155;
+}
+.lr-total strong { font-size: 1.05rem; color: #15803d; }
+
+.lr-dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+/* A shared .smart-form input rule gives the picker's inner text box a
+   150px min-width and its own border, so inside a narrow column it
+   overflowed the wrapper and pushed the calendar button out of view.
+   The wrapper already draws the border; the inner box just fills it. */
+.lr-workspace .date-filter-input { min-width: 0; width: 100%; }
+.smart-form.lr-workspace .date-filter-input input[type="text"] {
+  min-width: 0;
+  width: 100%;
+  height: 38px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.lr-workspace .date-filter-input-icon { flex: 0 0 32px; }
+
+.lr-side-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle, #e2e8f0);
+}
+.lr-side-actions .lr-submit,
+.lr-side-actions .lr-cancel { width: 100%; justify-content: center; }
+
+/* Tablet / mobile — stack; the side column drops below the task, stops
+   sticking, and the actions stay full-width at the end of the form. */
+@media (max-width: 1080px) {
+  .smart-form.lr-workspace { grid-template-columns: minmax(0, 1fr); }
+  .lr-side { position: static; }
+}
+@media (max-width: 640px) {
+  .lr-kv, .lr-two-col { grid-template-columns: minmax(0, 1fr); }
+  .lr-header { flex-direction: column; gap: 8px; }
+}
+
+/* Dark theme — keep the tinted groups readable. */
+html[data-theme="dark"] .lr-primary { background: rgba(37, 99, 235, 0.08); border-color: rgba(37, 99, 235, 0.3); }
+html[data-theme="dark"] .lr-side,
+html[data-theme="dark"] .lr-history { background: rgba(148, 163, 184, 0.06); }
+html[data-theme="dark"] .lr-label,
+html[data-theme="dark"] .lr-file-name,
+html[data-theme="dark"] .lr-total { color: var(--text-strong, #e2e8f0); }
