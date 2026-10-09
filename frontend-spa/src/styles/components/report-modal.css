@@ -1,0 +1,603 @@
+/* Split from App.css (lines 3569-4168). Order matters: see App.css. */
+/* REPORT */
+.report-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 16px; }
+.report-heading h3 { font-size: 1.2rem; font-weight: 800; }
+.report-heading p { font-size: 0.9rem; color: #64748b; margin-top: 3px; }
+
+/* Reports — always-visible colored columns (one per category), each report
+   expanding its generator form inline in place, instead of the old single
+   accordion + shared bottom panel. */
+.report-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.report-category-card {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  overflow: hidden;
+}
+.report-category-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+}
+.report-category-card-head h4 { margin: 0; font-size: 0.92rem; font-weight: 700; flex: 1; }
+.report-category-card-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.report-category-count {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-2, #f1f5f9);
+  color: var(--text-muted, #64748b);
+}
+.report-category-card.tone-blue .report-category-card-head h4 { color: #2563eb; }
+.report-category-card.tone-blue .report-category-card-icon,
+.report-category-card.tone-blue .report-category-count,
+.report-category-card.tone-blue .report-type-icon { background: #dbeafe; color: #2563eb; }
+.report-category-card.tone-green .report-category-card-head h4 { color: #117f3a; }
+.report-category-card.tone-green .report-category-card-icon,
+.report-category-card.tone-green .report-category-count,
+.report-category-card.tone-green .report-type-icon { background: #dcfce7; color: #117f3a; }
+.report-category-card.tone-purple .report-category-card-head h4 { color: #7c3aed; }
+.report-category-card.tone-purple .report-category-card-icon,
+.report-category-card.tone-purple .report-category-count,
+.report-category-card.tone-purple .report-type-icon { background: #ede9fe; color: #7c3aed; }
+.report-category-card.tone-amber .report-category-card-head h4 { color: #a55a05; }
+.report-category-card.tone-amber .report-category-card-icon,
+.report-category-card.tone-amber .report-category-count,
+.report-category-card.tone-amber .report-type-icon { background: #fef3c7; color: #a55a05; }
+
+.report-category-card-body { display: flex; flex-direction: column; }
+.report-type-row + .report-type-row { border-top: 1px solid var(--border-subtle, #eef2f7); }
+.report-type-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.report-type-item:hover { background: var(--surface-2, #f8fafc); }
+.report-type-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.report-type-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.report-type-item strong { font-size: 0.85rem; color: var(--text-strong, #0f172a); }
+.report-type-item span span { font-size: 0.76rem; color: var(--text-muted, #64748b); }
+.report-type-item svg { flex-shrink: 0; transition: transform 0.15s ease; color: var(--text-muted, #94a3b8); }
+.report-type-item svg.is-expanded { transform: rotate(180deg); }
+.report-type-row.is-open .report-type-item { background: var(--surface-2, #f8fafc); }
+.report-generator-panel {
+  padding: 4px 16px 16px;
+  background: var(--surface-2, #f8fafc);
+}
+
+/* ANIMATIONS */
+@keyframes fadeSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes modalIn { from { opacity: 0; transform: scale(0.96) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+/* MODAL */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(15,23,42,0.55);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  animation: fadeSlide 0.2s ease;
+}
+.modal-box {
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 30px 70px rgba(15,23,42,0.25);
+  width: min(580px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalIn 0.22s ease;
+  position: relative;
+}
+/* "Add New Issue" popup — a single short field would otherwise leave the
+   card barely taller than its Cancel/Save row, so the Issue Type dropdown
+   (which can run ~230px tall once catalog items load) visually spills past
+   the card's bottom edge instead of having room to sit inside it. */
+.modal-box:has(.new-issue-form) {
+  width: min(520px, 100%);
+  min-height: 360px;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 22px 28px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky; top: 0; background: #fff; z-index: 1; border-radius: 18px 18px 0 0;
+}
+.modal-header h3 { font-size: 1.15rem; font-weight: 800; color: #0f172a; }
+.modal-close-btn {
+  width: 34px; height: 34px; border-radius: 8px;
+  border: 1px solid #e2e8f0; background: #f8fafc;
+  color: #64748b; font-size: 1rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.modal-close-btn:hover { background: #fee2e2; color: #ef4444; border-color: #fca5a5; }
+.modal-body { padding: 24px 28px 28px; }
+
+.wizard-steps {
+  display: flex;
+  gap: 28px;
+  padding: 12px;
+  margin-bottom: 18px;
+  background: #2563eb;
+  border-radius: 10px;
+}
+.wizard-step-pill {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  flex: 1;
+  padding: 13px 18px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #2563eb;
+  font-size: 0.84rem;
+  font-weight: 400;
+}
+.wizard-step-pill svg { stroke: #60a5fa; flex-shrink: 0; }
+.wizard-step-pill.is-active {
+  color: #1d4ed8;
+  font-weight: 400;
+}
+.wizard-step-pill.is-active svg { stroke: #1d4ed8; }
+/* A completed step reads as done at a glance (green pill), not just a
+   green checkmark on the same blue-tinted background as every other step. */
+.wizard-step-pill.is-done {
+  background: #dcfce7;
+  color: #117f3a;
+}
+.wizard-step-pill.is-done svg { stroke: #16a34a; }
+button.wizard-step-pill {
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+button.wizard-step-pill:hover {
+  background: #bbf7d0;
+  transform: translateY(-1px);
+}
+/* Wide modal — two-column form so tall forms don't need vertical scrolling */
+.modal-box-wide {
+  width: min(880px, 96vw);
+}
+.modal-box-wide .smart-form,
+.form-grid-2col .smart-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-flow: dense;
+  gap: 10px 18px;
+}
+/* Add Vehicle wizard's Photo & Location step only — the photo box never
+   grows past its own 460px cap, so giving it an even 1fr leaves the
+   Current Location column (dropdown + map) narrower than it needs to be.
+   Fix the photo column to its cap and let location take the rest. */
+.wizard-photo-location-grid .smart-form {
+  grid-template-columns: 460px 1fr;
+}
+.modal-box-wide .smart-form label,
+.form-grid-2col .smart-form label {
+  gap: 4px;
+}
+/* Full-width rows: textarea, file upload, and the action buttons */
+.modal-box-wide .smart-form label:has(textarea),
+.modal-box-wide .smart-form label:has(input[type="file"]),
+.modal-box-wide .smart-form > h3,
+.modal-box-wide .smart-form .form-actions,
+.form-grid-2col .smart-form label:has(textarea),
+.form-grid-2col .smart-form label:has(input[type="file"]),
+.form-grid-2col .smart-form > h3,
+.form-grid-2col .smart-form .form-actions {
+  grid-column: 1 / -1;
+}
+/* Opt-in field grouping (SmartForm's groupFields) — a titled sub-card per
+   group, e.g. Maintenance Record's "Repair Details" / "Vehicle & Issue",
+   so the header names what those fields are about at a glance, matching
+   the realcore reference's "Select Fee Type" / "Other" cards. */
+.form-group {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.form-group-title {
+  color: var(--primary, #2563eb);
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+}
+.form-group-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 280px));
+  gap: 10px 18px;
+}
+.form-group-body label:has(textarea),
+.form-group-body label:has(input[type="file"]) {
+  grid-column: 1 / -1;
+}
+/* Maintenance Record form only — two-column card layout instead of one long
+   downward list. A CSS grid would force Repair Details / Vehicle & Issue to
+   match the height of whatever sits beside them (Schedule & Personnel /
+   Cost & Completion), leaving dead space under the shorter card. A
+   newspaper-style multicol container sizes each column to its own content
+   instead: column 1 gets Repair Details, Vehicle & Issue, Work Log; a
+   forced break after Work Log pushes Schedule & Personnel and Cost &
+   Completion into column 2 — independent heights, no leftover gaps. Tied to
+   maintenanceFields()'s fixed group order (always these 5, in this
+   sequence, Work Log 3rd) — update both together if that order changes. */
+.maintenance-form-grid .smart-form {
+  display: block;
+  columns: 2;
+  column-gap: 18px;
+}
+.maintenance-form-grid .smart-form > h3,
+.maintenance-form-grid .smart-form > .form-actions {
+  column-span: all;
+}
+.maintenance-form-grid .smart-form > .form-group {
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
+.maintenance-form-grid .smart-form > .form-group:nth-of-type(3) {
+  break-after: column;
+}
+@media (max-width: 900px) {
+  .maintenance-form-grid .smart-form {
+    columns: 1;
+  }
+  .maintenance-form-grid .smart-form > .form-group:nth-of-type(3) {
+    break-after: auto;
+  }
+}
+/* Applies to every SmartForm-driven form (FormPage pages, modal Add/Edit
+   popups, and the hand-built Create Ticket form, which reuses the
+   .smart-form input/label styling) — not just Maintenance Records. Compact,
+   right-sized fields instead of every input/select stretching to fill its
+   whole grid column. */
+.smart-form input:not([type="file"]),
+.smart-form select {
+  max-width: 280px;
+}
+/* Full-page forms (the Add Vehicle wizard, Edit Vehicle, etc. — anything
+   wrapped in .form-grid-2col rather than a narrow modal popup) have plenty
+   of horizontal room; let each field fill its grid column instead of
+   staying capped at the same compact width a modal popup needs. */
+.form-grid-2col .smart-form input:not([type="file"]),
+.form-grid-2col .smart-form select {
+  max-width: none;
+}
+/* Password fields wrap the <input> in a .password-field row with the
+   show/hide button absolutely positioned against THAT row, not the input.
+   Capping the input directly leaves it narrower than the row, so the
+   button drifts away from it — cap the row instead and let the (already
+   flex:1) input fill it. */
+.smart-form .password-field,
+.smart-form .password-field-wrapper {
+  max-width: 280px;
+}
+.smart-form .password-field input,
+.smart-form .password-field-wrapper input {
+  max-width: none;
+}
+/* Floating label — at rest it sits centered inside the field like a
+   placeholder; the moment the field is focused (or already holds a value,
+   via the .has-value class SmartForm adds per field), it floats up to sit
+   on the input's border line instead, like a <fieldset><legend>, matching
+   the realcore reference. Excludes file/checkbox fields, which don't have
+   a single-line box for a label to float onto. */
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])) {
+  position: relative;
+  margin-top: 10px;
+}
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])) > span {
+  position: absolute;
+  /* Fixed to half the input/select's own height (42px, set below) rather
+     than 50% of the <label> — the label's own box includes any trailing
+     .field-hint text under the input, so a percentage here centers against
+     that taller combined height instead of the input alone, landing the
+     caption low enough to visually collide with the hint line. */
+  top: 21px;
+  left: 10px;
+  transform: translateY(-50%);
+  z-index: 1;
+  padding: 0 6px;
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: #94a3b8;
+  pointer-events: none;
+  transition: top 0.15s ease, font-size 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):focus-within > span,
+.smart-form label.has-value:not(:has(.checkbox-group)):not(:has(input[type="file"])) > span,
+/* CSS-only fallback for the many hand-built forms in this file that never
+   go through SmartForm's renderField (Create Ticket, Complete Inspection,
+   Log Repairs, the Add/Edit Location page, more likely to come) — those
+   don't compute the .has-value class above, so a field that mounts
+   pre-filled (e.g. prefilled from converting an Issue Report into a
+   Ticket) never floats its caption, leaving it sitting centered directly
+   on top of the real value: overlapping, garbled text. This mirrors
+   .has-value using only what the browser already tracks: an input/textarea
+   whose placeholder isn't currently showing (i.e. it has real content —
+   set by SmartForm's inputs already, worth adding to hand-written ones
+   too) is filled; a select failing :invalid means some option besides the
+   blank default one is chosen. Selects with no `required` and inputs with
+   no `placeholder` attribute fall back to always-floated rather than
+   risking the overlap again — a label sitting on the border the whole
+   time is a much smaller issue than one sitting on top of real text. */
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):has(input:not(:placeholder-shown)) > span,
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):has(textarea:not(:placeholder-shown)) > span,
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):has(select:not(:invalid)) > span {
+  top: -8px;
+  transform: translateY(0);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--surface-2, #f8fafc);
+}
+/* Native placeholder mirrors the label text (SmartForm defaults it to
+   field.label) but stays invisible until focus, so it doesn't double up
+   with the centered label above it at rest — once the label floats away
+   on focus, the same words are revealed underneath in its old spot. */
+/* Scoped to fields that HAVE a floating caption (label > span): hand-built
+   inputs elsewhere in .smart-form forms rely on their placeholder as the
+   only visible hint, and hiding it there left them looking unlabeled. */
+.smart-form label:has(> span) input:not([type="file"]):not([type="checkbox"])::placeholder,
+.smart-form label:has(> span) textarea::placeholder {
+  color: transparent;
+  transition: color 0.15s ease;
+}
+.smart-form label:has(> span) input:not([type="file"]):not([type="checkbox"]):focus::placeholder,
+.smart-form label:has(> span) textarea:focus::placeholder {
+  color: #94a3b8;
+}
+.smart-form input:not([type="file"]):not([type="checkbox"]),
+.smart-form select,
+.smart-form textarea {
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 8px;
+  padding: 10px 12px 8px;
+  color: var(--text-strong, #0f172a);
+}
+/* A native <select>'s OS-drawn "menulist" chrome keeps its own intrinsic
+   height regardless of the padding above, so it rendered a few px taller
+   than the plain-text <input> beside it in the same grid row — visible as
+   the two boxes not lining up ("dropdowns are misplaced"). A fixed height
+   on both, plus a hand-drawn chevron once appearance is reset, fixes it. */
+.smart-form input:not([type="file"]):not([type="checkbox"]),
+.smart-form select {
+  height: 42px;
+  line-height: 1.2;
+  box-sizing: border-box;
+}
+/* Per-option rows inside a 'checkboxes' field aren't excluded by the
+   :not(:has(.checkbox-group)) guards above — those only exclude the OUTER
+   field label wrapping the whole group, not each option's own row, which
+   doesn't itself contain .checkbox-group (that's its parent, not a
+   descendant). Left unguarded, the option row inherited position:relative
+   + its <span> got pulled position:absolute (the "legend on border" look
+   above), AND the row's own flex-direction fell back to .smart-form
+   label's base column setting since the row's inline style never
+   overrides that one property — together, that scattered the checkbox
+   and its text across the row instead of sitting side by side. Reset
+   both here with enough specificity to win regardless of source order. */
+.smart-form .checkbox-group label {
+  position: static;
+  margin-top: 0;
+  flex-direction: row;
+}
+.smart-form .checkbox-group label > span {
+  position: static;
+  padding: 0;
+  background: none;
+}
+.smart-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+}
+/* Focus accent — while actually focused, tint the floated caption the
+   accent color instead of the neutral gray it floats up with on value
+   alone, so it's clear at a glance which field currently has focus. */
+.smart-form label:not(:has(.checkbox-group)):not(:has(input[type="file"])):focus-within > span {
+  color: var(--primary, #2563eb);
+}
+/* Page-level title, sitting inside the card above the field legends — dark
+   like a section heading, distinct from the blue per-field legends above
+   each box, matching the realcore reference's dark "Estimated Commissions"
+   over its blue "Select Fee Type" / "Estimated Transaction Calculations".
+   Only Maintenance Records currently sets a non-empty SmartForm title, so
+   this is a no-op elsewhere. */
+.smart-form h3 {
+  color: var(--text-strong, #0f172a) !important;
+  font-size: 1.05rem;
+  padding-bottom: 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+}
+/* Card wrapper so the grid form reads as its own bordered section within the panel */
+.form-grid-2col {
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: var(--surface-2, #f8fafc);
+}
+.modal-box-wide .smart-form > h3:empty,
+.form-grid-2col .smart-form > h3:empty {
+  display: none;
+}
+.modal-box-wide .smart-form textarea {
+  min-height: 80px;
+}
+@media (max-width: 640px) {
+  .modal-box-wide .smart-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Module panel action bar */
+.module-action-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+  width: 100%;
+  min-width: 0;
+}
+.module-action-bar h3 { font-size: 1rem; font-weight: 700; color: #0f172a; }
+
+/* Solid blue header bar spanning the full width of the panel — title on the
+   left, search/add/export grouped on the right, matching the reference. */
+.panel-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: #2563eb;
+  color: #ffffff;
+  padding: 20px 16px;
+  /* Matches .panel's actual padding (14px 16px) exactly, so this bleeds
+     flush to the panel's own edge instead of overshooting past its rounded
+     corner (which left a sliver of the panel's white background showing
+     through at each top corner). Bottom margin dropped to 0 (was 16px) so
+     the table sitting right below it reads as one continuous card instead
+     of two separately-bordered boxes with a gap between them. */
+  margin: -14px -16px 0 -16px;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+}
+/* The blue border belongs to the whole card this bar sits on top of — not
+   just an inner table immediately below it. A panel can have a filter row
+   (category/date dropdowns, its own "FILTERS:" label) sitting between the
+   bar and the actual table, which broke a border scoped to "table directly
+   after the bar": the filter row had no border of its own, so the card's
+   blue outline just stopped at the bottom of the bar and picked up again,
+   inset and disconnected, at the table further down. Bordering the whole
+   panel instead means the bar, the filters, and the table all sit inside
+   one continuous blue-outlined block regardless of what's between them. */
+/* `.module-grid` added purely to out-specificity the later, equally-targeted
+   `html[data-theme="light"] .module-grid .panel` border rule further down
+   this file (same specificity tier otherwise, and that one wins on source
+   order alone) — every `.panel-header-bar` panel lives inside a
+   `.module-grid` anyway, so this never excludes a real case. */
+html[data-theme="light"] .module-grid .panel:has(> .panel-header-bar) {
+  border: 3px solid #2563eb;
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+}
+/* The panel above now owns the border — an inner table's own border would
+   just double it up, so it goes borderless and blends into the panel's
+   white background instead. */
+html[data-theme="light"] .panel:has(> .panel-header-bar) .table-shell {
+  border: none;
+  border-radius: 0;
+}
+/* Use when the bar isn't the first element in the panel (e.g. below a tab
+   row) — same look, but doesn't bleed into whatever sits above it. */
+.panel-header-bar.inline {
+  margin: 0 0 16px 0;
+  padding: 14px 20px;
+  border-radius: 6px;
+}
+.panel-header-bar h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.panel-header-bar .local-search-input {
+  background: #ffffff;
+  border-color: rgba(255, 255, 255, 0.7);
+  color: #0f172a;
+}
+.panel-header-bar .export-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1.5px solid #ffffff;
+  color: #ffffff;
+}
+.panel-header-bar .export-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.panel-header-bar .icon-add-btn {
+  background: #2563eb;
+  border: 1.5px solid #ffffff;
+  color: #ffffff;
+}
+.panel-header-bar .icon-add-btn:hover {
+  background: #1d4ed8;
+}
+/* View-mode dropdown on the panel header — white outline pill against the
+   blue band, like the reference "Transaction View ⌄" control. */
+.panel-header-bar .view-dropdown-btn {
+  background: rgba(7, 26, 53, 0.22);
+  border: 1.5px solid #ffffff;
+  color: #ffffff;
+}
+.panel-header-bar .view-dropdown-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Mobile overflow guards — grid/flex children don't shrink below their
+   content width by default, so wide tables stretched the whole page on
+   phones instead of scrolling inside their own shell. */
+.module-grid > *,
+.dashboard-grid > *,
+.veh-dash > *,
+.form-context-layout > *,
+.form-context-side > *,
+.panel {
+  min-width: 0;
+}
+.table-shell { max-width: 100%; }
+@media (max-width: 640px) {
+  .modal-box-wide .smart-form,
+  .form-grid-2col .smart-form {
+    grid-template-columns: 1fr;
+  }
+}

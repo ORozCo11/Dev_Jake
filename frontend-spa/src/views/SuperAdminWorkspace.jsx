@@ -1,22 +1,20 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import 'leaflet/dist/leaflet.css';
-import { MapContainer, Polygon, TileLayer } from 'react-leaflet';
 import api from '../api/axios';
 import Icon from '../components/Icon';
 import WorkspaceFooter from '../components/WorkspaceFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { DonutChart, HorizontalBarChart } from '../components/charts';
+import { SidebarBackdrop, SidebarDrawerHead } from '../components/SidebarDrawerChrome';
+import useResponsiveNav from '../hooks/useResponsiveNav';
+import useCssHeightVar from '../hooks/useCssHeightVar';
+import { BoundaryPreviewMap, DonutChart, HorizontalBarChart } from '../components/lazy';
 import { AuthContext } from '../context/AuthContextObject';
 import { geoJsonToRings } from '../utils/boundary';
-
-// Kept separate from every other role's landing route — a Super Admin never
-// lands on the fleet-oriented Workspace.jsx shell, since RestrictSuperAdminScope
-// (backend) blocks that account from all fleet-data endpoints anyway.
-const roleRoutes = {
-  Admin: '/admin',
-  Custodian: '/custodian',
-  'Maintenance Personnel': '/maintenance',
-};
+import Modal from '../workspace/components/Modal';
+import { PaginatedTable } from '../workspace/components/tables';
+import { LocalSearchInput, StatusBadge, UserAvatarName } from '../workspace/components/ui';
+import { formatDate } from '../workspace/lib/format';
+import { getNotificationStyle } from '../workspace/lib/notifications';
+import { roleRoutes } from '../workspace/lib/permissions';
 
 const ROLES = ['Admin', 'Custodian', 'Maintenance Personnel'];
 
@@ -66,25 +64,6 @@ const CONCERN_TYPE_LABELS = {
   'Other': 'Other',
 };
 
-// Only the notification types a Super Admin can actually receive need an
-// entry here — everything else falls back to the title-sniffing guess below,
-// same as the main Workspace's bell.
-const NOTIFICATION_STYLE_BY_TYPE = {
-  pending_admin_approval: 'warning',
-};
-
-function legacyNotificationStyleFromTitle(title) {
-  if (/confirmed|approved|completed|verified|done/i.test(title)) return 'success';
-  if (/reopened|deferred|rejected|sent back/i.test(title)) return 'warning';
-  if (/required|assigned|logged|awaiting|pending/i.test(title)) return 'info';
-  if (/failed|error/i.test(title)) return 'error';
-  return 'info';
-}
-
-function getNotificationStyle(notification) {
-  return NOTIFICATION_STYLE_BY_TYPE[notification.type] ?? legacyNotificationStyleFromTitle(notification.title);
-}
-
 function UsersIcon() {
   return (
     <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -105,139 +84,6 @@ const TAB_ICONS = {
   activity: <Icon name="clipboard" size={18} className="nav-icon" />,
   settings: <Icon name="key" size={18} className="nav-icon" />,
 };
-
-function StatusBadge({ value }) {
-  return <span className={`status-badge ${String(value ?? '-').toLowerCase().replaceAll(' ', '-')}`}>{value ?? '-'}</span>;
-}
-
-function UserAvatar({ name }) {
-  const initials = name ? name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : '?';
-  return (
-    <span className="user-avatar-name">
-      <span className="user-avatar-name-initials">{initials}</span>
-      <span>{name || 'Unknown'}</span>
-    </span>
-  );
-}
-
-function DataTable({ columns, rows, onRowClick, emptyMessage = 'No records found.' }) {
-  if (!rows?.length) return <p className="empty-state">{emptyMessage}</p>;
-  return (
-    <div className="table-shell">
-      <table>
-        <thead>
-          <tr>{columns.map((c) => <th key={c.label} className={c.className}>{c.label}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr
-              key={row.id ?? row.log_id ?? i}
-              className={onRowClick ? 'is-clickable' : undefined}
-              onClick={onRowClick ? (e) => { if (!e.target.closest('button, a, select')) onRowClick(row); } : undefined}
-            >
-              {columns.map((c) => <td key={c.label} className={c.className}>{c.render ? c.render(row) : (row[c.key] ?? '-')}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// Numbered-page pager (‹ 1 2 [3] 4 5 … N ›) + a page-size picker as its own
-// row of circular buttons — the same PaginationControls footer the main
-// Workspace uses everywhere (Vehicle Management, Tickets, etc.), copied
-// here rather than imported since this file keeps its own local copies of
-// every shared table primitive (DataTable, StatusBadge, ...) instead of
-// cross-importing from Workspace.jsx.
-function paginationPageList(current, total) {
-  const delta = 2;
-  const pages = [];
-  for (let i = 1; i <= total; i += 1) {
-    if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) pages.push(i);
-  }
-  const withGaps = [];
-  let prev;
-  pages.forEach((p) => {
-    if (prev != null && p - prev > 1) withGaps.push('…');
-    withGaps.push(p);
-    prev = p;
-  });
-  return withGaps;
-}
-
-function PaginationControls({ page, setPage, pageSize, setPageSize, pageSizeOptions, totalPages }) {
-  if (totalPages <= 1 && pageSizeOptions.length <= 1) return null;
-  const pageList = paginationPageList(page, totalPages);
-  return (
-    <div className="table-pagination">
-      <div className="table-pagination-pages">
-        <button type="button" className="pagination-arrow" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} aria-label="Previous page">‹</button>
-        {pageList.map((p, i) => (
-          p === '…'
-            ? <span key={`gap-${i}`} className="pagination-ellipsis">…</span>
-            : <button key={p} type="button" className={`pagination-page${p === page ? ' active' : ''}`} onClick={() => setPage(p)}>{p}</button>
-        ))}
-        <button type="button" className="pagination-arrow" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} aria-label="Next page">›</button>
-      </div>
-      <div className="table-pagination-size">
-        <span className="muted">Page size:</span>
-        {pageSizeOptions.map((n) => (
-          <button key={n} type="button" className={`pagination-page${n === pageSize ? ' active' : ''}`} onClick={() => setPageSize(n)}>{n}</button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PaginatedTable({ columns, rows, onRowClick, emptyMessage, pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
-  const [pageSize, setPageSize] = useState(initialPageSize);
-  const [page, setPage] = useState(1);
-
-  useEffect(() => {
-    setPage(1);
-  }, [rows.length, pageSize]);
-
-  if (!rows?.length) {
-    return <DataTable columns={columns} rows={rows} onRowClick={onRowClick} emptyMessage={emptyMessage} />;
-  }
-
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const clampedPage = Math.min(page, totalPages);
-  const start = (clampedPage - 1) * pageSize;
-  const pageRows = rows.slice(start, start + pageSize);
-
-  return (
-    <>
-      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} />
-      <PaginationControls page={clampedPage} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} pageSizeOptions={pageSizeOptions} totalPages={totalPages} />
-    </>
-  );
-}
-
-function LocalSearchInput({ value, onChange, placeholder = 'Search...' }) {
-  return (
-    <div className="local-search-bar">
-      <div className="local-search-container">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="local-search-icon">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="local-search-input" />
-        {value && (
-          <button className="local-search-clear" onClick={() => onChange('')} type="button" title="Clear search">
-            <Icon name="close" size={14} />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function formatDate(value) {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
 
 function ProfileMenu({ user, open, setOpen, onOpenSettings, onLogout }) {
   const initials = user.name ? user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'U';
@@ -570,7 +416,7 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
         />
       )}
 
-      <PaginatedTable columns={columns} rows={filteredBarangays} emptyMessage="No barangays match these filters." />
+      <PaginatedTable emptyCellValue="-" columns={columns} rows={filteredBarangays} emptyMessage="No barangays match these filters." />
 
       {recoveryBarangay && (
         <div className="location-form-panel superadmin-panel-spaced">
@@ -583,7 +429,7 @@ function DashboardTab({ barangays, users, pendingApprovals, concernReports, onPr
                 Pick an existing user in {recoveryBarangay.name} to promote to Admin. If their account is inactive, it will also be activated.
               </p>
               <div className="superadmin-inline-row">
-                <select value={pickedUserId} onChange={(e) => setPickedUserId(e.target.value)}>
+                <select value={pickedUserId} onChange={(e) => setPickedUserId(e.target.value)} aria-label="User to promote to Admin">
                   <option value="">Select a user</option>
                   {candidateUsers.map((u) => (
                     <option key={u.id} value={u.id}>{u.name} · {u.role}{u.is_active ? '' : ' (inactive)'}</option>
@@ -633,43 +479,43 @@ function BoundaryReviewModal({ barangay, onClose, onConfirm, onDiscard }) {
     ? [allPoints.reduce((s, p) => s + p[0], 0) / allPoints.length, allPoints.reduce((s, p) => s + p[1], 0) / allPoints.length]
     : [10.3, 123.9];
 
-  const run = async (fn) => {
+  const [action, setAction] = useState(null);
+  const run = async (kind, fn) => {
     setBusy(true);
-    try { await fn(); } finally { setBusy(false); }
+    setAction(kind);
+    try { await fn(); } finally { setBusy(false); setAction(null); }
   };
+  const place = [barangay.name, barangay.city_name, barangay.province_name].filter(Boolean).join(', ');
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>Review Boundary — {barangay.name}</h3>
-          <button className="modal-close-btn" onClick={onClose} type="button" aria-label="Close"><Icon name="close" size={18} /></button>
+    <Modal
+      title={`Review Boundary — ${barangay.name}`}
+      onClose={onClose}
+      boxStyle={{ maxWidth: 560 }}
+      closeOnOverlay={!busy}
+      closeOnEscape={!busy}
+    >
+      <p className="muted" style={{ margin: '0 0 10px' }}>
+        <strong>{place}</strong> — candidate outline matched automatically from OpenStreetMap. It is <strong>not</strong> the
+        official boundary until you confirm it.
+        Confirm only if the shape below actually looks like {barangay.name}.
+      </p>
+      {rings.length === 0 ? (
+        <p className="notice error" role="alert">This candidate&apos;s geometry couldn&apos;t be rendered — discard it and try again later.</p>
+      ) : (
+        <div style={{ height: 280, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+          <BoundaryPreviewMap center={center} rings={rings} />
         </div>
-        <div className="modal-body">
-          <p className="muted" style={{ margin: '0 0 10px' }}>
-            Matched via OpenStreetMap — this is NOT yet the barangay's official boundary. Confirm it only if the shape below actually looks like {barangay.name}.
-          </p>
-          {rings.length === 0 ? (
-            <p className="notice error">This candidate's geometry couldn't be rendered — discard it and try again later.</p>
-          ) : (
-            <div style={{ height: 280, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-              <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
-                <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                {rings.map((ring, i) => (
-                  <Polygon key={i} positions={ring} pathOptions={{ color: '#d97706', fillColor: '#fbbf24', fillOpacity: 0.3 }} />
-                ))}
-              </MapContainer>
-            </div>
-          )}
-          <div className="form-actions" style={{ marginTop: 12 }}>
-            <button type="button" className="ghost-button" disabled={busy} onClick={() => run(onDiscard)}>Discard</button>
-            <button type="button" className="success-button" disabled={busy || rings.length === 0} onClick={() => run(onConfirm)}>
-              {busy ? 'Confirming…' : 'Confirm Boundary'}
-            </button>
-          </div>
-        </div>
+      )}
+      <div className="form-actions" style={{ marginTop: 12 }}>
+        <button type="button" className="ghost-button" disabled={busy} onClick={() => run('discard', onDiscard)}>
+          {action === 'discard' ? 'Discarding…' : 'Discard'}
+        </button>
+        <button type="button" className="success-button" disabled={busy || rings.length === 0} onClick={() => run('confirm', onConfirm)}>
+          {action === 'confirm' ? 'Confirming…' : 'Confirm Boundary'}
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -734,10 +580,13 @@ function PendingApprovalsTab({ approvals, barangays, onApprove, onReject, onRequ
       .filter((g) => g.accounts.length > 0);
   }, [groups, search]);
 
+  // Once the open group empties out (last account approved/rejected), forget
+  // it — otherwise a later registration for that barangay would reopen it
+  // on its own. Reset during render rather than in an effect.
+  if (openBarangayKey && !groups.some((g) => g.key === openBarangayKey)) {
+    setOpenBarangayKey(null);
+  }
   const openGroup = visibleGroups.find((g) => g.key === openBarangayKey) ?? null;
-  useEffect(() => {
-    if (openBarangayKey && !groups.some((g) => g.key === openBarangayKey)) setOpenBarangayKey(null);
-  }, [groups, openBarangayKey]);
 
   const requestReject = (a) => {
     onRequestConfirmation({
@@ -767,7 +616,7 @@ function PendingApprovalsTab({ approvals, barangays, onApprove, onReject, onRequ
   const renderAccountCard = (a) => (
     <article key={a.id} className={`approval-card${isFirstAdmin(a) ? ' is-first-admin' : ''}`}>
       <div className="approval-card-main">
-        <UserAvatar name={a.name} />
+        <UserAvatarName user={a} fallback="Unknown" />
       </div>
       <div className="approval-card-meta">
         <span className="approval-card-email">{a.email}</span>
@@ -867,8 +716,12 @@ function AddBarangayForm({ onAdded, onCancel }) {
   }, []);
 
   useEffect(() => {
-    if (!provinceId) { setCities([]); setCityId(''); return; }
-    api.get('/cities', { params: { province_id: provinceId } }).then((res) => setCities(res.data)).catch(() => setCities([]));
+    if (!provinceId) return undefined;
+    let cancelled = false;
+    api.get('/cities', { params: { province_id: provinceId } })
+      .then((res) => { if (!cancelled) setCities(res.data); })
+      .catch(() => { if (!cancelled) setCities([]); });
+    return () => { cancelled = true; };
   }, [provinceId]);
 
   const submit = async (e) => {
@@ -894,11 +747,11 @@ function AddBarangayForm({ onAdded, onCancel }) {
       </p>
       {error && <p className="muted" style={{ color: '#dc2626' }}>{error}</p>}
       <div className="superadmin-inline-row">
-        <select value={provinceId} onChange={(e) => { setProvinceId(e.target.value); setCityId(''); }} required>
+        <select value={provinceId} onChange={(e) => { setProvinceId(e.target.value); setCities([]); setCityId(''); }} required aria-label="Province">
           <option value="">Province</option>
           {provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <select value={cityId} onChange={(e) => setCityId(e.target.value)} disabled={!provinceId} required>
+        <select value={cityId} onChange={(e) => setCityId(e.target.value)} disabled={!provinceId} required aria-label="City or municipality">
           <option value="">City / Municipality</option>
           {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -962,12 +815,12 @@ function UsersTab({ users, onChangeRole, onToggleActive }) {
   const columns = [
     { label: 'Name', render: (u) => (
       <div>
-        <UserAvatar name={u.name} />
+        <UserAvatarName user={u} fallback="Unknown" />
         <div className="muted" style={{ fontSize: '0.76rem', marginTop: 2 }}>{u.email}</div>
       </div>
     ) },
     { label: 'Role', render: (u) => (
-      <select value={u.role} onChange={(e) => onChangeRole(u, e.target.value)}>
+      <select value={u.role} onChange={(e) => onChangeRole(u, e.target.value)} aria-label={`Role for ${u.name}`}>
         {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
       </select>
     ) },
@@ -1006,7 +859,7 @@ function UsersTab({ users, onChangeRole, onToggleActive }) {
                     <span>{bg.barangay}</span>
                     <span className="count-badge">{bg.rows.length}</span>
                   </summary>
-                  <PaginatedTable columns={columns} rows={bg.rows} initialPageSize={10} pageSizeOptions={[10, 25, 50]} />
+                  <PaginatedTable emptyCellValue="-" columns={columns} rows={bg.rows} initialPageSize={10} pageSizeOptions={[10, 25, 50]} />
                 </details>
               ))}
             </details>
@@ -1042,8 +895,12 @@ function RegistrationCodesTab({ barangays, onRequestConfirmation, setNotice }) {
   }, []);
 
   useEffect(() => {
-    if (!provinceId) { setCities([]); setCityId(''); return; }
-    api.get('/cities', { params: { province_id: provinceId } }).then((res) => setCities(res.data)).catch(() => setCities([]));
+    if (!provinceId) return undefined;
+    let cancelled = false;
+    api.get('/cities', { params: { province_id: provinceId } })
+      .then((res) => { if (!cancelled) setCities(res.data); })
+      .catch(() => { if (!cancelled) setCities([]); });
+    return () => { cancelled = true; };
   }, [provinceId]);
   // Guards against out-of-order responses: switching barangays quickly can
   // leave an earlier, slower request resolving after a later one — this
@@ -1117,7 +974,7 @@ function RegistrationCodesTab({ barangays, onRequestConfirmation, setNotice }) {
             <span>Province</span>
             <select
               value={provinceId}
-              onChange={(e) => { setProvinceId(e.target.value); setCityId(''); setBarangayId(''); setCode(null); setCodeUpdatedAt(null); }}
+              onChange={(e) => { setProvinceId(e.target.value); setCities([]); setCityId(''); setBarangayId(''); setCode(null); setCodeUpdatedAt(null); }}
             >
               <option value="">Select a province</option>
               {provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -1315,7 +1172,7 @@ function ConcernReportsTab({ reports, onResolve, onReopen, onDelete, onRequestCo
       <div className="panel-header-bar inline">
         <h3>Concern Reports <span className="count-badge">{visible.length}</span></h3>
       </div>
-      <PaginatedTable
+      <PaginatedTable emptyCellValue="-"
         columns={columns}
         rows={visible}
         emptyMessage={scope === 'open' ? 'No open concerns — all clear.' : 'No concern reports have been submitted yet.'}
@@ -1348,7 +1205,7 @@ function ActivityLogTab({ entries }) {
       <div className="panel-header-bar inline">
         <h3>Activity Log <span className="count-badge">{visible.length}</span></h3>
       </div>
-      <PaginatedTable
+      <PaginatedTable emptyCellValue="-"
         columns={columns}
         rows={visible}
         emptyMessage={scope === 'mine' ? 'No Super Admin actions yet.' : 'No activity yet.'}
@@ -1409,13 +1266,26 @@ function SettingsTab({ setNotice }) {
   );
 }
 
+function fetchSuperAdminData() {
+  return Promise.all([
+    api.get('/superadmin/barangays'),
+    api.get('/superadmin/users'),
+    api.get('/superadmin/pending-approvals'),
+    api.get('/impersonate/candidates'),
+    api.get('/superadmin/concern-reports'),
+    api.get('/superadmin/activity-log'),
+  ]);
+}
+
 export default function SuperAdminWorkspace() {
   const { user, logout } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState('dashboard');
   // Always starts expanded — a collapsed sidebar should only ever be a
   // deliberate, in-session choice (the toggle button), never the default a
   // returning user lands on.
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const nav = useResponsiveNav(activeTab);
+  const topbarRef = useRef(null);
+  useCssHeightVar(topbarRef, '--topbar-height');
   const [collapsedNavGroups, setCollapsedNavGroups] = useState([]);
   const toggleNavGroup = (section) => {
     setCollapsedNavGroups((prev) => (prev.includes(section) ? prev.filter((s) => s !== section) : [...prev, section]));
@@ -1464,37 +1334,36 @@ export default function SuperAdminWorkspace() {
     return () => clearTimeout(t);
   }, [notice]);
 
-  // `silent` skips the `loading` flip — every tab's content-body unmounts
-  // while loading is true (see the ternary below), which wipes any local
-  // form state a tab was mid-filling-out (province/city/barangay picks,
-  // search text, ...). Fine for the very first mount, where there's nothing
-  // to lose yet; wrong for a post-mutation refresh, which should update the
-  // data in place without blanking whatever the Super Admin was doing.
-  const loadAll = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const [b, u, p, c, r, a] = await Promise.all([
-        api.get('/superadmin/barangays'),
-        api.get('/superadmin/users'),
-        api.get('/superadmin/pending-approvals'),
-        api.get('/impersonate/candidates'),
-        api.get('/superadmin/concern-reports'),
-        api.get('/superadmin/activity-log'),
-      ]);
-      setBarangays(b.data);
-      setUsers(u.data);
-      setPendingApprovals(p.data);
-      setCandidates(c.data);
-      setConcernReports(r.data);
-      setActivityLog(a.data);
-    } catch {
-      setNotice({ type: 'error', text: 'Could not load Super Admin data.' });
-    } finally {
-      if (!silent) setLoading(false);
-    }
+  const applyAll = useCallback(([b, u, p, c, r, a]) => {
+    setBarangays(b.data);
+    setUsers(u.data);
+    setPendingApprovals(p.data);
+    setCandidates(c.data);
+    setConcernReports(r.data);
+    setActivityLog(a.data);
   }, []);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  // `loading` starts true and only the initial-load effect below clears it.
+  // loadAll() never flips it back: every tab's content-body unmounts while
+  // loading is true (see the ternary below), which would wipe any local form
+  // state a tab was mid-filling-out (province/city/barangay picks, search
+  // text, ...). A post-mutation refresh updates the data in place instead.
+  const loadAll = useCallback(async () => {
+    try {
+      applyAll(await fetchSuperAdminData());
+    } catch {
+      setNotice({ type: 'error', text: 'Could not load Super Admin data.' });
+    }
+  }, [applyAll]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSuperAdminData()
+      .then((results) => { if (!cancelled) applyAll(results); })
+      .catch(() => { if (!cancelled) setNotice({ type: 'error', text: 'Could not load Super Admin data.' }); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [applyAll]);
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -1525,12 +1394,16 @@ export default function SuperAdminWorkspace() {
   };
 
   useEffect(() => {
-    loadNotifications().catch(() => {});
-    const interval = setInterval(() => {
-      loadNotifications().catch(() => {});
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [loadNotifications]);
+    let cancelled = false;
+    const poll = () => {
+      api.get('/notifications')
+        .then((res) => { if (!cancelled) setNotifications(res.data); })
+        .catch(() => { /* ignore — bell just stays empty until the next poll */ });
+    };
+    poll();
+    const interval = setInterval(poll, 10000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -1561,7 +1434,7 @@ export default function SuperAdminWorkspace() {
         await api.put(`/superadmin/users/${target.id}/activate`);
       }
       setNotice({ type: 'success', text: `${target.name} is now this barangay's Admin.` });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not promote this user.' });
     }
@@ -1572,7 +1445,7 @@ export default function SuperAdminWorkspace() {
   // every other mutation here uses) and surfaces the success notice.
   const addBarangay = async (created) => {
     setNotice({ type: 'success', text: `${created.name} (${created.city_name}) added.` });
-    await loadAll(true);
+    await loadAll();
   };
 
   // Only meaningful for a barangay without a verified boundary yet — re-runs
@@ -1589,7 +1462,7 @@ export default function SuperAdminWorkspace() {
         : res.data.boundary_status === 'verified'
           ? { type: 'success', text: `${barangay.name} already has a verified boundary.` }
           : { type: 'error', text: `Still no boundary match for ${barangay.name} — try again later, or add it manually.` });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not retry that boundary lookup.' });
     }
@@ -1599,7 +1472,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.post(`/superadmin/barangays/${barangay.id}/boundary/confirm`);
       setNotice({ type: 'success', text: `Boundary confirmed for ${barangay.name}.` });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not confirm that boundary.' });
     }
@@ -1609,7 +1482,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.delete(`/superadmin/barangays/${barangay.id}/boundary/pending`);
       setNotice({ type: 'success', text: `Candidate boundary discarded for ${barangay.name}.` });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not discard that candidate boundary.' });
     }
@@ -1620,7 +1493,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.put(`/superadmin/users/${targetUser.id}/role`, { role });
       setNotice({ type: 'success', text: `${targetUser.name}'s role is now ${role}.` });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not change that role.' });
     }
@@ -1630,7 +1503,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.put(`/superadmin/users/${targetUser.id}/${targetUser.is_active ? 'deactivate' : 'activate'}`);
       setNotice({ type: 'success', text: `${targetUser.name} is now ${targetUser.is_active ? 'inactive' : 'active'}.` });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not update that account.' });
     }
@@ -1640,7 +1513,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.put(`/superadmin/users/${approval.id}/activate`);
       setNotice({ type: 'success', text: `${approval.name} is approved and can now sign in.` });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not approve this account.' });
     }
@@ -1650,7 +1523,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.delete(`/superadmin/users/${approval.id}/reject`);
       setNotice({ type: 'success', text: `${approval.name}'s registration was rejected.` });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not reject this account.' });
     }
@@ -1660,7 +1533,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.put(`/superadmin/concern-reports/${report.id}/resolve`);
       setNotice({ type: 'success', text: 'Concern report marked resolved.' });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not update that report.' });
     }
@@ -1670,7 +1543,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.put(`/superadmin/concern-reports/${report.id}/reopen`);
       setNotice({ type: 'success', text: 'Concern report reopened.' });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not update that report.' });
     }
@@ -1702,7 +1575,7 @@ export default function SuperAdminWorkspace() {
     try {
       await api.delete(`/superadmin/concern-reports/${report.id}`);
       setNotice({ type: 'success', text: 'Concern report deleted.' });
-      await loadAll(true);
+      await loadAll();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message ?? 'Could not delete that report.' });
     }
@@ -1722,16 +1595,10 @@ export default function SuperAdminWorkspace() {
     // couldn't be targeted on its own without also restyling every select
     // in the fleet-facing app.
     <div className="superadmin-shell">
-      <header className="topbar">
+      <header className="topbar" ref={topbarRef}>
         <div className="topbar-left">
           <div className="topbar-brand-cluster">
-            <button
-              aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              className="sidebar-toggle-btn"
-              onClick={() => setIsSidebarCollapsed((v) => !v)}
-              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              type="button"
-            >
+            <button {...nav.toggleButtonProps} className="sidebar-toggle-btn" type="button">
               <Icon name="menu" size={24} />
             </button>
             <Icon name="gear" size={28} className="topbar-gear-icon" filled />
@@ -1840,8 +1707,10 @@ export default function SuperAdminWorkspace() {
         </div>
       </header>
 
-      <main className={`workspace${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
-        <aside className={`sidebar${isSidebarCollapsed ? ' collapsed' : ''}`}>
+      <main className={nav.workspaceClassName}>
+        <SidebarBackdrop nav={nav} />
+        <aside {...nav.sidebarProps}>
+          <SidebarDrawerHead nav={nav} />
           <nav className="module-nav" aria-label="Super Admin modules">
             {NAV_GROUPS.map(({ section, icon, items }) => {
               const renderItem = ([key, label]) => {
@@ -1851,7 +1720,9 @@ export default function SuperAdminWorkspace() {
                     key={key}
                     className={key === activeTab ? 'active' : ''}
                     onClick={() => setActiveTab(key)}
-                    title={isSidebarCollapsed ? label : undefined}
+                    title={nav.isRail ? label : undefined}
+                    aria-label={nav.isRail ? (badgeCount > 0 ? `${label}, ${badgeCount} pending` : label) : undefined}
+                    aria-current={key === activeTab ? 'page' : undefined}
                     type="button"
                   >
                     {TAB_ICONS[key]}
@@ -1866,7 +1737,7 @@ export default function SuperAdminWorkspace() {
 
               const groupBadge = items.reduce((sum, [key]) => sum + (key === 'pending' ? pendingApprovals.length : 0), 0);
               const holdsActive = items.some(([key]) => key === activeTab);
-              const expanded = isSidebarCollapsed || holdsActive || !collapsedNavGroups.includes(section);
+              const expanded = nav.isRail || holdsActive || !collapsedNavGroups.includes(section);
 
               return (
                 <div key={section} className="module-nav-group">
@@ -1888,7 +1759,7 @@ export default function SuperAdminWorkspace() {
           </nav>
         </aside>
 
-        <section className="content-area">
+        <section id="main-content" className="content-area" tabIndex={-1}>
           <div className="page-heading-row">
             <span className="page-heading-icon">{TAB_ICONS[activeTab]}</span>
             <div className="page-heading-text">

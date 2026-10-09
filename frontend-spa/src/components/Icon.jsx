@@ -198,12 +198,6 @@ const PATHS = {
       <circle cx="15" cy="19" r="1.4" fill="currentColor" stroke="none" />
     </>
   ),
-  search: (
-    <>
-      <circle cx="11" cy="11" r="8" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </>
-  ),
   edit: (
     <>
       <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
@@ -306,12 +300,3 @@ export default function Icon({ name, size = 16, strokeWidth = 2, className, styl
   );
 }
 
-// Maps Open-Meteo weather → an icon name in this set.
-export function weatherIconName(code) {
-  if (code === 0) return 'sun';
-  if ([1, 2, 3].includes(code)) return 'cloudSun';
-  if ([45, 48].includes(code)) return 'cloudFog';
-  if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return 'cloudRain';
-  if ([95, 96, 99].includes(code)) return 'cloudLightning';
-  return 'cloudSun';
-}

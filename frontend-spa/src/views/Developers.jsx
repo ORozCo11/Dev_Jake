@@ -12,7 +12,7 @@ const TEAM = [
   { name: 'Precious Dignos', role: 'Project Manager / QA Specialist', photo: '/team/precious-dignos.jpg' },
   { name: 'John Paul Orozco', role: 'Project Lead / Full-Stack Developer', photo: '/team/paul-orozco.jpg' },
   { name: 'Justine Mae Belia', role: 'Documentation / QA Specialist', photo: '/team/justine-mae-belia.jpg' },
-  { name: 'Jake Engana', role: 'Backend Developer / UI-UX Designer', photo: null },
+  { name: 'Jake Engana', role: 'Backend Developer / UI-UX Designer', photo: '/team/jake-engana.jpg' },
 ];
 
 const PER_PAGE = 4;

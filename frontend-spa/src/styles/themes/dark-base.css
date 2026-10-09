@@ -1,0 +1,293 @@
+/* Split from App.css (lines 7214-7506). Order matters: see App.css. */
+/* =========================================================================
+   Inventory Sync inspired dark theme
+   ========================================================================= */
+:root {
+  --bg: #08090b;
+  --bg-elevated: #0d0e11;
+  --surface: #111214;
+  --surface-2: #15161a;
+  --surface-3: #1b1c21;
+  --surface-hover: #202126;
+  --sidebar: #090a0c;
+  --border: #25272d;
+  --border-subtle: #1b1d22;
+  --text: #e9e2d8;
+  --text-strong: #fff8ef;
+  --text-muted: #8f929a;
+  --text-faint: #626670;
+  --primary: #2563eb;
+  --primary-strong: #3b82f6;
+  --primary-soft: rgba(37, 99, 235, 0.12);
+  --primary-border: rgba(37, 99, 235, 0.34);
+  --text-success: #36c66d;
+  --success: #36c66d;
+  --warning: #f59e0b;
+  --danger: #ff5c5c;
+  --info: #3b82f6;
+  --shadow-deep: 0 22px 54px rgba(0, 0, 0, 0.36);
+  --shadow-soft: 0 14px 30px rgba(0, 0, 0, 0.22);
+}
+
+* {
+  letter-spacing: 0 !important;
+}
+
+html,
+body,
+#root {
+  background: var(--bg);
+}
+
+body,
+button,
+input,
+select,
+textarea,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+thead th,
+.smart-form h3,
+.primary-button,
+.primary-link,
+.ghost-button,
+.row-actions button,
+.report-heading button,
+table button,
+.table-shell button,
+.status-badge {
+  font-family: 'Inter', "Trebuchet MS", Helvetica, sans-serif !important;
+}
+
+.workspace {
+  grid-template-columns: 252px minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.workspace.sidebar-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.sidebar {
+  background: linear-gradient(180deg, var(--sidebar) 0%, #07080a 100%);
+  border-right: 1px solid var(--border-subtle);
+  padding: 22px 18px;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+.sidebar-brand {
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 22px;
+  padding: 6px 8px 22px;
+}
+
+.brand-logo-badge,
+.auth-logo-badge {
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  color: var(--primary-strong);
+  box-shadow: 0 0 22px rgba(37, 99, 235, 0.15);
+}
+
+.brand-logo-svg,
+.logo-svg {
+  stroke: currentColor;
+}
+
+.sidebar .eyebrow,
+.auth-card .eyebrow,
+.ticket-detail-id {
+  color: var(--primary-strong);
+}
+
+.sidebar h1 {
+  color: var(--text-strong);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.module-nav {
+  gap: 6px;
+}
+
+.module-nav button {
+  min-height: 42px;
+  border-radius: 7px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+  padding: 10px 12px;
+}
+
+.module-nav button:hover {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--border-subtle);
+  color: var(--text);
+}
+
+.module-nav button.active {
+  background: var(--primary-soft);
+  border-color: rgba(37, 99, 235, 0.22);
+  color: var(--primary-strong);
+  box-shadow: inset 3px 0 0 var(--primary), 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.module-nav button.active .nav-icon {
+  stroke: var(--primary-strong);
+}
+
+.nav-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.profile-panel {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.profile-card,
+.profile-details-dropdown,
+.profile-info-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.profile-card:hover {
+  background: var(--surface-hover);
+}
+
+.profile-avatar {
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  color: #0a0a0a;
+}
+
+.profile-status-online,
+.status-pill::before {
+  background: var(--success);
+  box-shadow: 0 0 10px rgba(54, 198, 109, 0.65);
+}
+
+.profile-name,
+.status-name {
+  color: var(--text-strong);
+}
+
+.profile-role,
+.profile-info-item dt,
+.profile-arrow-icon {
+  color: var(--text-muted);
+  stroke: var(--text-muted);
+}
+
+.profile-info-item dd {
+  color: var(--text);
+}
+.profile-actions .smart-form h3 {
+  color: var(--text) !important;
+}
+
+.profile-actions .smart-form input {
+  background: #0b0c0f !important;
+  border-color: var(--border) !important;
+  color: var(--text-strong) !important;
+}
+
+.logout-button {
+  border-color: rgba(255, 92, 92, 0.28);
+  color: #ff8a8a;
+}
+
+.logout-button:hover {
+  background: rgba(255, 92, 92, 0.1);
+  border-color: rgba(255, 92, 92, 0.5);
+}
+
+.content-area {
+  background:
+    linear-gradient(180deg, rgba(37, 99, 235, 0.03) 0%, rgba(8, 9, 11, 0) 260px),
+    var(--bg);
+}
+
+.topbar {
+  background: rgba(10, 11, 13, 0.92);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: none;
+  backdrop-filter: blur(14px);
+  padding: 22px 32px 18px;
+}
+
+.breadcrumb-path {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.topbar h2 {
+  color: var(--text-strong);
+  font-size: 1.55rem;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.icon-btn,
+.status-pill,
+.topbar-search {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.icon-btn:hover,
+.topbar-search:focus-within {
+  background: var(--surface-hover);
+  border-color: var(--primary-border);
+  color: var(--text-strong);
+}
+
+.notification-indicator {
+  background: #dc2626;
+  border-color: var(--surface);
+  color: #ffffff;
+}
+
+.topbar-search input {
+  color: var(--text-strong);
+}
+
+.topbar-search input::placeholder {
+  color: var(--text-faint);
+}
+
+.search-icon {
+  stroke: var(--text-muted);
+}
+
+.content-body {
+  padding: 28px 32px 36px;
+}
+
+.dashboard-grid,
+.module-grid {
+  gap: 20px;
+}
+
+.dashboard-2col-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .dashboard-2col-grid {
+    grid-template-columns: 1fr;
+  }
+}

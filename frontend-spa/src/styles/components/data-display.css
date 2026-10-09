@@ -1,0 +1,981 @@
+/* Split from App.css (lines 8817-9797). Order matters: see App.css. */
+/* Ticket detail sections — calm white cards with a quiet header row and a
+   thin divider (the RealCore reference look), replacing the old heavy solid
+   blue header bands. Header text stays dark with a blue icon accent and a
+   faint blue-tinted header strip, so the blue identity is kept without the
+   band shouting over the content. */
+.ticket-section {
+  padding: 14px 16px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  overflow: hidden;
+}
+/* The Review Proposal card (the only .ticket-section that also hosts a
+   CreatableSelect) needs its own escape hatch: overflow:hidden here exists
+   to clip ordinary content to the rounded corners, but it also clips
+   CreatableSelect's absolutely-positioned dropdown panel — which showed as
+   a catalog list truncated to one visible row with no way to scroll to the
+   rest, since scroll-height was being measured against the panel's own
+   220px cap, not this card's clip. Scoped to this one combination (nothing
+   else in the app pairs .smart-form onto a .ticket-section) so every other
+   .ticket-section keeps its corner-clipping exactly as before. */
+.ticket-section.smart-form {
+  overflow: visible;
+}
+
+/* Review Proposal — the Admin's one decision point on a proposal, so it gets
+   the strongest visual anchor on the page: a blue header band, tinted field
+   groups, numbered sub-issue cards and a dedicated action bar. */
+.ticket-section.proposal-review { padding: 0; border-color: #bfdbfe; box-shadow: 0 6px 18px rgba(37, 99, 235, 0.10); }
+.proposal-review-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #3b82f6 100%);
+  color: #fff;
+  border-radius: 11px 11px 0 0;
+}
+.proposal-review-head-icon {
+  width: 36px; height: 36px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.proposal-review-head-text { flex: 1; min-width: 0; }
+html .ticket-section.proposal-review .proposal-review-head h4 { margin: 0; padding: 0; border: 0; color: #fff; font-size: 1rem; font-weight: 800; text-transform: none; letter-spacing: normal; }
+html .ticket-section.proposal-review .proposal-review-head p { margin: 2px 0 0; color: rgba(255, 255, 255, 0.85); font-size: 0.8rem; }
+html .ticket-section.proposal-review .proposal-review-head p strong { color: #fff; }
+.proposal-review-pill {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: #fef3c7;
+  color: #92400e;
+}
+.proposal-review-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.proposal-review-group {
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.045);
+  border: 1px solid rgba(37, 99, 235, 0.14);
+}
+.proposal-review-group-title {
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 12px;
+  font-size: 0.78rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #1d4ed8;
+}
+.proposal-review-count {
+  min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; background: #2563eb; color: #fff;
+  font-size: 0.7rem; letter-spacing: 0;
+}
+.proposal-review-empty {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px; border-radius: 8px;
+  background: var(--surface, #fff); border: 1px dashed #93c5fd;
+  font-size: 0.82rem; color: #334155;
+}
+.proposal-review-empty svg { color: #2563eb; flex-shrink: 0; margin-top: 1px; }
+.proposal-subissue {
+  padding: 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.proposal-subissue:last-child { margin-bottom: 0; }
+.proposal-subissue-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.proposal-subissue-num {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: #2563eb; color: #fff;
+  font-size: 0.78rem; font-weight: 800;
+}
+.smart-form .proposal-subissue .proposal-subissue-title { flex: 1 1 auto; width: 100%; max-width: none; min-width: 0; font-weight: 600; font-size: 0.88rem; padding: 8px 10px; }
+.proposal-subissue-type {
+  flex-shrink: 0; padding: 3px 9px; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 700; white-space: nowrap;
+}
+.proposal-subissue-type.is-in_house { background: #dcfce7; color: #166534; }
+.proposal-subissue-type.is-cannibalized { background: #ffedd5; color: #9a3412; }
+.proposal-subissue-type.is-external { background: #ede9fe; color: #5b21b6; }
+.proposal-review-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 18px;
+  border-top: 1px solid #dbeafe;
+  background: rgba(37, 99, 235, 0.04);
+  border-radius: 0 0 11px 11px;
+}
+.proposal-review-actions.is-declining { display: block; }
+html .ticket-section.proposal-review .proposal-review-hint { margin: 0; font-size: 0.78rem; color: #64748b; }
+.proposal-review-buttons { display: flex; gap: 8px; margin-left: auto; }
+.ticket-section h4 {
+  margin: 0 0 12px;
+  padding: 0 0 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+  background: transparent;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ticket-section h4 svg { stroke: #3b82f6; color: #3b82f6; }
+
+.value-list li:hover {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: var(--primary-border);
+}
+
+.value-list span {
+  color: var(--text);
+}
+
+.value-list strong {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--primary-strong);
+}
+
+.table-shell {
+  background: var(--surface);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: auto;
+}
+
+.table-shell tbody tr.is-clickable { cursor: pointer; }
+/* Underline just the row's own title/name text on hover instead of washing
+   the whole row in a background tint — shading every cell (including ones
+   that aren't what gets clicked, e.g. a Reported By name in an
+   Issue-Reports row whose click target is the vehicle) read as "the whole
+   row is one link" and was easy to misread. .row-title-text marks the one
+   cell per row whose text actually matches what onRowClick opens. */
+.table-shell tbody tr.is-clickable:hover .row-title-text {
+  text-decoration: underline;
+  color: var(--primary-strong, #1d4ed8);
+}
+
+/* Header cells draggable straight from the table (DataTable's
+   onReorderColumn) — same reorder as Choose Columns' popover list, just
+   without opening it first. A locked/keyless column (e.g. ID, Action)
+   renders as a plain <th>, no affordance, since it was never draggable. */
+.table-shell th.is-draggable-column {
+  cursor: grab;
+  user-select: none;
+}
+.table-shell th.is-draggable-column:hover {
+  background: var(--surface-2, #f8fafc);
+}
+.table-shell th.is-draggable-column:active {
+  cursor: grabbing;
+}
+/* Drop-position line — drawn with an inset box-shadow (adds no extra width,
+   so the column grid doesn't jitter as the indicator moves from header to
+   header) right on whichever edge the dragged column would land against,
+   matching the realcore reference's line between columns. */
+.table-shell th.is-drop-before {
+  box-shadow: inset 3px 0 0 0 var(--primary, #2563eb);
+}
+.table-shell th.is-drop-after {
+  box-shadow: inset -3px 0 0 0 var(--primary, #2563eb);
+}
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 4px 0;
+  font-size: 0.85rem;
+  color: var(--text, #334155);
+}
+.table-pagination-pages,
+.table-pagination-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.table-pagination-size { gap: 8px; }
+.table-pagination-size .muted { margin-right: 2px; font-size: 0.82rem; }
+.pagination-ellipsis {
+  padding: 0 4px;
+  color: var(--text-muted, #94a3b8);
+}
+/* Numbered page / page-size buttons — plain text until picked, then a solid
+   blue circle, matching the reference pager instead of the old boxy
+   Prev/Next + <select> footer. */
+.pagination-page,
+.pagination-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text, #334155);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.pagination-page:hover:not(.active),
+.pagination-arrow:hover:not(:disabled) {
+  background: var(--surface-2, #f1f5f9);
+}
+.pagination-page.active {
+  background: #2563eb;
+  color: #ffffff;
+}
+.pagination-arrow {
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--text-muted, #64748b);
+}
+.pagination-arrow:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* View-mode dropdown (Card View / List View) */
+.view-dropdown { position: relative; flex-shrink: 0; }
+.view-dropdown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border, #cbd5e1);
+  background: var(--surface, #fff);
+  color: var(--text, #334155);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.view-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 160px;
+  background: #ffffff;
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  padding: 6px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.view-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: #334155;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.view-dropdown-item:hover { background: #eff6ff; color: #1d4ed8; }
+.view-dropdown-item.active { background: var(--primary, #2563eb); color: #ffffff; }
+.view-dropdown-item.active svg { stroke: #ffffff; }
+
+/* Compact tables: column-heavy tables (e.g. Maintenance Records) tightened so
+   they fit the screen width without horizontal scrolling. */
+.table-shell.is-compact table {
+  font-size: 0.8rem;
+  table-layout: fixed;
+  width: 100%;
+}
+.table-shell.is-compact thead th {
+  padding: 9px 10px;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  white-space: normal;
+  line-height: 1.25;
+}
+.table-shell.is-compact tbody td {
+  padding: 9px 10px;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.table-shell.is-compact td.cell-text {
+  min-width: 0;
+  max-width: none;
+  line-height: 1.35;
+}
+.table-shell.is-compact .vehicle-cell {
+  min-width: 0;
+  gap: 6px;
+}
+.table-shell.is-compact .photo-thumb {
+  width: 38px;
+  height: 30px;
+  border-radius: 6px;
+}
+.table-shell.is-compact .vehicle-cell-name {
+  font-size: 0.78rem;
+}
+.table-shell.is-compact .status-badge {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+.table-shell.is-compact .row-actions {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+table {
+  color: var(--text);
+}
+
+thead th {
+  background: #111214;
+  border-right: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 13px 16px;
+}
+
+tbody td {
+  border-right: none;
+  border-bottom: 1px solid var(--border-subtle);
+  color: #d8d1c7;
+  padding: 13px 16px;
+}
+
+tbody tr:hover,
+.notification-item:hover {
+  background: rgba(37, 99, 235, 0.055);
+}
+
+tbody tr:hover td {
+  color: var(--text-strong);
+}
+
+table a,
+.notifications-header button {
+  color: var(--primary-strong);
+}
+
+table a:hover,
+.notifications-header button:hover {
+  color: #93c5fd;
+}
+
+.part-tag {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.22);
+  color: var(--primary-strong);
+}
+
+.status-badge {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+}
+
+.status-badge.active,
+.status-badge.available,
+.status-badge.completed,
+.status-badge.passed,
+.status-badge.resolved,
+.status-badge.approved,
+.status-badge.good,
+.status-badge.ticket-done,
+.status-badge.priority-low {
+  background: rgba(54, 198, 109, 0.12);
+  border-color: rgba(54, 198, 109, 0.24);
+  color: #62dc91;
+}
+
+.status-badge.pending,
+.status-badge.open,
+.status-badge.in-progress,
+.status-badge.under-maintenance,
+.status-badge.in-maintenance,
+.status-badge.for-repair,
+.status-badge.under-repair,
+.status-badge.needs-inspection,
+.status-badge.under-review,
+.status-badge.ticket-formaint,
+.status-badge.ticket-repair,
+.status-badge.ticket-deferred,
+.status-badge.priority-medium,
+.status-badge.priority-high {
+  background: rgba(255, 186, 74, 0.12);
+  border-color: rgba(255, 186, 74, 0.26);
+  color: #ffd27a;
+}
+/* These two are distinct workflow stages, not "in progress / caution" — keep
+   For Inspection green and For Confirmation purple so status colour stays
+   meaningful instead of four stages all reading amber. For Verification
+   (maintenance records) is the same "pending someone's confirmation" stage
+   as For Confirmation, so it shares the purple treatment. */
+.status-badge.ticket-forinspect { background: rgba(34, 197, 94, 0.14); border-color: rgba(34, 197, 94, 0.30); color: #86efac; }
+.status-badge.ticket-forconfirm,
+.status-badge.for-verification { background: rgba(168, 85, 247, 0.16); border-color: rgba(168, 85, 247, 0.34); color: #d8b4fe; }
+/* Distinct from the amber "under-maintenance" — this is "nothing left to
+   do, just needs one click to close" rather than genuine active repair. */
+.status-badge.awaiting-closure { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.32); color: #93c5fd; }
+/* Condition Monitoring's synthesized row for a vehicle with no check on
+   file — neutral gray, not amber/red, since it isn't a bad result, just an
+   absence of one. */
+.status-badge.not-checked { background: rgba(148, 163, 184, 0.14); border-color: rgba(148, 163, 184, 0.3); color: #cbd5e1; }
+
+.status-badge.inactive,
+.status-badge.decommissioned,
+.status-badge.damaged,
+.status-badge.rejected,
+.status-badge.failed,
+.status-badge.overdue,
+.status-badge.needs-repair,
+.status-badge.ticket-cancelled,
+.status-badge.cancelled,
+.status-badge.priority-critical,
+.status-badge.rework-danger {
+  background: rgba(255, 92, 92, 0.12);
+  border-color: rgba(255, 92, 92, 0.28);
+  color: #ff8d8d;
+}
+
+.status-badge.assigned,
+.status-badge.scheduled,
+.status-badge.info,
+.status-badge.rework-warning {
+  background: rgba(255, 186, 74, 0.12);
+  border-color: rgba(255, 186, 74, 0.26);
+  color: #ffd27a;
+}
+
+/* Maintenance Record "Source" badges — how a record came to exist
+   (see VehicleMaintenanceRecord::getSourceAttribute). Deliberately distinct
+   from the Progress/Verification colors above so the two badges in the same
+   row never read as the same status twice. */
+.status-badge.scheduled-maintenance {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.32);
+  color: #cbd5e1;
+}
+.status-badge.external-shop {
+  background: rgba(249, 115, 22, 0.16);
+  border-color: rgba(249, 115, 22, 0.34);
+  color: #fdba74;
+}
+.status-badge.from-issue-report {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.32);
+  color: #93c5fd;
+}
+.status-badge.field-repair {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.34);
+  color: #a5b4fc;
+}
+
+.status-badge.land {
+  background: rgba(180, 132, 71, 0.14);
+  border-color: rgba(180, 132, 71, 0.28);
+  color: #d3a367;
+}
+
+.status-badge.water {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.28);
+  color: #93c5fd;
+}
+
+.smart-form {
+  gap: 12px;
+}
+
+.smart-form label span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.smart-form input,
+.smart-form select,
+.smart-form textarea,
+.local-search-input,
+.filter-select,
+.popover-date-group input[type="date"] {
+  background: #0b0c0f;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-strong);
+}
+
+.smart-form input::placeholder,
+.local-search-input::placeholder {
+  color: var(--text-faint);
+}
+
+.smart-form input:focus,
+.smart-form select:focus,
+.smart-form textarea:focus,
+.local-search-input:focus,
+.filter-select:focus,
+.popover-date-group input[type="date"]:focus {
+  border-color: var(--primary-border);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.smart-form select option,
+.filter-select option {
+  background: #101114;
+  color: var(--text);
+}
+
+.smart-form input[type="file"] {
+  background: #0b0c0f;
+  border-color: var(--border);
+}
+
+.password-field {
+  position: relative;
+  display: flex;
+}
+.password-field input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 40px;
+}
+.password-field-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.password-field-toggle:hover {
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text-strong);
+}
+
+.photo-thumb,
+.ticket-card-photo {
+  border-color: var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.primary-button,
+.primary-link,
+.filter-apply-btn {
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%) !important;
+  border: 1px solid rgba(96, 165, 250, 0.28) !important;
+  border-radius: 8px;
+  color: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.2);
+  font-weight: 800;
+}
+
+.primary-button:hover:not(:disabled),
+.primary-link:hover,
+.filter-apply-btn:hover {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%) !important;
+  box-shadow: 0 14px 30px rgba(37, 99, 235, 0.28);
+}
+
+.ghost-button,
+.row-actions button,
+.report-heading button,
+table button,
+.table-shell button,
+.filter-clear-btn,
+.filter-clear-all-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  box-shadow: none;
+}
+
+.ghost-button:hover,
+.row-actions button:hover,
+.report-heading button:hover,
+table button:hover,
+.table-shell button:hover {
+  background: var(--surface-hover);
+  border-color: var(--primary-border);
+  color: var(--text-strong);
+  box-shadow: none;
+}
+
+
+.row-actions button.btn-edit-action,
+.DataTable button.btn-edit-action,
+button.btn-edit-action {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.32);
+  color: var(--primary-strong) !important;
+}
+
+.row-actions button.btn-edit-action:hover,
+.DataTable button.btn-edit-action:hover,
+button.btn-edit-action:hover {
+  background: rgba(37, 99, 235, 0.2);
+  border-color: rgba(37, 99, 235, 0.48);
+  box-shadow: none;
+}
+
+.row-actions button.btn-confirm-action,
+.DataTable button.btn-confirm-action,
+button.btn-confirm-action {
+  background: rgba(54, 198, 109, 0.12);
+  border-color: rgba(54, 198, 109, 0.3);
+  color: #68df97 !important;
+}
+
+.row-actions button.btn-confirm-action:hover,
+.DataTable button.btn-confirm-action:hover,
+button.btn-confirm-action:hover {
+  background: rgba(54, 198, 109, 0.2);
+  border-color: rgba(54, 198, 109, 0.48);
+  box-shadow: none;
+}
+
+.row-actions button.btn-delete-action,
+.DataTable button.btn-delete-action,
+button.btn-delete-action,
+.danger-button {
+  background: rgba(37, 99, 235, 0.14);
+  border: 1px solid rgba(37, 99, 235, 0.34);
+  color: #93c5fd !important;
+  box-shadow: none;
+}
+
+.row-actions button.btn-delete-action:hover,
+.DataTable button.btn-delete-action:hover,
+button.btn-delete-action:hover,
+.danger-button:hover:not(:disabled) {
+  background: rgba(255, 92, 92, 0.2);
+  border-color: rgba(255, 92, 92, 0.48);
+  box-shadow: none;
+}
+
+.row-actions button.btn-reopen-action,
+.DataTable button.btn-reopen-action,
+button.btn-reopen-action {
+  background: rgba(255, 186, 74, 0.12);
+  border-color: rgba(255, 186, 74, 0.3);
+  color: #ffd27a !important;
+}
+
+.row-actions button.btn-reopen-action:hover,
+.DataTable button.btn-reopen-action:hover,
+button.btn-reopen-action:hover {
+  background: rgba(255, 186, 74, 0.2);
+  border-color: rgba(255, 186, 74, 0.48);
+  box-shadow: none;
+}
+
+.row-actions button.btn-view-action,
+.DataTable button.btn-view-action,
+button.btn-view-action {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #0270a9 !important;
+  gap: 6px;
+}
+
+.row-actions button.btn-view-action:hover,
+.DataTable button.btn-view-action:hover,
+button.btn-view-action:hover {
+  background: rgba(14, 165, 233, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: none;
+  color: #bae6fd !important;
+}
+
+button.btn-view-action svg {
+  height: 15px;
+  width: 15px;
+}
+
+.notice {
+  border-radius: 8px;
+}
+
+.notice.success {
+  background: rgba(54, 198, 109, 0.12);
+  border: 1px solid rgba(54, 198, 109, 0.3);
+  color: #8ee7ad;
+}
+
+.notice.error,
+.notice.danger {
+  background: rgba(255, 92, 92, 0.12);
+  border: 1px solid rgba(255, 92, 92, 0.3);
+  color: #ffa3a3;
+}
+
+.notice.warning {
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  color: #93c5fd;
+}
+
+.loading,
+.empty-state,
+.empty-prereq {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.empty-prereq h3 {
+  color: var(--text-strong);
+}
+
+.auth-page {
+  background: #05070d;
+  padding: 32px 20px;
+}
+
+.auth-card {
+  width: min(100%, 430px);
+  padding: 38px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45);
+}
+
+.auth-card h1 {
+  color: var(--text-strong);
+}
+
+.auth-logo-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 4px 0 8px;
+}
+
+.auth-gear-icon {
+  color: #2563eb;
+  animation: vms-gear-spin 4s linear infinite;
+  filter: drop-shadow(0 8px 16px rgba(37, 99, 235, 0.28));
+}
+
+.modal-overlay,
+.ticket-detail-overlay {
+  background: rgba(0, 0, 0, 0.74);
+  backdrop-filter: blur(8px);
+}
+
+.modal-box,
+.ticket-detail-panel,
+.notifications-dropdown,
+.filter-popover-menu {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-deep);
+  color: var(--text);
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 360;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: fadeSlide 0.16s ease;
+}
+
+.confirm-dialog {
+  width: min(440px, 100%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-deep);
+  color: var(--text);
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+}
+
+.confirm-dialog-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(37, 99, 235, 0.3);
+  color: var(--primary-strong);
+  display: grid;
+  place-items: center;
+}
+
+.confirm-dialog-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.confirm-dialog-copy .eyebrow {
+  color: var(--primary-strong);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.confirm-dialog-copy h3 {
+  color: var(--text-strong);
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.confirm-dialog-copy p:last-child {
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.confirm-dialog-actions .ghost-button,
+.confirm-dialog-actions .primary-button,
+.confirm-dialog-actions .danger-button {
+  height: 40px;
+}
+
+.modal-header,
+.notifications-header,
+.ticket-detail-header,
+.ticket-detail-actions,
+.ticket-inline-form {
+  background: #101114;
+  border-color: var(--border-subtle);
+}
+
+.modal-close-btn,
+.notification-close-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.modal-close-btn:hover,
+.notification-close-btn:hover {
+  background: rgba(255, 92, 92, 0.12);
+  border-color: rgba(255, 92, 92, 0.32);
+  color: #ff8d8d;
+}
+
+.notifications-dropdown {
+  overflow: hidden;
+}
+
+.notification-item {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.notification-item.unread {
+  background: rgba(37, 99, 235, 0.07);
+}
+
+.notification-item.unread::before {
+  background: var(--primary);
+}
+
+.notification-title {
+  color: var(--text-strong);
+}
+
+.notification-msg {
+  color: var(--text);
+}
+
+.notification-time,
+.notifications-empty {
+  color: var(--text-muted);
+}
+
+.ticket-card-id {
+  color: var(--primary-strong);
+}
+
+.ticket-detail-phase-bar {
+  background: #0d0e11;
+  border-bottom: 1px solid var(--border);
+}
+
+.phase-step {
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-faint);
+}
+
+.phase-step-done {
+  background: rgba(54, 198, 109, 0.09);
+  color: #62dc91;
+}
+
+.phase-step-active {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--primary-strong);
+}
+
+.phase-step-active::after {
+  color: var(--primary-strong);
+}
+
+.modal-body pre[style] {
+  background: #08090b !important;
+  border: 1px solid var(--border) !important;
+  color: #93c5fd !important;
+  border-radius: 8px !important;
+}
+
+.map-card {
+  min-height: 450px;
+}
+
+.map-header {
+  background: #101114;
+}

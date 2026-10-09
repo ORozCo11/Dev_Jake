@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContextObject';
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { user, token, loading } = useContext(AuthContext);
+  const { user, token, loading, sessionError, retrySession, logout } = useContext(AuthContext);
   const location = useLocation();
 
   // Pause rendering while checking for an existing browser session token
@@ -24,6 +24,26 @@ export const ProtectedRoute = ({ children, allowedRoles }) => {
   // If not logged in, redirect them immediately back to the main login portal
   if (!token) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Signed in, but the server couldn't be reached to confirm it — say so and
+  // offer a retry, rather than bouncing to Login or Unauthorized.
+  if (sessionError && !user) {
+    return (
+      <main className="auth-page">
+        <section className="auth-card" role="alert">
+          <p className="eyebrow">VMS</p>
+          <h1>Can't reach the server</h1>
+          <p className="auth-subtitle">
+            Your session is still saved on this device. Check your connection, then try again.
+          </p>
+          <div className="form-actions" style={{ justifyContent: 'center', marginTop: 16 }}>
+            <button type="button" className="ghost-button" onClick={logout}>Sign out</button>
+            <button type="button" className="primary-button" onClick={retrySession}>Try again</button>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   // If logged in but lacks the required role, bounce them to an unauthorized alert view.

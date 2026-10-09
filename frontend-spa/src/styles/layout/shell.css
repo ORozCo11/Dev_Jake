@@ -1,0 +1,766 @@
+/* Split from App.css (lines 802-1560). Order matters: see App.css. */
+/* WORKSPACE LAYOUT */
+.workspace {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 270px 1fr;
+  transition: grid-template-columns 0.18s ease;
+  padding-top: var(--topbar-height, 64px);
+}
+
+.workspace.sidebar-collapsed {
+  grid-template-columns: 76px 1fr;
+}
+
+/* SIDEBAR */
+.sidebar {
+  background: #0f172a;
+  border-right: 1px solid #1e293b;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  height: calc(100vh - var(--topbar-height, 64px));
+  position: sticky;
+  top: var(--topbar-height, 64px);
+  overflow-y: auto;
+  /* Same compositing-layer fix as .topbar — a sticky sidebar can lag a
+     frame behind the fixed header on fast scroll otherwise. */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+.sidebar-brand {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 8px 24px;
+  border-bottom: 1px solid #1e293b;
+  margin-bottom: 20px;
+}
+.brand-logo-badge {
+  width: 40px; height: 40px; flex-shrink: 0;
+  background: #1d4ed8;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(29,78,216,0.4);
+}
+.brand-logo-svg { width: 20px; height: 20px; stroke: #fff; }
+.sidebar .eyebrow {
+  font-size: 0.68rem; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: #3b82f6;
+}
+.sidebar h1 { font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-top: 2px; }
+
+/* NAV */
+.module-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+
+/* Collapsible sidebar sections. The group wrapper keeps its own items tight
+   together, while the gap between groups does the visual separating. */
+.module-nav-group { display: flex; flex-direction: column; gap: 4px; }
+.module-nav-group + .module-nav-group { margin-top: 12px; }
+
+/* Section header — same visual weight as a real nav item (icon + label +
+   chevron), not a quiet label, so it reads as the clickable accordion
+   trigger it is. No group-wide highlight box when expanded — just this
+   header's own hover/color state, like every other nav row. */
+.module-nav .module-nav-section {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 10px 12px;
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  color: #cbd5e1;
+  font-size: 0.875rem; font-weight: 600;
+  text-transform: none; letter-spacing: normal;
+  cursor: pointer; text-align: left;
+  transition: all 0.15s ease;
+}
+.module-nav .module-nav-section:hover { background: #1e293b; color: #f1f5f9; }
+.module-nav-section-label { flex: 1; }
+.module-nav-section-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+/* Points down when folded, up (flipped) when open. */
+.module-nav-section-chevron.is-expanded { transform: rotate(180deg); }
+/* A section's own rows sit indented under its header's text, not flush with
+   it, so the parent/child relationship reads at a glance. */
+.module-nav-group > button:not(.module-nav-section) {
+  padding-left: 34px;
+}
+
+/* Icon-only rail: no room for section labels, and the groups are force-open
+   in JS there so every icon stays reachable. */
+.sidebar.collapsed .module-nav-section { display: none; }
+.sidebar.collapsed .module-nav-group + .module-nav-group { margin-top: 8px; }
+/* ...and no room for the sub-item indent either — every icon must stay
+   centered like a top-level one. Specificity has to beat the light-theme
+   indent override below it in the cascade, not just the base indent rule. */
+.sidebar.collapsed .module-nav-group > button:not(.module-nav-section) {
+  padding-left: 10px;
+}
+
+.module-nav button {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 10px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 0.875rem; font-weight: 400;
+  text-align: left; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.module-nav button:hover { background: #1e293b; color: #e2e8f0; }
+.module-nav button:active { transform: scale(0.97); }
+.module-nav button.active {
+  background: #1d4ed8;
+  color: #ffffff;
+  font-weight: 400;
+  box-shadow: 0 4px 12px rgba(29,78,216,0.3);
+}
+.module-nav button.active .nav-icon { stroke: #fff; }
+.nav-icon { width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; flex-shrink: 0; }
+/* Sidebar icons read bolder than the default line weight */
+.module-nav .nav-icon { stroke-width: 2.75; }
+.module-nav button span { flex: 1; }
+.module-nav button span.module-nav-badge {
+  flex: 0 0 22px;
+  box-sizing: border-box;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  text-align: center;
+}
+/* Numeric count badge next to module headings (e.g. "Issue Reports [2]"),
+   matching the sidebar nav badge's red pill treatment. */
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.module-nav button.active .module-nav-badge {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+/* Activity Log — a rounded pill color tag per module/category (color picked
+   deterministically per module string, see moduleBadgeTone), the Action
+   column as the plain full sentence, and a User cell that stacks the
+   actor's role in small muted text under their name instead of a separate
+   Role column. */
+.log-category-tag {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.log-user-cell { display: flex; flex-direction: column; gap: 2px; }
+.log-user-role {
+  padding-left: 34px;
+  font-size: 0.72rem;
+  color: var(--text-muted, #64748b);
+}
+
+/* Underline tabs (List View / Recent Activities, Card/List elsewhere) — a
+   lighter-weight alternative to the filled-pill .locations-tab-button
+   segmented control, for views that read as one page with two lenses
+   rather than a mode switch. */
+.view-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  margin-bottom: 16px;
+}
+.view-tabs button {
+  padding: 10px 2px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.view-tabs button:hover { color: var(--text, #1f2937); }
+.view-tabs button.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+/* Generate Report dropdown */
+.generate-report-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.generate-report-panel { width: 240px; padding: 6px; }
+.generate-report-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.generate-report-option:hover { background: var(--surface-2, #f8fafc); }
+.generate-report-option strong { font-size: 0.82rem; color: var(--text-strong, #0f172a); }
+.generate-report-option span { font-size: 0.72rem; color: var(--text-muted, #64748b); }
+
+/* Recent Activities timeline */
+.activity-timeline-wrap { margin-top: 4px; }
+.activity-timeline-title { margin: 0 0 16px; font-size: 1rem; font-weight: 700; color: var(--text-strong, #0f172a); }
+.activity-timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.activity-timeline::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--border, #e2e8f0);
+}
+.activity-timeline-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 0;
+}
+.activity-timeline-dot {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eff6ff;
+  color: #2563eb;
+}
+.activity-timeline-body { flex: 1; min-width: 0; }
+.activity-timeline-body strong { display: block; font-size: 0.88rem; color: var(--text-strong, #0f172a); }
+.activity-timeline-body p { margin: 2px 0 0; font-size: 0.82rem; color: var(--text-muted, #64748b); }
+.activity-timeline-time { flex-shrink: 0; font-size: 0.78rem; color: var(--text-muted, #94a3b8); white-space: nowrap; }
+
+/* SIDEBAR — collapsed state (icons only, hidden labels) */
+.sidebar-toggle-btn { flex-shrink: 0; }
+.sidebar.collapsed .sidebar-brand { justify-content: center; padding: 8px 0 24px; }
+.sidebar.collapsed .eyebrow,
+.sidebar.collapsed .module-nav button span,
+.sidebar.collapsed .module-nav-badge,
+.sidebar.collapsed .profile-info,
+.sidebar.collapsed .profile-arrow-icon {
+  display: none;
+}
+.sidebar.collapsed .module-nav button { justify-content: center; padding: 10px; }
+.sidebar.collapsed .profile-card { justify-content: center; }
+
+/* PROFILE PANEL */
+.profile-panel {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #1e293b;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.profile-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.profile-card:hover { background: #273549; }
+.profile-avatar-wrapper { position: relative; flex-shrink: 0; }
+.profile-avatar {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 0.82rem;
+}
+.user-info-card { display: flex; align-items: center; gap: 14px; padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--border, #e2e8f0); }
+.user-info-avatar { width: 52px; height: 52px; font-size: 1.1rem; flex-shrink: 0; }
+.user-info-name { font-size: 1.05rem; font-weight: 700; color: var(--text-strong, #0f172a); }
+.user-info-role { font-size: 0.78rem; font-weight: 600; color: var(--primary, #2563eb); }
+.user-info-details { display: flex; flex-direction: column; gap: 12px; }
+.user-info-details dt { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted, #64748b); }
+.user-info-details dd { font-size: 0.9rem; color: var(--text, #1f2937); margin-top: 2px; }
+.issue-reporter-link { background: none; border: none; padding: 0; font: inherit; color: var(--primary, #2563eb); font-weight: 600; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; transition: text-decoration-color 0.15s; }
+.issue-reporter-link:hover { text-decoration-color: currentColor; }
+
+.profile-status-online {
+  position: absolute; bottom: 0; right: 0;
+  width: 9px; height: 9px;
+  background: #10b981; border: 2px solid #0f172a; border-radius: 50%;
+}
+.profile-info { flex: 1; min-width: 0; }
+.profile-name { display: block; color: #f1f5f9; font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile-role { display: block; color: #64748b; font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile-arrow-icon { width: 14px; height: 14px; stroke: #64748b; transition: transform 0.2s; }
+.profile-arrow-icon.rotated { transform: rotate(180deg); }
+
+.profile-details-dropdown {
+  background: #1a2539;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  animation: fadeSlide 0.2s ease;
+}
+/* Compact user info row — ID and email next to each other */
+.profile-info-row {
+  display: flex; gap: 16px; align-items: flex-start;
+  padding: 8px 10px; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b;
+}
+.profile-info-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.profile-info-item dt { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+.profile-info-item dd { color: #e2e8f0; font-size: 0.85rem; font-weight: 500; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+ 
+.profile-actions { display: flex; flex-direction: column; gap: 10px; }
+.profile-actions .smart-form h3 { font-size: 0.9rem; color: #e2e8f0 !important; padding-bottom: 8px; border-bottom: 1px solid #334155; margin-bottom: 6px; }
+.profile-actions .smart-form label span { color: #94a3b8 !important; font-size: 0.78rem !important; }
+.profile-actions .smart-form input {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+  font-size: 0.9rem;
+  padding: 8px 10px !important;
+}
+.profile-actions .smart-form input:focus { border-color: #3b82f6 !important; }
+.profile-actions .form-actions { justify-content: stretch; }
+.profile-actions .primary-button { width: 100%; height: 36px; font-size: 0.88rem; }
+ 
+.logout-button {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 10px;
+  background: transparent;
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 8px;
+  color: #f87171; font-size: 0.9rem; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+}
+.logout-button:hover { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.5); }
+
+/* CONTENT AREA */
+.content-area {
+  background:
+    radial-gradient(circle at top right, rgba(29, 78, 216, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 0;
+}
+
+/* TOPBAR */
+.topbar {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.98));
+  border-bottom: 1px solid #cfe0f7;
+  padding: 16px 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  /* Fixed floor, not the var: --topbar-height is MEASURED from this element
+     (useCssHeightVar), so reading it here would stop the bar ever shrinking. */
+  min-height: 64px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  /* Promotes the fixed header to its own GPU compositing layer — without
+     this, some Chrome/Windows setups repaint a `position: fixed` element a
+     frame late during a fast scroll, showing a brief gap between it and the
+     content underneath before it "catches up". */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+.topbar-left { display: flex; align-items: center; gap: 14px; }
+
+/* DEV-ONLY impersonation control — on-brand blue, clean rectangular fields.
+   Rendered only under import.meta.env.DEV, absent from production builds. */
+.dev-impersonate {
+  display: flex; align-items: center; gap: 8px;
+}
+.dev-impersonate select {
+  border: 1px solid rgba(37, 99, 235, 0.28); border-radius: 6px;
+  padding: 4px 10px; font-size: 0.78rem; max-width: 190px;
+  background: #ffffff; color: #0f172a; cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dev-impersonate select:hover { border-color: #2563eb; }
+.dev-impersonate select:focus {
+  outline: none; border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+.dev-impersonate button {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: none; border-radius: 6px; padding: 5px 14px;
+  font-size: 0.76rem; font-weight: 700; cursor: pointer;
+  background: #2563eb; color: #fff;
+  transition: background 0.15s ease, transform 0.08s ease;
+}
+.dev-impersonate button:hover:not(:disabled) { background: #1d4ed8; }
+.dev-impersonate button:active:not(:disabled) { transform: translateY(1px); }
+.dev-impersonate button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Vehicle Location map's barangay/city boundary selector — same visual
+   language as .dev-impersonate (on-brand blue, compact fields) since it
+   sits right beside it, but always renders (not DEV-gated). */
+.map-boundary-selector {
+  display: flex; align-items: center; gap: 8px;
+}
+.map-boundary-selector select {
+  border: 1px solid rgba(37, 99, 235, 0.28); border-radius: 6px;
+  padding: 4px 10px; font-size: 0.78rem; max-width: 170px;
+  background: #ffffff; color: #0f172a; cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.map-boundary-selector select:hover { border-color: #2563eb; }
+.map-boundary-selector select:focus {
+  outline: none; border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+.map-boundary-selector select:disabled { opacity: 0.5; cursor: not-allowed; }
+.map-boundary-selector button {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid rgba(37, 99, 235, 0.28); border-radius: 6px; padding: 4px 12px;
+  font-size: 0.76rem; font-weight: 700; cursor: pointer;
+  background: #ffffff; color: #2563eb;
+  transition: background 0.15s ease, transform 0.08s ease;
+}
+.map-boundary-selector button:hover { background: #eff6ff; }
+.map-boundary-selector button:active { transform: translateY(1px); }
+
+.breadcrumb-path { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; }
+.topbar h2 { font-size: 1.4rem; font-weight: 800; color: #0f172a; margin-top: 2px; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+/* Phase A5 — persistent full-width reminder (not just a topbar button) that
+   the current session is a read-only impersonation, shown on every page
+   for as long as it's active. Amber/warning-toned on purpose, same family
+   as the app's other warning callouts, so it reads as "you're not really
+   this account" rather than blending in as ordinary chrome. */
+.impersonation-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  background: #4a2e05;
+  border-bottom: 1px solid #f59e0b;
+  color: #fcd34d;
+  font-size: 0.85rem;
+}
+.impersonation-banner > svg { flex-shrink: 0; }
+.impersonation-banner strong { color: #fde68a; }
+.impersonation-banner-return {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 7px 14px;
+  border: 1.5px solid #f59e0b;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+.impersonation-banner-return:hover { background: rgba(245, 158, 11, 0.22); }
+html[data-theme="light"] .impersonation-banner {
+  background: #fffbeb;
+  border-bottom: 1px solid #fcd34d;
+  color: #92400e;
+}
+html[data-theme="light"] .impersonation-banner strong { color: #78350f; }
+html[data-theme="light"] .impersonation-banner-return { color: #92400e; }
+.topbar-search {
+  display: flex; align-items: center; position: relative;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 8px; height: 38px; padding: 0 12px 0 36px; width: 200px;
+}
+.topbar-search input { border: none; background: transparent; outline: none; font-size: 0.9rem; color: #0f172a; width: 100%; }
+.topbar-search input::placeholder { color: #94a3b8; }
+.search-icon { position: absolute; left: 10px; width: 15px; height: 15px; stroke: #94a3b8; }
+.search-badge { font-size: 0.78rem; color: #94a3b8; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 5px; border-radius: 4px; white-space: nowrap; }
+.icon-btn {
+  width: 38px; height: 38px; border-radius: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  display: flex; align-items: center; justify-content: center;
+  color: #64748b; cursor: pointer; position: relative; transition: all 0.15s;
+}
+.icon-btn:hover { background: #f1f5f9; color: #0f172a; }
+.icon-btn svg { width: 16px; height: 16px; }
+/* Holds an icon-btn's exact footprint (see .row-actions button.icon-btn
+   below) when a row doesn't have that action, so the remaining buttons
+   still land in the same column across every row instead of re-centering. */
+.icon-btn-spacer { display: inline-block; width: 32px; height: 32px; flex-shrink: 0; }
+.notification-indicator {
+  position: absolute; top: -4px; right: -4px;
+  background: #dc2626; color: #ffffff;
+  font-size: 0.65rem; font-weight: 700;
+  min-width: 16px; height: 16px; border-radius: 99px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px; border: 2px solid #ffffff;
+}
+.status-pill {
+  display: flex; align-items: center; gap: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 99px; padding: 6px 14px;
+  font-size: 0.9rem; font-weight: 600; color: #0f172a;
+}
+.status-pill::before {
+  content: ''; width: 7px; height: 7px; background: #10b981;
+  border-radius: 50%; box-shadow: 0 0 6px #10b981;
+}
+.status-name { color: #0f172a; }
+
+/* MAIN CONTENT PADDING */
+.content-body { padding: 28px 32px; }
+
+/* WORKSPACE FOOTER */
+.workspace-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px 32px;
+  padding: 40px 40px;
+  background: #2563eb;
+}
+.workspace-footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.workspace-footer-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workspace-footer-gear-icon {
+  color: #ffffff;
+  /* White gear on the blue footer — draw the center ring in the footer blue so it stays visible */
+  --gear-ring: #2563eb;
+}
+.workspace-footer-wordmark .vms-wordmark {
+  color: #ffffff;
+}
+/* Footer text is solid white: the 75-88% white it used before fell below
+   4.5:1 on the brand blue. Links are told apart by underline instead. */
+.workspace-footer-tagline {
+  font-style: italic;
+  font-size: 0.95rem;
+  color: #ffffff;
+  margin: 0;
+}
+.workspace-footer-social {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.workspace-footer-social a {
+  display: inline-flex;
+  color: #ffffff;
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+.workspace-footer-social a:hover {
+  opacity: 1;
+}
+.workspace-footer-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+}
+.workspace-footer-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.workspace-footer-btn {
+  display: inline-block;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.workspace-footer-btn-light {
+  background: #ffffff;
+  border: 1px solid #ffffff;
+  color: #2563eb;
+}
+.workspace-footer-btn-light:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.workspace-footer-btn-dark {
+  background: rgba(15, 23, 42, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: #ffffff;
+}
+.workspace-footer-btn-dark:hover {
+  background: rgba(15, 23, 42, 0.4);
+}
+.workspace-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.workspace-footer-links a {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.workspace-footer-links a:hover {
+  color: #ffffff;
+}
+.workspace-footer-copyright {
+  font-size: 0.78rem;
+  color: #ffffff;
+  white-space: nowrap;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .workspace-footer {
+    justify-content: center;
+    text-align: center;
+  }
+  .workspace-footer-actions {
+    align-items: center;
+    min-width: 0;
+  }
+  .workspace-footer-buttons,
+  .workspace-footer-links {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .workspace-footer-copyright {
+    white-space: normal;
+  }
+}
+
+/* AuthFooter — public-page footer (Login, About, Developers). No logo
+   (the header already carries the brand); a large tagline + socials on the
+   left, real site links on the right, copyright/legal along the bottom. */
+.auth-footer {
+  margin-top: auto;
+  background: #1d4ed8;
+  padding: 48px 40px 0;
+}
+.auth-footer-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  flex-wrap: wrap;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-bottom: 32px;
+}
+.auth-footer-brand { max-width: 420px; }
+.auth-footer-tagline {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.3;
+  color: #ffffff;
+  margin: 0 0 20px;
+}
+.auth-footer-social {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.auth-footer-social a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.auth-footer-social a:hover { background: rgba(255, 255, 255, 0.26); color: yellowgreen; transform: translateY(-2px); }
+.auth-footer-social a:active { transform: scale(0.92); }
+.auth-footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.auth-footer-links a {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  display: inline-block;
+  transition: color 0.15s ease, transform 0.12s ease;
+}
+.auth-footer-links a:hover { color: yellowgreen; text-decoration: underline; transform: translateX(3px); }
+.auth-footer-links a:active { transform: scale(0.95); }
+.auth-footer-bottom {
+  /* 3-track grid (copyright | legal | empty) instead of space-between —
+     puts Privacy Policy/Terms of Service in the true visual center of the
+     bar rather than pinned to the right edge, regardless of how wide the
+     copyright text is. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+}
+.auth-footer-copyright {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+.auth-footer-legal {
+  display: flex;
+  gap: 24px;
+  justify-self: center;
+}
+.auth-footer-legal a {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #ffffff;
+  transition: color 0.15s ease;
+}
+.auth-footer-legal a:hover { color: yellowgreen; text-decoration: underline; }
+@media (max-width: 720px) {
+  .auth-footer-main { flex-direction: column; }
+  .auth-footer-bottom { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+}

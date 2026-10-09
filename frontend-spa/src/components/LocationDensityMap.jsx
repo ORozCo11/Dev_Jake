@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Polygon, Popup, TileLayer, Tooltip, useMap, ZoomControl } from 'react-leaflet';
-import { toPng } from 'html-to-image';
 import api from '../api/axios';
 import {
   PAKNAAN_CENTER,
   PAKNAAN_POLYGON,
 } from '../data/paknaanLocationDensity';
 import { geoJsonToRings } from '../utils/boundary';
+import useDialogA11y from '../hooks/useDialogA11y';
 
 // Normalizes a hub record from the Laravel `/hubs` API into the shape the map/UI expects.
 function normalizeHub(record) {
@@ -26,6 +26,11 @@ function normalizeHub(record) {
     isCustom: !record.is_default,
     isHidden: !!record.is_hidden,
   };
+}
+
+async function loadHubs() {
+  const response = await api.get('/hubs');
+  return response.data.map(normalizeHub);
 }
 
 // Was CARTO's basemaps.cartocdn.com "light_all" — free and keyless when this
@@ -181,6 +186,8 @@ async function captureMapToPng(mapEl) {
     throw new Error('Map element not found');
   }
 
+  // Loaded on demand — only the Download button needs it.
+  const { toPng } = await import('html-to-image');
   const dataUrl = await toPng(mapEl, {
     cacheBust: true,
     pixelRatio: 2,
@@ -342,22 +349,30 @@ function LocationDensityMap({
     };
   }, [isMaximized]);
 
-  const fetchHubs = useCallback(async () => {
-    try {
-      const response = await api.get('/hubs');
-      const normalized = response.data.map(normalizeHub);
-      setHubRecords(normalized);
-      if (onHubsChange) {
-        onHubsChange(normalized.filter((hub) => !hub.isHidden));
-      }
-    } catch (error) {
-      console.error('Failed to load hubs:', error);
+  const applyHubs = useCallback((normalized) => {
+    setHubRecords(normalized);
+    if (onHubsChange) {
+      onHubsChange(normalized.filter((hub) => !hub.isHidden));
     }
   }, [onHubsChange]);
 
+  const fetchHubs = useCallback(async () => {
+    try {
+      applyHubs(await loadHubs());
+    } catch (error) {
+      console.error('Failed to load hubs:', error);
+    }
+  }, [applyHubs]);
+
+  // Initial load. Ignores a response that arrives after unmount or after
+  // onHubsChange changed, so a slow request can't overwrite newer data.
   useEffect(() => {
-    fetchHubs().catch(() => {});
-  }, [fetchHubs]);
+    let cancelled = false;
+    loadHubs()
+      .then((normalized) => { if (!cancelled) applyHubs(normalized); })
+      .catch((error) => console.error('Failed to load hubs:', error));
+    return () => { cancelled = true; };
+  }, [applyHubs]);
 
   // When the naming modal opens, focus the input.
   useEffect(() => {
@@ -440,6 +455,11 @@ function LocationDensityMap({
   const cancelDeleteHub = useCallback(() => {
     setDeleteCandidate(null);
   }, []);
+
+  const namingDialogRef = useRef(null);
+  const deleteDialogRef = useRef(null);
+  useDialogA11y(namingDialogRef, { open: Boolean(pendingLatLng), onClose: cancelNaming, initialFocusRef: nameInputRef });
+  useDialogA11y(deleteDialogRef, { open: Boolean(deleteCandidate), onClose: cancelDeleteHub });
 
   const confirmDeleteHub = useCallback(async () => {
     if (!deleteCandidate || !canManageHubs) return;
@@ -759,6 +779,7 @@ function LocationDensityMap({
           <Marker
             icon={hubIcons[hub.id]}
             key={hub.id}
+            title={hub.name}
             position={[hub.lat, hub.lng]}
             zIndexOffset={1050}
           >
@@ -800,6 +821,7 @@ function LocationDensityMap({
           <Marker
             icon={vehicleIcons[hub.id]}
             key={`vehicles-${hub.id}`}
+            title={`${hubVehicles.length} vehicle${hubVehicles.length === 1 ? '' : 's'} at ${hub.name}`}
             position={[hub.lat, hub.lng]}
             zIndexOffset={1400}
           >
@@ -835,6 +857,7 @@ function LocationDensityMap({
         {selectedVehicleGroup && (
           <Marker
             icon={selectedVehicleIcon}
+            title={`Selected vehicle at ${selectedVehicleGroup.hub.name}`}
             key={`selected-vehicle-${selectedVehicleGroup.vehicle.vehicle_id}`}
             position={[selectedVehicleGroup.hub.lat, selectedVehicleGroup.hub.lng]}
             zIndexOffset={1750}
@@ -868,6 +891,8 @@ function LocationDensityMap({
       {pendingLatLng && (
         <div className="hub-modal-overlay" onMouseDown={cancelNaming}>
           <div
+            ref={namingDialogRef}
+            tabIndex={-1}
             className="hub-modal"
             role="dialog"
             aria-modal="true"
@@ -965,8 +990,10 @@ function LocationDensityMap({
       {deleteCandidate && (
         <div className="hub-modal-overlay" onMouseDown={cancelDeleteHub}>
           <div
+            ref={deleteDialogRef}
+            tabIndex={-1}
             className="hub-modal hub-modal-danger"
-            role="dialog"
+            role="alertdialog"
             aria-modal="true"
             aria-labelledby="hub-delete-title"
             onMouseDown={(e) => e.stopPropagation()}

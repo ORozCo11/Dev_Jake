@@ -1,0 +1,91 @@
+/* Split from App.css (lines 2246-2339). Order matters: see App.css. */
+/* DASHBOARD */
+.dashboard-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+.metric-grid { grid-column: 1/-1; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+/* Dashboard's headline KPI row carries all 8 fleet counts in one consistent
+   tile style — 4 fixed columns so they land as two clean rows of four rather
+   than an auto-fit row that sizes the trailing card differently. */
+.dashboard-headline-grid { grid-template-columns: repeat(4, 1fr) !important; }
+@media (max-width: 900px) {
+  .dashboard-headline-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 560px) {
+  .dashboard-headline-grid { grid-template-columns: 1fr !important; }
+}
+/* Maintenance Schedule's 8-card row (Total + 4 urgency buckets + Completed
+   + Awaiting Verification + Cancelled) — same fixed-column fix as the
+   dashboard's headline grid, so it lands as two even rows of four instead
+   of auto-fit's ragged trailing row (7 wide columns, 1 card alone on row 2). */
+.metric-grid.schedule-stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) {
+  .metric-grid.schedule-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.full-span { grid-column: 1/-1; }
+.metric-card {
+  background: linear-gradient(180deg, #ffffff, #f8fbff); border: 1px solid #d9e6f8; border-radius: 16px; padding: 22px;
+  position: relative; overflow: hidden;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.metric-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1); }
+.metric-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: #1d4ed8; }
+.metric-card:nth-child(2)::before { background: #10b981; }
+.metric-card:nth-child(3)::before { background: #f59e0b; }
+.metric-card:nth-child(4)::before { background: #ef4444; }
+.metric-card:nth-child(5)::before { background: #8b5cf6; }
+.metric-card:nth-child(6)::before { background: #0ea5e9; }
+.metric-card span { display: block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #475569; margin-bottom: 10px; }
+.metric-card strong { display: block; font-size: 2rem; font-weight: 800; color: #1d4ed8; line-height: 1; }
+
+/* Iconic metric cards (e.g. Vehicle Management status summary) — icon chip + stacked label/value */
+.metric-card-iconic { display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px 18px; }
+.metric-card-iconic::before { display: none; }
+.metric-card-iconic .metric-card-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; line-height: 0; margin: 0; }
+.metric-card-icon svg { display: block; margin: auto; }
+/* Total/summary card icon — theme-aware blue tint instead of a hardcoded
+   pale-blue that only worked in light mode. */
+.metric-card-icon.is-total { background: rgba(37, 99, 235, 0.12); color: var(--primary, #2563eb); }
+
+/* Solid-color stat cards — each status gets its own bold background
+   (colors come from the card's own inline style) instead of a white card
+   with only the icon chip tinted, so the row reads at a glance. */
+.metric-card-solid {
+  border: none;
+}
+.metric-card-solid:hover {
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.25);
+}
+
+/* Clickable stat cards double as filter toggles — a visible press effect
+   on every click, plus a persistent state while the filter it represents
+   is the active one, so "did that click register" is never ambiguous. The
+   card's own icon always stays put (swapping it to a checkmark read as
+   wrong on cards like "Pending" whose icon means something specific); the
+   "selected" signal is a white gap ring + a glow tinted to the card's own
+   color instead (set inline, since it depends on each card's color) — the
+   same visual language as a selected color swatch, readable against any
+   background. */
+.stat-filter-card {
+  position: relative;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.stat-filter-card:active {
+  transform: scale(0.97);
+}
+.stat-filter-card.is-active {
+  transform: translateY(-2px);
+}
+.metric-card-iconic .metric-card-body { display: flex; flex-direction: column; text-align: left; }
+/* Fixed (not theme-variable) colors — .metric-card's own background is
+   hardcoded white/light regardless of app theme, so these cards need text
+   that's always readable against that, not var(--text-strong)/(--text-muted)
+   which flip to near-white in dark mode and would vanish on a white card. */
+.metric-card-iconic .metric-card-body span { margin-bottom: 4px; color: #64748b; }
+.metric-card-iconic .metric-card-body strong { font-size: 1.5rem; color: #0f172a; }
+
+/* Dashboard's top metric row specifically — a touch more compact than the
+   iconic stat cards used on module pages (Vehicle Management, etc.). */
+.dashboard-metric-card.metric-card-iconic { gap: 10px; padding: 12px 14px; }
+.dashboard-metric-card .metric-card-icon { width: 32px; height: 32px; border-radius: 8px; }
+.dashboard-metric-card .metric-card-body span { font-size: 0.66rem; margin-bottom: 2px; }
+.dashboard-metric-card .metric-card-body strong { font-size: 1.2rem; }

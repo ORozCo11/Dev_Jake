@@ -1,0 +1,992 @@
+/* Split from App.css (lines 11170-12156). Order matters: see App.css. */
+/* ============================================================= */
+/* REALCORE-LIKE LIGHT ADMIN THEME                               */
+/* ============================================================= */
+html[data-theme="light"] {
+  --bg: #edf4fb;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f7faff;
+  --surface-3: #edf4fb;
+  --surface-hover: #eef6ff;
+  --sidebar: #0c62b4;
+  --border: #cddcf0;
+  --border-subtle: #e2ebf7;
+  --text: #17243a;
+  --text-strong: #071a35;
+  --text-muted: #56657a;
+  --text-faint: #93a4b8;
+  --primary: #2a6fca;
+  --primary-strong: #2366c2;
+  --primary-soft: rgba(47, 125, 225, 0.12);
+  --primary-border: rgba(47, 125, 225, 0.34);
+  --success: #14b879;
+  --text-success: #10a66d;
+  --shadow-deep: 0 18px 38px rgba(31, 75, 122, 0.14);
+  --shadow-soft: 0 4px 10px rgba(15, 23, 42, 0.12);
+}
+
+html[data-theme="light"],
+html[data-theme="light"] body,
+html[data-theme="light"] #root {
+  background: #edf4fb;
+  color: var(--text);
+}
+
+body,
+button,
+input,
+select,
+textarea,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+thead th,
+.smart-form h3,
+.primary-button,
+.primary-link,
+.ghost-button,
+.row-actions button,
+.report-heading button,
+table button,
+.table-shell button,
+.status-badge {
+  font-family: 'Poppins', 'Inter', "Trebuchet MS", Helvetica, sans-serif !important;
+}
+
+html[data-theme="light"] .workspace {
+  background: #edf4fb;
+  grid-template-columns: 224px minmax(0, 1fr);
+}
+
+html[data-theme="light"] .workspace.sidebar-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+html[data-theme="light"] .sidebar {
+  background: #0c62b4;
+  border-right: 1px solid #0758a6;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.12);
+  padding: 18px 14px;
+  --surface: rgba(255, 255, 255, 0.08);
+  --surface-hover: rgba(255, 255, 255, 0.16);
+  --border: rgba(255, 255, 255, 0.16);
+  --border-subtle: rgba(255, 255, 255, 0.14);
+  --text: #eaf3ff;
+  --text-strong: #ffffff;
+  --text-muted: #d5e8ff;
+  --text-faint: #b7d7fb;
+}
+
+html[data-theme="light"] .sidebar-brand {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  margin-bottom: 16px;
+  padding: 4px 8px 18px;
+}
+
+html[data-theme="light"] .sidebar h1,
+html[data-theme="light"] .sidebar .eyebrow {
+  color: #ffffff;
+}
+
+html[data-theme="light"] .module-nav {
+  gap: 3px;
+}
+
+html[data-theme="light"] .module-nav button {
+  border-radius: 0;
+  color: #edf6ff;
+  font-size: 0.8rem;
+  font-weight: 400;
+  min-height: 38px;
+  padding: 9px 10px;
+}
+
+/* Re-applies the sub-item indent (see base .module-nav-group rule above) —
+   this theme's own `.module-nav button` padding shorthand just above would
+   otherwise win on specificity and flatten it back to 10px. */
+html[data-theme="light"] .module-nav-group > button:not(.module-nav-section) {
+  padding-left: 34px;
+}
+
+html[data-theme="light"] .module-nav button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+/* Active item: a solid white pill with brand-blue text — unmistakable
+   against the blue rail (was a faint white wash at 4.2:1 contrast). */
+html[data-theme="light"] .module-nav button.active,
+html[data-theme="light"] .sidebar .module-nav button.active:hover {
+  background: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(7, 26, 53, 0.18);
+  color: #0c62b4;
+  font-weight: 700;
+}
+
+html[data-theme="light"] .module-nav button.active .nav-icon {
+  stroke: #0c62b4;
+}
+
+/* Section header carries the same weight as a real nav item here too — an
+   accordion trigger, not a quiet label — matching the base (dark) theme
+   restyle above. `html[data-theme="light"] .module-nav button` above is more
+   specific than the base .module-nav-section rule, so this still needs its
+   own declaration even though the values now largely mirror it. */
+html[data-theme="light"] .module-nav .module-nav-section {
+  color: #edf6ff;
+  padding: 9px 10px;
+  min-height: 38px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 0;
+}
+html[data-theme="light"] .module-nav .module-nav-section:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+html[data-theme="light"] .profile-card,
+html[data-theme="light"] .profile-details-dropdown,
+html[data-theme="light"] .profile-info-row {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+html[data-theme="light"] .content-area {
+  background: #edf4fb;
+}
+
+html[data-theme="light"] .topbar {
+  background: #ffffff;
+  border-bottom: 1px solid #cfe0f2;
+  box-shadow: 0 2px 7px rgba(31, 75, 122, 0.06);
+  padding: 12px 24px;
+}
+
+html[data-theme="light"] .page-heading-row {
+  margin: 12px 24px 0;
+  padding: 12px 18px;
+  background: #eff5ff;
+  border-color: #dbeafe;
+}
+
+html[data-theme="light"] .breadcrumb-path {
+  color: #2366c2;
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: none;
+}
+
+html[data-theme="light"] .topbar h2 {
+  color: #2366c2;
+  font-size: 1.18rem;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+html[data-theme="light"] .icon-btn,
+html[data-theme="light"] .status-pill,
+html[data-theme="light"] .topbar-search {
+  background: #ffffff;
+  border: 1px solid #cfdced;
+  border-radius: 4px;
+  color: #2366c2;
+  height: 32px;
+}
+
+html[data-theme="light"] .icon-btn {
+  width: 32px;
+}
+
+html[data-theme="light"] .status-pill {
+  color: #17243a;
+  font-size: 0.78rem;
+  padding: 5px 10px;
+}
+
+html[data-theme="light"] .content-body {
+  padding: 16px 24px 28px;
+}
+
+html[data-theme="light"] .panel,
+html[data-theme="light"] .metric-card,
+html[data-theme="light"] .graph-panel,
+html[data-theme="light"] .ticket-card,
+html[data-theme="light"] .map-card,
+html[data-theme="light"] .auth-card,
+html[data-theme="light"] .module-grid .panel {
+  background: #ffffff;
+  border: 1px solid #cddcf0;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(31, 75, 122, 0.06);
+  color: #17243a;
+}
+
+html[data-theme="light"] .panel {
+  padding: 14px 16px;
+}
+
+/* Solid-color stat cards don't want the light theme's pale card border —
+   the whole card IS the color, so an outline just looks like a mismatched
+   ring around it. */
+html[data-theme="light"] .metric-card-solid {
+  border: none;
+}
+
+/* Module content panels (the card wrapping a table + its search/filter bar) —
+   calm 1px border + soft neutral shadow, matching every other card in the
+   app. Previously a thick blue border + blue-tinted glow, which bled onto
+   any content sitting near the panel's edge (e.g. the Remarks callout). */
+html[data-theme="light"] .module-grid .panel {
+  border: 1px solid #cddcf0;
+  box-shadow: 0 6px 16px rgba(31, 75, 122, 0.06);
+}
+
+html[data-theme="light"] .panel-header,
+html[data-theme="light"] .modal-header,
+html[data-theme="light"] .notifications-header,
+html[data-theme="light"] .map-header {
+  border-bottom-color: #dce7f4;
+}
+
+html[data-theme="light"] .panel-header h3,
+html[data-theme="light"] .module-action-bar h3,
+html[data-theme="light"] .modal-header h3,
+html[data-theme="light"] .notifications-header h4,
+html[data-theme="light"] .map-header h4,
+html[data-theme="light"] .report-heading h3,
+html[data-theme="light"] .ticket-card-title,
+html[data-theme="light"] .ticket-detail-title,
+html[data-theme="light"] .ticket-section h4,
+html[data-theme="light"] .ticket-inline-form h4 {
+  color: #071a35;
+}
+
+/* Every Add/Edit form (FormModal) uses .modal-header, which has a
+   hardcoded near-black background (#101114) meant for dark mode. Unlike
+   .notifications-header/.ticket-detail-header (already relighted above),
+   .modal-header had no light-theme override, so every form dialog kept a
+   black title bar. Title text is bumped to the theme's blue accent to
+   read as an intentional header, not a leftover fix. */
+html[data-theme="light"] .modal-header {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .modal-header h3 {
+  color: #2366c2;
+}
+
+html[data-theme="light"] .info-callout {
+  background: #f5f8fd !important;
+  border: 1px solid #cddcf0 !important;
+  border-radius: 5px;
+  margin-bottom: 0;
+  padding: 10px 14px;
+}
+
+html[data-theme="light"] .callout-icon {
+  stroke: #2575d8;
+}
+
+html[data-theme="light"] .module-description {
+  color: #2366c2 !important;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+html[data-theme="light"] .module-action-bar {
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  gap: 12px;
+  margin-bottom: 4px;
+  padding: 4px 0 12px;
+}
+
+html[data-theme="light"] .module-action-bar h3 {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+html[data-theme="light"] .filter-bar-container {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #e2edf9;
+  border-radius: 0;
+  gap: 9px;
+  margin: 4px 0 14px;
+  padding: 0 0 14px;
+}
+
+html[data-theme="light"] .module-filter-panel,
+[data-theme="light"] .module-filter-panel {
+  padding: 14px 18px;
+}
+
+html[data-theme="light"] .module-filter-panel .filter-bar-container,
+[data-theme="light"] .module-filter-panel .filter-bar-container {
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+html[data-theme="light"] .filter-label {
+  color: #071a35;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: none;
+}
+
+html[data-theme="light"] .smart-form input,
+html[data-theme="light"] .smart-form select,
+html[data-theme="light"] .smart-form textarea,
+html[data-theme="light"] .filter-select,
+html[data-theme="light"] .local-search-input,
+html[data-theme="light"] .profile-actions .smart-form input,
+html[data-theme="light"] .popover-date-group input[type="date"] {
+  background: #ffffff !important;
+  border: 1px solid #cbd8e9;
+  border-radius: 3px;
+  color: #17243a;
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+html[data-theme="light"] .filter-select {
+  min-height: 30px;
+  min-width: 150px;
+  padding: 5px 9px;
+  border: 1.5px solid #2563eb;
+}
+
+html[data-theme="light"] .local-search-container {
+  width: min(300px, 100%);
+}
+
+html[data-theme="light"] .local-search-input {
+  height: 40px;
+  padding-left: 34px;
+  border: 1.5px solid #2563eb;
+  font-size: 0.92rem;
+}
+
+html[data-theme="light"] .smart-form input:focus,
+html[data-theme="light"] .smart-form select:focus,
+html[data-theme="light"] .smart-form textarea:focus,
+html[data-theme="light"] .filter-select:focus,
+html[data-theme="light"] .local-search-input:focus,
+html[data-theme="light"] .popover-date-group input[type="date"]:focus {
+  border-color: #2a6fca;
+  box-shadow: 0 0 0 2px rgba(47, 125, 225, 0.16);
+}
+
+/* The dark-theme default and BOTH light-theme overrides above each set a
+   shorthand `background` (one with !important) on .smart-form select —
+   every one of them silently resets background-image back to none, which
+   is what was eating the custom chevron. Matching each one's exact
+   selector + !important here is the only way to reliably win in every
+   theme context regardless of source order. */
+html[data-theme="light"] .smart-form select,
+[data-theme="light"] .smart-form select,
+.smart-form select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 16px !important;
+}
+
+html[data-theme="light"] .primary-button,
+html[data-theme="light"] .primary-link {
+  background: #2a6fca !important;
+  border: 1px solid #2a6fca !important;
+  border-radius: 3px;
+  box-shadow: none;
+  color: #ffffff !important;
+  font-size: 0.76rem;
+  font-weight: 600;
+  min-height: 30px;
+  padding: 6px 14px;
+}
+
+/* Higher specificity than the light-theme rule above (needed since both are
+   !important) — keeps each entry-mode option's own color, and its own
+   selected-ring, instead of every selected tab going uniformly blue and
+   flat under the light theme. */
+html[data-theme="light"] .entry-mode-btn.ghost-button,
+html[data-theme="light"] .entry-mode-btn.primary-button {
+  background: var(--entry-mode-color, #2a6fca) !important;
+  border: none !important;
+  color: #ffffff !important;
+}
+html[data-theme="light"] .entry-mode-toggle .entry-mode-btn.primary-button {
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--entry-mode-color, #2a6fca), 0 10px 20px var(--entry-mode-shadow, rgba(37, 99, 235, 0.35)) !important;
+}
+
+html[data-theme="light"] .primary-button:hover:not(:disabled),
+html[data-theme="light"] .primary-link:hover {
+  background: #246cc8 !important;
+  border-color: #246cc8 !important;
+  box-shadow: none;
+}
+
+/* Same override needed for the light theme specifically — this file's
+   light-theme hover rule above otherwise wins on specificity (the "html"
+   type selector puts it ahead of the plain .entry-mode-toggle version). */
+html[data-theme="light"] .entry-mode-btn.ghost-button:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 6px 16px var(--entry-mode-shadow, rgba(37, 99, 235, 0.35)) !important;
+}
+/* Hovering the already-selected tab under the light theme — keep the ring,
+   just deepen the glow underneath it, same reasoning as the plain version. */
+html[data-theme="light"] .entry-mode-toggle .entry-mode-btn.primary-button:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--entry-mode-color, #2a6fca), 0 14px 28px var(--entry-mode-shadow, rgba(37, 99, 235, 0.45)) !important;
+}
+
+/* Match the "Filter" apply button to the solid blue Edit-action style
+   instead of the paler primary-button tint, so it doesn't read as washed out. */
+html[data-theme="light"] .filter-apply-btn {
+  background: #2563eb !important;
+  border: 1px solid #2563eb !important;
+  border-radius: 3px;
+  box-shadow: none;
+  color: #ffffff !important;
+  font-size: 0.76rem;
+  font-weight: 600;
+  min-height: 30px;
+  padding: 6px 14px;
+}
+html[data-theme="light"] .filter-apply-btn:hover:not(:disabled) {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
+  box-shadow: none;
+}
+
+/* Was border-radius: 3px here — nearly square, while the base (dark-theme)
+   rule above and every solid-color modifier class layered on top of
+   .ghost-button (.btn-reassign-action, .btn-defer-action, the confirm
+   dialog's Cancel button, etc.) keep their own ~9-10px rounding. That
+   mismatch is what made action rows read as "different buttons" instead
+   of one consistent button style with different colors. */
+html[data-theme="light"] .ghost-button,
+html[data-theme="light"] .row-actions button,
+html[data-theme="light"] .report-heading button,
+html[data-theme="light"] table button,
+html[data-theme="light"] .table-shell button,
+html[data-theme="light"] .filter-clear-btn,
+html[data-theme="light"] .filter-clear-all-btn {
+  background: #ffffff;
+  border: 1px solid #cbd8e9;
+  border-radius: 10px;
+  box-shadow: none;
+  color: #2366c2;
+  font-weight: 600;
+}
+/* .ghost-button alone (not the compact table/row-action variants above,
+   which are deliberately small) keeps the base rule's 46px height — the
+   0.74rem shared above reads fine on a 36px row-action button but is
+   disproportionately tiny stretched across a full 46px standalone button
+   like "Add Another Part" or a modal's "Cancel". */
+html[data-theme="light"] .ghost-button {
+  font-size: 0.85rem;
+}
+html[data-theme="light"] .row-actions button,
+html[data-theme="light"] .report-heading button,
+html[data-theme="light"] table button,
+html[data-theme="light"] .table-shell button,
+html[data-theme="light"] .filter-clear-btn,
+html[data-theme="light"] .filter-clear-all-btn {
+  font-size: 0.74rem;
+}
+html[data-theme="light"] .btn-reassign-action {
+  background: #2563eb !important;
+  border: 1.5px solid #2563eb !important;
+  color: #ffffff !important;
+}
+html[data-theme="light"] .btn-reassign-action:hover {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
+}
+html[data-theme="light"] .btn-defer-action {
+  background: #eab308 !important;
+  border: 1.5px solid #eab308 !important;
+  color: #422006 !important;
+}
+html[data-theme="light"] .btn-defer-action:hover {
+  background: #ca8a04 !important;
+  border-color: #ca8a04 !important;
+}
+/* Cell links stay plain hyperlinks in light theme too (beats the rule above). */
+html[data-theme="light"] table button.cell-link,
+html[data-theme="light"] .table-shell button.cell-link {
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: inherit;
+  color: var(--primary, #2563eb);
+}
+html[data-theme="light"] table button.cell-link:hover,
+html[data-theme="light"] .table-shell button.cell-link:hover {
+  color: var(--primary, #2563eb);
+  text-decoration: underline;
+}
+
+/* Confirmation popup: Cancel reads as a solid green "safe" action, and the
+   confirm/destructive action is a solid red — not the pale, washed-out tint
+   that .danger-button inherits from an unscoped dark-theme rule elsewhere. */
+html[data-theme="light"] .confirm-dialog-actions .ghost-button {
+  background: #16a34a !important;
+  border: 1px solid #16a34a !important;
+  border-radius: 9px !important;
+  color: #ffffff !important;
+}
+html[data-theme="light"] .confirm-dialog-actions .ghost-button:hover:not(:disabled) {
+  background: #15803d !important;
+  border-color: #15803d !important;
+}
+html[data-theme="light"] .danger-button {
+  background: linear-gradient(90deg, #dc2626, #ef4444) !important;
+  border: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25) !important;
+}
+html[data-theme="light"] .danger-button:hover:not(:disabled) {
+  background: linear-gradient(90deg, #b91c1c, #dc2626) !important;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35) !important;
+}
+
+/* Plain inline "link" buttons (Reported By / Archived By avatar cells, vehicle
+   ID links in Logs) should read as text links, not pill buttons — override
+   the generic "any button inside a table" rule above. */
+html[data-theme="light"] table button.issue-reporter-link,
+html[data-theme="light"] .table-shell button.issue-reporter-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+}
+
+/* "Clear Filters" is a reset action — match the solid red "Archive" button
+   style so it doesn't blend in with the neutral "Filter" button next to it. */
+html[data-theme="light"] .filter-clear-btn {
+  background: #dc2626;
+  border: 1px solid #dc2626;
+  color: #ffffff;
+}
+html[data-theme="light"] .filter-clear-btn:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+html[data-theme="light"] .table-shell {
+  background: #ffffff;
+  /* Ties the table body's outline to the same blue as the panel-header-bar
+     sitting above it, instead of the plain white/gray edge that made each
+     table look disconnected from its own header. */
+  border: 1.5px solid #2563eb;
+  border-radius: 10px;
+  box-shadow: none;
+  margin-bottom: 0;
+  overflow: auto;
+}
+
+html[data-theme="light"] .table-shell table {
+  background: #ffffff;
+  border-collapse: collapse;
+  color: #17243a;
+  font-size: 0.73rem;
+}
+
+html[data-theme="light"] thead th {
+  background: #ffffff;
+  border-bottom: 2px solid #e2e8f0;
+  border-right: none;
+  color: #0f172a;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.3;
+  padding: 10px var(--space-2);
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+}
+
+/* No inside grid lines — rows read off the alternating tint below plus a
+   hover highlight, not ruled-off cells; only the table's own outer border
+   (below) separates it from the rest of the page. */
+html[data-theme="light"] tbody td {
+  background: #ffffff;
+  border-bottom: none;
+  border-right: none;
+  color: #17243a;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 8px var(--space-2);
+  vertical-align: middle;
+}
+
+html[data-theme="light"] tbody tr:nth-child(even) td {
+  background: #f8fbff;
+}
+
+/* A long free-text sub-row (see .table-subrow above) was losing its grey
+   band here — both this file's plain-row rule and its even-row stripe rule
+   out-specify the base .table-subrow td rule (more element selectors),
+   so the same white/near-white background as every normal row was winning
+   instead. Matched at least as specifically (tbody tr.table-subrow td)
+   against both, including the even-row stripe. */
+html[data-theme="light"] tbody tr.table-subrow td {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+html[data-theme="light"] tbody tr:hover,
+html[data-theme="light"] tbody tr:hover td {
+  background: #edf6ff;
+  color: #071a35;
+}
+
+html[data-theme="light"] table a {
+  color: #2366c2;
+  font-weight: 700;
+}
+
+html[data-theme="light"] table button.icon-btn,
+html[data-theme="light"] .table-shell button.icon-btn {
+  background: #f1f7ff;
+  border-color: #bfd4ef;
+  color: #2366c2 !important;
+  height: 28px;
+  width: 28px;
+}
+
+/* Action-specific colors for row-action buttons (Edit, Delete, Confirm,
+   Reopen, View — rendered with icon + text label). Solid by default (not
+   just on hover) so each action reads as its own color at a glance;
+   selectors deliberately don't require .icon-btn so this also covers the
+   labeled buttons that replaced the old icon-only ones — without this
+   block, table button color would flatten every action to the same
+   light-blue default above. */
+html[data-theme="light"] table button.btn-edit-action,
+html[data-theme="light"] .table-shell button.btn-edit-action,
+html[data-theme="light"] button.btn-edit-action {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff !important;
+}
+html[data-theme="light"] table button.btn-edit-action:hover,
+html[data-theme="light"] .table-shell button.btn-edit-action:hover,
+html[data-theme="light"] button.btn-edit-action:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] table button.btn-delete-action,
+html[data-theme="light"] .table-shell button.btn-delete-action,
+html[data-theme="light"] button.btn-delete-action {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff !important;
+}
+html[data-theme="light"] table button.btn-delete-action:hover,
+html[data-theme="light"] .table-shell button.btn-delete-action:hover,
+html[data-theme="light"] button.btn-delete-action:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] table button.btn-archive-action,
+html[data-theme="light"] .table-shell button.btn-archive-action {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff !important;
+}
+html[data-theme="light"] table button.btn-archive-action:hover,
+html[data-theme="light"] .table-shell button.btn-archive-action:hover {
+  background: #d97706;
+  border-color: #d97706;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] table button.btn-confirm-action,
+html[data-theme="light"] .table-shell button.btn-confirm-action,
+html[data-theme="light"] button.btn-confirm-action {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff !important;
+}
+html[data-theme="light"] table button.btn-confirm-action:hover,
+html[data-theme="light"] .table-shell button.btn-confirm-action:hover,
+html[data-theme="light"] button.btn-confirm-action:hover {
+  background: #15803d;
+  border-color: #15803d;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] table button.btn-reopen-action,
+html[data-theme="light"] .table-shell button.btn-reopen-action {
+  background: #d97706;
+  border-color: #d97706;
+  color: #ffffff !important;
+}
+html[data-theme="light"] table button.btn-reopen-action:hover,
+html[data-theme="light"] .table-shell button.btn-reopen-action:hover {
+  background: #b45309;
+  border-color: #b45309;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] table button.btn-view-action,
+html[data-theme="light"] .table-shell button.btn-view-action {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff !important;
+}
+html[data-theme="light"] table button.btn-view-action:hover,
+html[data-theme="light"] .table-shell button.btn-view-action:hover,
+html[data-theme="light"] button.btn-view-action:hover {
+  background: #0369a1;
+  border-color: #0284c7;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .status-badge {
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+
+/* Light theme reads its colors from the dark-mode .status-badge rules above
+   by cascade accident (those are unscoped, so they win in both themes) —
+   pale text-on-pale-background there is unreadable against a white table.
+   Re-assert solid, high-contrast colors here; specificity from the
+   [data-theme="light"] attribute selector guarantees these win. */
+html[data-theme="light"] .status-badge.active,
+html[data-theme="light"] .status-badge.available,
+html[data-theme="light"] .status-badge.completed,
+html[data-theme="light"] .status-badge.passed,
+html[data-theme="light"] .status-badge.resolved,
+html[data-theme="light"] .status-badge.approved,
+html[data-theme="light"] .status-badge.good,
+html[data-theme="light"] .status-badge.done,
+html[data-theme="light"] .status-badge.ticket-done,
+html[data-theme="light"] .status-badge.priority-low {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #15803d;
+}
+
+html[data-theme="light"] .status-badge.pending,
+html[data-theme="light"] .status-badge.open,
+html[data-theme="light"] .status-badge.in-progress,
+html[data-theme="light"] .status-badge.under-maintenance,
+html[data-theme="light"] .status-badge.in-maintenance,
+html[data-theme="light"] .status-badge.for-repair,
+html[data-theme="light"] .status-badge.under-repair,
+html[data-theme="light"] .status-badge.needs-inspection,
+html[data-theme="light"] .status-badge.under-review,
+html[data-theme="light"] .status-badge.ticket-formaint,
+html[data-theme="light"] .status-badge.ticket-repair,
+html[data-theme="light"] .status-badge.ticket-deferred,
+html[data-theme="light"] .status-badge.priority-medium,
+html[data-theme="light"] .status-badge.priority-high,
+html[data-theme="light"] .status-badge.rework-warning {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+/* "Open" is a neutral starting state, not a caution — keep it in its own
+   blue (matching the base .ticket-open rule) instead of the shared amber
+   "in-progress/caution" bucket above, which made it read identically to a
+   High-priority badge right next to it. */
+html[data-theme="light"] .status-badge.ticket-open {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+/* Light-theme: keep these two stages visually distinct (green / purple). */
+html[data-theme="light"] .status-badge.ticket-forinspect { background: #dcfce7; border-color: #86efac; color: #166534; }
+html[data-theme="light"] .status-badge.ticket-forconfirm,
+html[data-theme="light"] .status-badge.for-verification { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+html[data-theme="light"] .status-badge.awaiting-closure { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+html[data-theme="light"] .status-badge.not-checked { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
+
+html[data-theme="light"] .status-badge.inactive,
+html[data-theme="light"] .status-badge.decommissioned,
+html[data-theme="light"] .status-badge.damaged,
+html[data-theme="light"] .status-badge.rejected,
+html[data-theme="light"] .status-badge.failed,
+html[data-theme="light"] .status-badge.overdue,
+html[data-theme="light"] .status-badge.needs-repair,
+html[data-theme="light"] .status-badge.ticket-cancelled,
+html[data-theme="light"] .status-badge.cancelled,
+html[data-theme="light"] .status-badge.priority-critical,
+html[data-theme="light"] .status-badge.rework-danger {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+html[data-theme="light"] .status-badge.assigned,
+html[data-theme="light"] .status-badge.scheduled,
+html[data-theme="light"] .status-badge.info {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+html[data-theme="light"] .status-badge.scheduled-maintenance {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+html[data-theme="light"] .status-badge.external-shop {
+  background: #ffedd5;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+html[data-theme="light"] .status-badge.from-issue-report {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+html[data-theme="light"] .status-badge.field-repair {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+  color: #4338ca;
+}
+
+html[data-theme="light"] .status-badge.land {
+  background: #f3e8d8;
+  border-color: #e0c9a3;
+  color: #895f18;
+}
+
+html[data-theme="light"] .status-badge.water {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+html[data-theme="light"] .part-tag {
+  background: #eaf4ff;
+  border-color: #c8def8;
+  border-radius: 3px;
+  color: #2366c2;
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: none;
+}
+
+html[data-theme="light"] .empty-state {
+  background: #ffffff;
+  border: 1px dashed #bcd0e7;
+  border-radius: 4px;
+  color: #64748b;
+}
+
+/* Greeting hero — solid blue card, matching the rest of the dashboard's
+   blue theme. The two widgets inside it (Local Time / Weather) stay white
+   so they read as distinct chips sitting on top of the blue banner. */
+html[data-theme="light"] .dashboard-banner {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border-color: #1a44bd;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(31, 75, 122, 0.16);
+}
+
+html[data-theme="light"] .dashboard-banner::after {
+  display: none;
+}
+
+html[data-theme="light"] .dashboard-banner-welcome h2 {
+  color: #ffffff;
+}
+
+html[data-theme="light"] .dashboard-banner-welcome p {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+html[data-theme="light"] .dashboard-greeting-role {
+  color: #bfdbfe;
+}
+
+html[data-theme="light"] .dashboard-banner-weather,
+html[data-theme="light"] .dashboard-banner-time {
+  background: #f7faff;
+  border-color: #dce7f4;
+}
+html[data-theme="light"] .dashboard-banner-time strong,
+html[data-theme="light"] .weather-desc,
+html[data-theme="light"] .weather-temp {
+  color: #071a35;
+}
+html[data-theme="light"] .dashboard-banner-time .time-label,
+html[data-theme="light"] .weather-city,
+html[data-theme="light"] .weather-extra {
+  color: #64748b;
+}
+html[data-theme="light"] .weather-icon {
+  color: #2366c2;
+}
+
+/* The base .notice.error/.notice.success rules are tuned for the dark theme
+   (pale text on a near-transparent tint) and are nearly unreadable on the
+   light theme's white background — override with high-contrast light variants. */
+html[data-theme="light"] .notice.error,
+html[data-theme="light"] .notice.danger {
+  background: linear-gradient(90deg, #fef2f2, #fee2e2);
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+}
+
+html[data-theme="light"] .notice.success {
+  background: linear-gradient(90deg, #ecfdf5, #d1fae5);
+  border: 1px solid #86efac;
+  color: #065f46;
+}
+
+html[data-theme="light"] .notice.warning {
+  background: linear-gradient(90deg, #fffbeb, #fef3c7);
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+html[data-theme="light"] .issue-id-badge {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+@media (max-width: 1100px) {
+  html[data-theme="light"] .workspace {
+    grid-template-columns: 76px 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  html[data-theme="light"] .topbar,
+  html[data-theme="light"] .content-body {
+    padding: 14px;
+  }
+
+  html[data-theme="light"] .module-action-bar,
+  html[data-theme="light"] .filter-bar-container {
+    align-items: stretch;
+  }
+}

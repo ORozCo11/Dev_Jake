@@ -1,0 +1,188 @@
+/* Split from App.css (lines 13784-13971). Order matters: see App.css. */
+/* ============================================================
+   Same grey border + soft shadow, app-wide, for every role. Light theme
+   only — popups, dropdowns, filter panels and auth/profile cards are
+   deliberately left untouched.
+   ============================================================ */
+html:not([data-theme="dark"]) :is(
+  .panel,
+  .table-shell,
+  .metric-card,
+  .veh-card,
+  .ticket-card,
+  .work-tracker-card,
+  .dashboard-quick-card,
+  .report-category-card,
+  .ticket-section,
+  .map-card,
+  .stat-filter-card
+) {
+  border: 1px solid #d5dbe3;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.10), 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+/* `.module-grid .panel` carries its own higher-specificity border/shadow
+   (the blue-tinted #cddcf0 look) earlier in this file — matched here so
+   the grey border above actually wins instead of losing to it. */
+html:not([data-theme="dark"]) .module-grid .panel {
+  border: 1px solid #d5dbe3;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.10), 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+
+/* ── Ticket hero v2: ring beside the title, one tidy summary card ─────── */
+html .ticket-detail-panel.is-page .ticket-process-hero {
+  grid-template-columns: auto minmax(0, 1fr) minmax(380px, 1.25fr);
+  gap: 22px;
+  align-items: center;
+  padding: 22px 26px;
+  background: linear-gradient(180deg, #ffffff, #fafcff);
+}
+html .ticket-detail-panel.is-page .ticket-process-meter {
+  width: 104px; min-width: 104px; max-width: 104px;
+  border: 0;
+  box-shadow: none;
+  background: conic-gradient(var(--ticket-hero-accent, #2563eb) var(--ticket-progress, 0%), #e6ecf5 0);
+}
+html .ticket-detail-panel.is-page .ticket-process-meter-core {
+  width: 80%;
+  background: #fff;
+  box-shadow: 0 0 0 1px #eef2f8;
+}
+html .ticket-detail-panel.is-page .ticket-process-meter-core strong { font-size: 1.3rem; color: #0f172a; }
+html .ticket-detail-panel.is-page .ticket-process-meter-core span { color: var(--ticket-hero-accent, #2563eb); font-size: .54rem; }
+html .ticket-detail-panel.is-page .ticket-process-meter-core small { font-size: .6rem; }
+html .ticket-detail-panel.is-page .ticket-process-kicker { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+html .ticket-detail-panel.is-page .ticket-process-kicker > span:not(:first-child)::before { content: '•'; margin-right: 10px; color: #cbd5e1; }
+html .ticket-detail-panel.is-page section.ticket-process-hero .ticket-detail-title { font-size: 1.5rem; line-height: 1.2; margin-bottom: 12px; }
+html .ticket-detail-panel.is-page .ticket-process-next-card {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+html .ticket-detail-panel.is-page .ticket-process-next-label { font-size: .64rem; letter-spacing: .08em; }
+html .ticket-detail-panel.is-page .ticket-process-next-card > strong { font-size: 1.1rem; }
+html .ticket-detail-panel.is-page .ticket-process-next-card > p { font-size: .82rem; margin: 3px 0 14px; }
+html .ticket-detail-panel.is-page .ticket-process-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+html .ticket-detail-panel.is-page .ticket-process-stat {
+  align-items: center; text-align: center; gap: 2px;
+  padding: 8px 6px;
+  background: #fff;
+  border: 1px solid #e8edf4;
+  border-radius: 10px;
+}
+html .ticket-detail-panel.is-page .ticket-process-stat svg { display: block; color: #64748b; }
+html .ticket-detail-panel.is-page .ticket-process-stat span { font-size: .58rem; letter-spacing: .05em; }
+html .ticket-detail-panel.is-page .ticket-process-stat strong { font-size: .95rem; color: #0f172a; }
+@media (max-width: 1100px) {
+  html .ticket-detail-panel.is-page .ticket-process-hero { grid-template-columns: auto minmax(0, 1fr); }
+  html .ticket-detail-panel.is-page .ticket-process-next-card { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  html .ticket-detail-panel.is-page .ticket-process-hero { grid-template-columns: 1fr; }
+  html .ticket-detail-panel.is-page .ticket-process-meter { display: none; }
+  html .ticket-detail-panel.is-page .ticket-process-stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Lean Custodian / Maintenance dashboard: the smart-grid rule above hides
+   every plain .panel, so opt these back in and size them explicitly. */
+html .dashboard-grid-smart > .panel.dashboard-lean-panel { display: block !important; }
+html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-7 { grid-column: span 7; }
+html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-column: span 5; }
+@media (max-width: 960px) {
+  html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-7,
+  html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-column: 1 / -1; }
+}
+
+
+/* ── QA walkthrough fixes ─────────────────────────────────────────────── */
+/* Fleet Condition donut on the lean Custodian / Maintenance dashboards was a
+   64px ring with its centre label spilling over it. */
+html .dashboard-lean-panel .fleet-status-compact { gap: 28px; padding: 14px 22px 22px; justify-content: center; }
+html .dashboard-lean-panel .donut-chart-small .donut-chart { width: 150px; }
+html .dashboard-lean-panel .fleet-status-legend-col { min-width: 160px; }
+
+/* Two badges on one sidebar row (count + awaiting-review pill) pushed the
+   second one past the sidebar edge. */
+.module-nav button span:not(.module-nav-badge) { min-width: 0; overflow-wrap: anywhere; }
+.module-nav button span.module-nav-badge + span.module-nav-badge { margin-left: -2px; }
+
+/* ── Sidebar: fixed, like the top bar ─────────────────────────────────────
+   It used to be `position: sticky` beside a `position: fixed` top bar. Those
+   two are positioned by the browser differently, so on some graphics setups a
+   blank band flashed between the top bar and the sidebar/content while
+   scrolling (worst near the bottom of a page). A fixed sidebar is positioned
+   the same way as the top bar, so they can't drift apart. The grid column
+   still reserves the sidebar's width so the content doesn't move. */
+/* One width variable per theme (252px dark / 224px light, 76px collapsed or on
+   narrow screens) drives BOTH the grid column and the fixed sidebar. */
+.workspace { --sidebar-w: 252px; }
+html[data-theme="light"] .workspace { --sidebar-w: 224px; }
+.workspace.sidebar-collapsed,
+html[data-theme="light"] .workspace.sidebar-collapsed { --sidebar-w: 76px; }
+@media (max-width: 1100px) {
+  .workspace,
+  html[data-theme="light"] .workspace { --sidebar-w: 76px; }
+}
+.workspace,
+html[data-theme="light"] .workspace,
+.workspace.sidebar-collapsed,
+html[data-theme="light"] .workspace.sidebar-collapsed {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+}
+.workspace > .sidebar {
+  position: fixed;
+  top: var(--topbar-height, 64px);
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-w);
+  height: auto;
+  box-sizing: border-box;
+  z-index: 90;
+  transition: width 0.18s ease;
+}
+.workspace > .content-area { grid-column: 2; }
+
+
+/* Propose Ticket: a bigger, easier-to-read vehicle preview — the standard
+   .ticket-preview-card is quite small; this modifier only applies where the
+   --lg class is added (the Custodian's proposal form). */
+.ticket-preview-card.ticket-preview-card--lg {
+  padding: 20px;
+  gap: 20px;
+  background: #fff;
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+.ticket-preview-photo.ticket-preview-photo--lg {
+  width: 128px;
+  height: 128px;
+}
+.ticket-preview-body.ticket-preview-body--lg strong {
+  font-size: 1.3rem;
+}
+.ticket-preview-body.ticket-preview-body--lg span {
+  font-size: 0.95rem;
+}
+.ticket-preview-body.ticket-preview-body--lg span.muted {
+  font-size: 0.92rem;
+}
+
+/* Sidebar labels: wrap between words only, never mid-word ("Maintenanc / e").
+   A slightly tighter indent/gap/size keeps the longest single word on one line
+   even with a badge beside it. Kept last so it wins over the earlier themes. */
+.module-nav button { gap: 8px; font-size: 0.85rem; }
+.module-nav button > span:not(.module-nav-badge) {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  line-height: 1.25;
+}
+.module-nav-group > button:not(.module-nav-section),
+html[data-theme="light"] .module-nav-group > button:not(.module-nav-section) {
+  padding-left: 28px;
+}

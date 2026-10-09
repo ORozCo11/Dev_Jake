@@ -1,0 +1,51 @@
+/* Split from App.css (lines 10945-10995). Order matters: see App.css. */
+/* Page heading card — rendered once, above every module/page, so this one
+   spot controls the "icon chip + bold title" heading treatment app-wide. */
+/* Icon-chip on the left; a breadcrumb + bold title stack to its right — the
+   breadcrumb line only appears on a create/edit/view sub-page (e.g.
+   "Maintenance Tickets »" above "Create New Ticket"), so the plain module
+   list view just shows the bold title with no breadcrumb above it. */
+.page-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px 32px 0;
+  padding: 12px 20px;
+  background: var(--surface-2, #eff5ff);
+  border: 1px solid var(--border, #dbeafe);
+  border-radius: 12px;
+}
+.page-heading-text { display: flex; flex-direction: column; gap: 2px; }
+.page-heading-row h2 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-strong, #0f172a);
+  margin: 0;
+  line-height: 1.2;
+}
+.page-heading-row .breadcrumb-path { margin: 0; line-height: 1.2; }
+.page-heading-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.12);
+  flex-shrink: 0;
+}
+.page-heading-icon .nav-icon {
+  width: 20px;
+  height: 20px;
+  stroke: #2563eb;
+}
+
+.sidebar-brand > div {
+  width: 100%;
+}
+
+/* Header theme-toggle button */
+.theme-toggle-btn svg {
+  width: 20px;
+  height: 20px;
+}

@@ -1,0 +1,880 @@
+/* Split from App.css (lines 2617-3408). Order matters: see App.css. */
+/* FORMS */
+.smart-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.smart-form h3 {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-strong, #0f172a);
+  margin-bottom: 4px;
+}
+.smart-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-hint {
+  font-size: 0.72rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-muted, #64748b);
+  line-height: 1.4;
+}
+.smart-form label span {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  transition: color 0.15s ease;
+}
+.smart-form .required-asterisk {
+  color: #ef4444;
+  text-transform: none;
+}
+.smart-form input, .smart-form select, .smart-form textarea {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #0f172a;
+  padding: 6px 9px;
+  font-size: 0.8rem;
+  font-family: 'Space Grotesk', sans-serif;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.smart-form input:focus, .smart-form select:focus, .smart-form textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+.smart-form textarea {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.45;
+}
+.smart-form input[type="file"] {
+  background: #f8fafc;
+  border-style: dashed;
+  cursor: pointer;
+}
+.quantity-field {
+  display: flex;
+  gap: 8px;
+}
+.quantity-field input { flex: 1 1 auto; min-width: 0; }
+.quantity-field select { flex: 0 0 auto; width: auto; min-width: 84px; }
+.password-field-wrapper {
+  position: relative;
+  display: flex;
+}
+.password-field-wrapper input {
+  width: 100%;
+  padding-right: 44px;
+}
+.password-toggle-btn {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 4px;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.password-toggle-btn:hover {
+  color: #2563eb;
+}
+/* Single self-contained photo box: empty placeholder until a file is
+   picked, then the photo fills the box itself. The <input type="file">
+   covers the whole box (so both click-anywhere and native drag-and-drop
+   work); the "+ Add Image" pill and remove button float above it. */
+.photo-box {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  border: 1px solid #d7dee7;
+  background: linear-gradient(180deg, #eef2f7, #dde4ec);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-box-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.photo-box-add-btn {
+  /* The generic .smart-form label rule (position:relative "legend on the
+     border" anchor, plus display:flex + flex-direction:column for the
+     usual span-over-input stack) outweighs this single-class selector on
+     specificity — !important keeps this pill pinned to the corner as a
+     single-line row instead of an absolutely-positioned column. */
+  position: absolute !important;
+  margin-top: 0 !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+  transition: background 0.15s ease;
+}
+.photo-box-add-btn:hover {
+  background: #1d4ed8;
+}
+.photo-box-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.photo-box-remove:hover {
+  background: rgba(15, 23, 42, 0.75);
+}
+.photo-box-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+.photo-box-fill {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.photo-box-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  color: #2563eb;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+/* Opt-in (field.compactFile) — lets a file field sit beside its next
+   sibling in the 2-column grid instead of the default full-width row,
+   e.g. the Add Vehicle wizard's photo box next to the Current Location
+   dropdown. */
+.smart-form label.file-inline {
+  grid-column: auto !important;
+}
+
+/* Multi-file "filing cabinet" field (type: 'multi-file') — same file-list +
+   dropzone look as the Vehicle Files card (.file-card-empty/.file-card-
+   dropzone, reused as-is), replacing the old single-photo box wherever more
+   than one attachment of any type makes sense (e.g. Report Issue). */
+.multi-file-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.multi-file-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.multi-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+.multi-file-dropzone {
+  margin-top: 0 !important;
+}
+.multi-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  color: var(--text-strong, #0f172a);
+}
+.multi-file-item.is-existing { background: var(--surface-2, #f8fafc); }
+.multi-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+a.multi-file-name:hover { text-decoration: underline; color: var(--primary, #2563eb); }
+.multi-file-remove {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+}
+.multi-file-remove:hover { background: #fee2e2; color: #b91c1c; }
+.field-extra {
+  margin-top: -4px;
+}
+/* Thumbnails are a fixed size wherever they sit: never shrunk by a flex row
+   or a global img max-width (they were collapsing to ~2px beside long names). */
+.photo-cell {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.photo-thumb {
+  flex-shrink: 0;
+  max-width: none;
+  width: 60px;
+  height: 45px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1.5px solid #bfdbfe;
+  background: #f8fafc;
+  transition: transform 0.15s;
+}
+.photo-thumb:hover {
+  transform: scale(1.08);
+}
+
+/* Vehicle cell: keep the thumbnail fixed and wrap the name at words, never
+   mid-word (prevents the one-letter-per-line squeeze in narrow columns). */
+.vehicle-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  /* Was a fixed 200px — wider than a narrow fixed-layout column (e.g. this
+     app's 13% Vehicle column), and with no flex/grid ancestor forcing it to
+     shrink, it just rendered at its own natural width regardless of the
+     actual <td>, spilling into the next cell. 100% ties it to the real
+     column width so the inner min-width:0 shrink chain (button -> .vcn-text)
+     has something real to shrink against. */
+  max-width: 100%;
+  overflow: hidden;
+}
+/* Inside tables the thumbnail is a little smaller (48x36) so it doesn't
+   dictate the Vehicle column width; still a fixed, consistent size. */
+tbody .photo-thumb {
+  width: 48px;
+  height: 36px;
+}
+.vehicle-cell .photo-cell,
+.vehicle-cell .photo-thumb {
+  flex-shrink: 0;
+}
+/* Truncate a long vehicle name with an ellipsis; the plate lives in its own column.
+   min-width: 0 matters here — both this span and its parent button are flex
+   items (button.cell-link is display:inline-flex), and flex items refuse to
+   shrink below their content's natural width by default, which silently
+   overrides max-width/ellipsis entirely — the classic flexbox truncation bug. */
+.vcn-text {
+  display: block;
+  max-width: 220px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Avatar + name cell used everywhere a table references a user (Reported By,
+   Checked By, Personnel, Updated By, Archived By, etc.) — consistent with
+   the circular avatar treatment on the Users page. */
+.user-avatar-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 26px;
+}
+.user-avatar-name-initials,
+.user-avatar-name-photo {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.user-avatar-name-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.user-avatar-name-photo {
+  object-fit: cover;
+  border: 1.5px solid #bfdbfe;
+}
+.user-avatar-name-empty {
+  color: #94a3b8;
+}
+.user-avatar-name > span {
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.vehicle-cell-name {
+  word-break: normal;
+  overflow-wrap: normal;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+/* Clickable table cells — a vehicle/user name that navigates to its own view.
+   Reset the native button chrome; signal interactivity on hover. */
+/* Higher specificity than the generic `table button` / `.table-shell button`
+   chrome so these read as plain hyperlinks, not boxed buttons. */
+table button.cell-link,
+.table-shell button.cell-link,
+button.cell-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font: inherit;
+  color: var(--primary, #2563eb);
+  cursor: pointer;
+  text-align: left;
+}
+table button.cell-link:hover,
+.table-shell button.cell-link:hover,
+button.cell-link:hover {
+  background: none;
+  box-shadow: none;
+  color: var(--primary-strong, #1d4ed8);
+  text-decoration: underline;
+}
+button.vehicle-cell-name.cell-link { font-weight: 600; }
+
+/* Form pages with a live vehicle preview — info/map cards on the left,
+   the form fields in a card on the right (Realcore-style). */
+.form-context-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+@media (max-width: 980px) {
+  .form-context-layout { grid-template-columns: 1fr; }
+}
+.form-context-side { display: flex; flex-direction: column; gap: 16px; }
+.form-context-photo { padding: 14px 14px 0; }
+.form-context-photo img {
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid var(--primary, #2563eb);
+  display: block;
+}
+.form-context-map { height: 420px; }
+/* Wraps the form + map so both stack in the wide grid column together,
+   instead of the map defaulting into the narrow side-card track. */
+.form-context-form-col { display: flex; flex-direction: column; gap: 16px; }
+.form-context-map-inline { flex: 1; display: flex; flex-direction: column; }
+/* min-height guards against a short form (e.g. after removing a field)
+   shrinking the stretched row this sits in, which would otherwise let a
+   flex:1 child with no content-based minimum collapse down to a sliver. */
+.form-context-map-inline .veh-map-wrap { flex: 1; min-height: 300px; }
+.form-context-map-expanded { height: 520px; }
+.form-context-empty {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 36px 22px;
+  gap: 12px;
+}
+.form-context-empty svg { stroke: var(--primary, #2563eb); opacity: 0.55; }
+.form-context-empty p { margin: 0; font-size: 0.86rem; color: var(--text-muted, #64748b); max-width: 28ch; }
+/* Entry Summary values — placeholder dash until answered; clamp long notes. */
+.veh-kv dd.summary-empty { color: var(--text-faint, #94a3b8); font-weight: 400; }
+.veh-kv dd.summary-val {
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Review step (opt-in via FormPage's `reviewStep` prop) — a full-width "check
+   everything before it saves" step instead of a live summary sidebar
+   fighting the form for space the whole time it's being filled in. */
+.form-review-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text-strong, #0f172a);
+}
+.form-review-grid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px 28px;
+  padding: 16px 2px 20px;
+}
+.form-review-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 16px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-subtle, #e2e8f0);
+}
+
+/* Issue view page — the real content (Issue Information + Description) leads
+   in a wider main column; Attachment (often empty) is a slim side card, so an
+   unattached photo no longer stretches into a huge box beside a sparse info
+   card. Matches the ticket/vehicle detail main+rail pattern. */
+.issue-view-dash {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  align-items: start;
+  gap: 16px;
+}
+.issue-view-main,
+.issue-view-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+@media (max-width: 720px) {
+  .issue-view-dash { grid-template-columns: 1fr; }
+  .issue-view-side { order: -1; }
+}
+/* Issue Information — large vehicle photo + identity beside it (Vehicle /
+   Reported By), then a flat "Label: value" facts list underneath. Mirrors
+   the reference design (big photo, plain label:value lines) instead of the
+   old cramped dt/dd micro-label grid. */
+.issue-view-info-body {
+  display: flex;
+  gap: 18px;
+  padding: 16px 18px;
+  flex-wrap: wrap;
+}
+.issue-view-vehicle-photo {
+  width: 200px;
+  height: 150px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid var(--primary, #2563eb);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.issue-view-vehicle-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.issue-view-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  justify-content: center;
+  min-width: 160px;
+}
+.issue-view-identity-link {
+  display: block;
+  margin: 2px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #2563eb;
+  text-align: left;
+}
+.issue-view-identity-link:hover { text-decoration: underline; }
+.issue-view-identity-value { margin: 2px 0 0; font-weight: 700; color: var(--text-strong, #0f172a); }
+/* Sits as a third flex column alongside the photo + identity (same row),
+   using the horizontal space that used to sit empty below them. */
+.issue-view-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  flex: 1;
+  min-width: 180px;
+  padding-left: 18px;
+  border-left: 1px solid var(--border, #e2e8f0);
+}
+.issue-view-facts p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text, #334155);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.issue-view-facts strong { color: var(--text-strong, #0f172a); font-weight: 700; min-width: 88px; flex-shrink: 0; }
+@media (max-width: 640px) {
+  .issue-view-facts { border-left: none; padding-left: 0; border-top: 1px solid var(--border, #e2e8f0); padding-top: 12px; }
+}
+/* Severity/Status read as plain colored text here, not pills — the color
+   still comes from the shared .status-badge class, just without the
+   background/border/padding chrome. !important because the color-family
+   rules (.status-badge.priority-medium etc.) are declared later in this
+   file at equal specificity and would otherwise win the cascade. */
+.issue-view-facts .status-badge {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: inherit !important;
+  font-weight: 700 !important;
+}
+
+/* Issue report "filing cabinet" — photos as a thumbnail grid, other files as
+   typed rows (extension badge + name + uploader/date). */
+.issue-files-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.issue-files-thumb {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface-2, #f8fafc);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.issue-files-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.issue-files-thumb:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12); }
+.issue-files-list { display: flex; flex-direction: column; gap: 6px; }
+.issue-files-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.issue-files-row:hover { background: var(--surface-2, #f8fafc); border-color: var(--primary, #2563eb); }
+.issue-files-ext {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #475569;
+  background: #f1f5f9;
+}
+.issue-files-ext.is-pdf { color: #b91c1c; background: #fee2e2; }
+.issue-files-ext.is-doc, .issue-files-ext.is-docx { color: #1d4ed8; background: #dbeafe; }
+.issue-files-meta { display: flex; flex-direction: column; min-width: 0; }
+.issue-files-meta strong { font-size: 0.82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issue-files-meta span { font-size: 0.72rem; color: var(--text-faint, #94a3b8); }
+
+.issue-view-timeline { padding: 14px 18px; display: flex; flex-direction: column; }
+.issue-view-timeline-row { display: flex; gap: 10px; }
+.issue-view-timeline-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--primary, #2563eb);
+  flex-shrink: 0;
+  margin-top: 5px;
+  position: relative;
+}
+.issue-view-timeline-row:not(:last-child) .issue-view-timeline-dot::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 26px;
+  background: var(--border, #e2e8f0);
+}
+.issue-view-timeline-dot.is-last { background: var(--text-faint, #94a3b8); }
+.issue-view-timeline-row:not(:last-child) { padding-bottom: 14px; }
+.issue-view-timeline-label { margin: 0 0 3px; font-size: 0.82rem; font-weight: 700; color: var(--text-strong, #0f172a); }
+.issue-view-text { padding: 16px 18px; }
+.issue-view-text > p { margin: 0; font-size: 0.9rem; color: var(--text, #334155); line-height: 1.6; }
+/* Remarks (often a system-generated audit note, e.g. "auto-created when
+   this repair was deferred") reads as a distinct annotated block instead of
+   quietly running into the description with just a tiny caps label. */
+.issue-view-remarks {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--surface-2, #f8fafc);
+  border-left: 3px solid var(--primary, #2563eb);
+  border-radius: 0 8px 8px 0;
+  box-shadow: none !important;
+}
+.issue-view-remarks-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--primary, #2563eb);
+}
+.issue-view-remarks p {
+  margin: 5px 0 0;
+  font-size: 0.86rem;
+  color: var(--text, #334155);
+  line-height: 1.6;
+}
+
+/* User profile page (opened from any user link) */
+.user-view-dash { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 720px) { .user-view-dash { grid-template-columns: 1fr; } }
+.user-view-body { display: flex; gap: 18px; padding: 18px; align-items: center; flex-wrap: wrap; }
+.user-view-body .veh-kv { padding: 0; flex: 1; min-width: 160px; }
+.user-view-avatar {
+  width: 92px; height: 92px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+  border: 2px solid var(--primary, #2563eb);
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #fff; font-size: 1.6rem; font-weight: 800;
+}
+.user-view-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Compact table-cell date: colored month/day pill + small year/time. */
+.date-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+/* Muted inline date used in the calm ticket-detail cards, in place of the
+   loud red calendar tile above (which stays for dense tables). */
+.quiet-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: var(--text-muted, #64748b);
+}
+.quiet-date svg { opacity: 0.65; flex-shrink: 0; stroke: currentColor; }
+.date-badge-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 42px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  line-height: 1.1;
+}
+.date-badge-month {
+  padding: 2px 6px;
+  background: #dc2626;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #ffffff;
+}
+.date-badge-day {
+  padding: 2px 6px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-align: center;
+  color: #111827;
+}
+.date-badge-meta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #2563eb;
+  line-height: 1.3;
+}
+
+/* Center date-badge cells under their (centered) column headers. */
+td:has(> .date-badge) { text-align: center; }
+
+.repair-log-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.repair-log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.repair-log-entry-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.repair-log-entry-time {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+.repair-log-entry-message {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  color: #334155;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+/* Inline validation (SmartForm): summary at the top + message per field. */
+.form-error-summary {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--status-danger-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+.form-error-summary-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+.form-error-summary ul {
+  margin: 0;
+  padding-left: var(--space-6);
+}
+.form-error-summary .link-button {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.field-error {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--status-danger-fg);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+html[data-theme] .smart-form :is(input, select, textarea)[aria-invalid="true"],
+.smart-form [aria-invalid="true"] {
+  border-color: var(--status-danger-fg);
+  box-shadow: 0 0 0 1px var(--status-danger-fg);
+}
+/* Below the input in the label's flex column (the caption floats above). */
+.smart-form label > .field-error {
+  order: 10;
+  margin-top: var(--space-1);
+}
+.form-error-summary {
+  position: relative;
+  margin-bottom: var(--space-4);
+}
+.form-error-summary:focus {
+  outline: none;
+}
+.form-error-summary-dismiss {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.form-error-summary-dismiss:hover {
+  background: rgba(153, 27, 27, 0.08);
+}

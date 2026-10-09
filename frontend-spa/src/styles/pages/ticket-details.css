@@ -1,0 +1,197 @@
+/* Split from App.css (lines 13625-13783). Order matters: see App.css. */
+/* ============================================================
+   Ticket Details redesign — `html`-prefixed so these win over the older,
+   more scattered ticket-process/ticket-section rules earlier in this
+   file instead of having to hunt down and edit every one of them.
+   ============================================================ */
+
+/* White header, larger title, muted kicker/meta (was a dark glass card). */
+html .ticket-process-hero {
+  background: #ffffff;
+  border: 1px solid #d5dbe3;
+  color: #0f172a;
+}
+html section.ticket-process-hero .ticket-detail-title {
+  color: #0f172a;
+  font-size: 1.5rem;
+}
+html .ticket-process-kicker,
+html .ticket-process-kicker > span:not(:first-child),
+html .ticket-process-hero .ticket-detail-subline,
+html .ticket-process-hero .ticket-meta-item {
+  color: #64748b;
+}
+
+/* Resolved-% ring on a white header — a light inner circle instead of the
+   dark one, so it reads as a ring on the card, not a hole punched in it. */
+html .ticket-process-meter {
+  background: conic-gradient(var(--ticket-hero-accent, #2563eb) var(--ticket-progress, 0%), #e2e8f0 0);
+}
+html .ticket-process-meter-core {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+html .ticket-process-meter-core span { color: var(--ticket-hero-accent, #2563eb); }
+html .ticket-process-meter-core strong { color: #0f172a; }
+html .ticket-process-meter-core small { color: #64748b; }
+
+/* Next Best Action — a light blue-tinted card instead of a translucent
+   glass panel competing with the header for attention. */
+html .ticket-process-next-card {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+html .ticket-process-next-label { color: #2563eb; }
+html .ticket-process-next-card > strong { color: #1d4ed8; }
+html .ticket-process-next-card > p { color: #475569; }
+html .ticket-process-close { color: #94a3b8; }
+html .ticket-process-close:hover { color: #0f172a; }
+html .ticket-process-stat-grid { border-top: 1px solid #e2e8f0; }
+html .ticket-process-stat svg,
+html .ticket-process-stat span { color: #64748b; }
+html .ticket-process-stat strong { color: #0f172a; }
+
+/* Small uppercase section headings, no divider line underneath. */
+html .ticket-section h4 {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  border-bottom: none;
+  margin: 0 0 12px;
+}
+html .ticket-section h4 svg { color: #2563eb; stroke: #2563eb; flex-shrink: 0; }
+
+/* Sub-Issues heading: count pill + hover tooltip icon instead of a long
+   help sentence sitting under the heading. */
+html .ticket-count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: normal;
+}
+html .ticket-section-info-icon { display: inline-flex; color: #94a3b8; cursor: help; }
+html .ticket-section-info-icon:hover { color: #64748b; }
+
+/* Overview / Custodian Inspection key-value pairs — class-based instead of
+   the inline styles they used to carry. */
+html .ticket-kv-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+html .ticket-kv-row > div > span {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+
+/* Ticket Timeline — same, now class-based and a touch lighter than the
+   inline version it replaces. */
+html .ticket-timeline { display: flex; flex-direction: column; }
+html .ticket-timeline-item { display: flex; gap: 10px; }
+html .ticket-timeline-marker { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+html .ticket-timeline-dot {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #f1f5f9; color: #64748b;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+html .ticket-timeline-line { width: 2px; flex: 1; min-height: 18px; background: #eef1f5; margin-top: 2px; }
+html .ticket-timeline-content { padding-bottom: 16px; }
+html .ticket-timeline-item:last-child .ticket-timeline-content { padding-bottom: 2px; }
+html .ticket-timeline-content p { margin: 0 0 3px; font-size: 0.82rem; font-weight: 600; color: #334155; }
+html .ticket-timeline-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: 0.76rem; color: #64748b; }
+
+@media (max-width: 860px) {
+  html .ticket-process-hero { grid-template-columns: 1fr; }
+}
+
+/* Page background behind the Ticket Details cards. */
+html .content-area:has(.ticket-detail-panel) { background: #f4f6f9; }
+
+/* Sub-issue cards — same grey border as the rest of the page, a lighter
+   shadow, white background. */
+html .subissue-card {
+  border: 1px solid #d5dbe3;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+html .subissue-card-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+
+/* Reassign/Defer per-sub-issue icon buttons — quiet by default (white,
+   1px grey border), colored only on hover; sit below the meta strip. */
+html .subissue-icon-row { display: flex; gap: 6px; margin-top: 8px; }
+html .icon-btn.subissue-icon-btn {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: #ffffff; border: 1px solid #e2e8f0; color: #94a3b8;
+}
+html .icon-btn.subissue-icon-btn svg { width: 14px; height: 14px; }
+html .icon-btn.subissue-icon-btn.is-reassign:hover { color: #2563eb; border-color: #2563eb; background: #eff6ff; }
+html .icon-btn.subissue-icon-btn.is-defer:hover { color: #a55a05; border-color: #d97706; background: #fffbeb; }
+
+/* Inline Reassign/Defer form (replaces the old modals) — a two-column grid
+   that only appears once a panel is open, stacking below 1100px. */
+html .subissue-body-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 8px; }
+html .subissue-body-grid:has(.subissue-inline-panel) { grid-template-columns: 1fr 1fr; align-items: start; }
+html .subissue-body-main { min-width: 0; }
+html .subissue-inline-panel {
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+@media (max-width: 1100px) {
+  html .subissue-body-grid:has(.subissue-inline-panel) { grid-template-columns: 1fr; }
+}
+
+/* Footer actions: destructive/rare on the left, forward action on the right. */
+.ticket-detail-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.ticket-detail-footer-secondary,
+.ticket-detail-footer-primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ticket-detail-footer-primary {
+  margin-left: auto;
+}
+.text-danger-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--status-danger-fg);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+.text-danger-button:hover {
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-bg);
+}

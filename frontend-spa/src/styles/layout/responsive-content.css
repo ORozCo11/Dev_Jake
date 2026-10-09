@@ -1,0 +1,134 @@
+/* Phone-width content rules shared by every module. Loaded last (see App.css).
+   Breakpoints: 768px = phones/small tablets, 640px = tables restack. */
+
+@media (max-width: 768px) {
+  /* Stat/filter cards: two compact columns instead of one tall card per row. */
+  html .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  html .metric-card-iconic {
+    gap: var(--space-2);
+    padding: var(--space-3);
+    align-items: flex-start;
+  }
+  html .metric-card-iconic .metric-card-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+  }
+  html .metric-card-iconic .metric-card-body span {
+    font-size: var(--font-size-2xs);
+    line-height: var(--line-height-tight);
+  }
+}
+
+/* Tables -> one card per row (DataTable sets data-label on each cell). */
+@media (max-width: 640px) {
+  html .table-shell {
+    overflow-x: visible;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  html .table-shell table,
+  html .table-shell tbody,
+  html .table-shell tr,
+  html .table-shell td {
+    display: block;
+    width: 100%;
+  }
+  html .table-shell table {
+    table-layout: auto;
+    min-width: 0;
+    border: 0;
+  }
+  /* Column headers become each cell's label, so hide the header row
+     visually (it stays in the accessibility tree). */
+  html .table-shell thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  html .table-shell colgroup {
+    display: none;
+  }
+  html .table-shell tbody tr {
+    margin: 0 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border, #cddcf0);
+    border-radius: var(--radius-lg);
+    background: var(--surface, #ffffff);
+    box-shadow: var(--shadow-xs);
+  }
+  html .table-shell tbody tr:nth-child(even) {
+    background: var(--surface, #ffffff);
+  }
+  html .table-shell tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 36px;
+    padding: var(--space-1) 0;
+    border: 0;
+    text-align: right;
+    white-space: normal;
+    max-width: none;
+  }
+  html .table-shell tbody td + td {
+    border-top: 1px solid var(--border-subtle, #e2ebf7);
+  }
+  html .table-shell tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    max-width: 45%;
+    color: var(--text-muted, #56657a);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-align: left;
+  }
+  html .table-shell tbody td[data-label=""]::before {
+    content: none;
+  }
+  /* The record's identity leads the card; the numeric ID is noise here. */
+  html .table-shell tbody td[data-col="id"] {
+    display: none;
+  }
+  html .table-shell tbody td[data-col="id"] + td {
+    border-top: 0;
+  }
+  /* Full-width rows keep their own layout (expandable sub-rows). */
+  html .table-shell tbody tr.table-subrow td {
+    display: block;
+    text-align: left;
+  }
+  html .table-shell tbody tr.table-subrow td::before {
+    content: none;
+  }
+  html .table-shell .row-actions {
+    justify-content: flex-end;
+  }
+  html .table-shell .vehicle-cell,
+  html .table-shell .user-avatar-name {
+    justify-content: flex-end;
+    text-align: right;
+  }
+}
+
+/* Ticket phase stepper: keep all three phases on one row on phones
+   (wrapping put "Closed" alone on a second line with a dangling connector). */
+@media (max-width: 640px) {
+  html .ticket-process-flow {
+    flex-wrap: nowrap;
+    padding: var(--space-3) var(--space-2) var(--space-1);
+    gap: 0;
+  }
+  html .ticket-process-flow-step {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+}

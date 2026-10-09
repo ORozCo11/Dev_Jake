@@ -1,0 +1,655 @@
+/* Split from App.css (lines 12157-12763). Order matters: see App.css. */
+/* Smart dashboard redesign */
+.dashboard-grid-smart {
+  gap: 18px;
+}
+
+.dashboard-grid-smart > .dashboard-banner-compact,
+.dashboard-grid-smart > .dashboard-fleet-status-panel,
+.dashboard-grid-smart > .dashboard-quick-cards,
+.dashboard-grid-smart > .dashboard-headline-grid,
+.dashboard-grid-smart > .panel:not(.action-queue-panel) {
+  display: none !important;
+}
+
+.dashboard-grid-smart > .action-queue-panel {
+  grid-column: 1 / -1;
+}
+
+.dashboard-command-center {
+  --core: #22c55e;
+  --core-soft: rgba(34, 197, 94, 0.18);
+  background:
+    linear-gradient(135deg, rgba(7, 15, 28, 0.98), rgba(20, 45, 110, 0.98) 52%, rgba(29, 78, 216, 0.9));
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  box-shadow: 0 22px 44px rgba(15, 23, 42, 0.22);
+  color: #e5edf8;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.18fr) minmax(210px, 0.62fr) minmax(300px, 1fr);
+  gap: 20px;
+  min-height: 230px;
+  overflow: hidden;
+  padding: 24px;
+  position: relative;
+}
+
+.dashboard-command-center::before {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 34px 34px;
+  content: '';
+  inset: 0;
+  opacity: 0.34;
+  pointer-events: none;
+  position: absolute;
+}
+
+.dashboard-command-center.is-warn {
+  --core: #f59e0b;
+  --core-soft: rgba(245, 158, 11, 0.2);
+}
+
+.dashboard-command-center.is-alert {
+  --core: #ef4444;
+  --core-soft: rgba(239, 68, 68, 0.2);
+}
+
+.dashboard-command-center > * {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-command-copy {
+  align-self: center;
+  min-width: 0;
+}
+
+.dashboard-smart-panel-head span,
+.dashboard-live-chips span,
+.dashboard-micro-metric small {
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.dashboard-command-role {
+  color: #60a5fa;
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.dashboard-command-copy h2 {
+  color: #ffffff;
+  font-size: clamp(1.6rem, 2.1vw, 2.35rem);
+  line-height: 1.08;
+  margin: 8px 0;
+  max-width: 680px;
+}
+
+.dashboard-command-copy p {
+  color: rgba(226, 232, 240, 0.78);
+  margin: 0;
+}
+
+.dashboard-command-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.dashboard-command-pills span,
+.dashboard-command-pills button {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: #dbeafe;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 6px 10px;
+}
+
+.dashboard-command-pills button {
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.dashboard-command-pills button:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.dashboard-ready-split {
+  align-self: center;
+  display: grid;
+  justify-content: center;
+  justify-self: center;
+}
+
+.dashboard-ready-stat {
+  aspect-ratio: 1;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.94) 0 43%, transparent 44%),
+    conic-gradient(#22c55e 0 var(--ready-pct, 100%), #ef4444 var(--ready-pct, 100%) 100%),
+    radial-gradient(circle, rgba(34, 197, 94, 0.2), transparent 68%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  box-shadow:
+    0 0 32px rgba(34, 197, 94, 0.2),
+    inset 0 0 26px rgba(255, 255, 255, 0.06);
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 190px;
+}
+
+.dashboard-ready-stat-inner {
+  align-content: center;
+  background: rgba(2, 6, 23, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  display: grid;
+  gap: 4px;
+  height: 68%;
+  justify-items: center;
+  padding: 10px;
+  text-align: center;
+  width: 68%;
+}
+
+.dashboard-ready-row {
+  display: grid;
+  justify-items: center;
+  line-height: 1;
+}
+
+.dashboard-ready-row strong {
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 0.95;
+}
+
+.dashboard-ready-row span {
+  font-size: 0.58rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dashboard-ready-row.is-ready span {
+  color: #86efac;
+}
+
+.dashboard-ready-row.is-not-ready span {
+  color: #fca5a5;
+}
+
+.dashboard-hologram-scan {
+  animation: dashboardScan 3.8s linear infinite;
+  background: repeating-linear-gradient(180deg, rgba(125, 211, 252, 0.18) 0 2px, transparent 2px 9px);
+  border-radius: 50%;
+  clip-path: circle(48% at 50% 50%);
+  inset: 8%;
+  opacity: 0.42;
+  position: absolute;
+}
+
+@keyframes dashboardScan {
+  from { transform: translateY(-9px); }
+  to { transform: translateY(9px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-hologram-scan {
+    animation: none;
+  }
+}
+
+.dashboard-command-side {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  min-width: 0;
+}
+
+.dashboard-live-chips,
+.dashboard-command-mini-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-live-chips > div,
+.dashboard-micro-metric {
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.dashboard-live-chips span,
+.dashboard-micro-metric small {
+  color: rgba(226, 240, 255, 0.92);
+  display: block;
+}
+
+.dashboard-live-chips strong {
+  color: #ffffff;
+  display: flex;
+  font-size: 1.2rem;
+  font-weight: 900;
+  gap: 6px;
+  line-height: 1.1;
+  margin-top: 4px;
+}
+
+.dashboard-live-chips small {
+  color: rgba(226, 232, 240, 0.85);
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.dashboard-weather-mark {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.dashboard-micro-metric {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.dashboard-micro-metric > span {
+  align-items: center;
+  background: rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  color: #cbd5e1;
+  display: flex;
+  flex: 0 0 32px;
+  height: 32px;
+  justify-content: center;
+  width: 32px;
+}
+
+.dashboard-micro-metric strong {
+  color: #ffffff;
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.dashboard-micro-metric.is-ok > span { color: #86efac; }
+.dashboard-micro-metric.is-warn > span { color: #fbbf24; }
+.dashboard-micro-metric.is-alert > span { color: #fca5a5; }
+
+button.dashboard-micro-metric {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+button.dashboard-micro-metric:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.dashboard-signal-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dashboard-signal-card {
+  --signal: #2563eb;
+  background: var(--card-bg, #101827);
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+  color: var(--text, #dbeafe);
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 15px;
+  text-align: left;
+  width: 100%;
+}
+
+button.dashboard-signal-card {
+  cursor: pointer;
+  font: inherit;
+}
+
+button.dashboard-signal-card:hover {
+  border-color: color-mix(in srgb, var(--signal) 64%, var(--border-subtle));
+  transform: translateY(-1px);
+}
+
+.dashboard-signal-card.is-ok { --signal: #16a34a; }
+.dashboard-signal-card.is-warn { --signal: #d97706; }
+.dashboard-signal-card.is-alert { --signal: #dc2626; }
+
+.dashboard-signal-card-head {
+  align-items: center;
+  color: var(--text-muted, #94a3b8);
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dashboard-signal-card-icon {
+  align-items: center;
+  background: color-mix(in srgb, var(--signal) 14%, transparent);
+  border-radius: 7px;
+  color: var(--signal);
+  display: flex;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.dashboard-signal-card-chevron {
+  margin-left: auto;
+  opacity: 0.65;
+}
+
+.dashboard-signal-card strong {
+  color: var(--text-strong, #f8fafc);
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.dashboard-signal-card p {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.35;
+  margin: 0;
+  min-height: 2.05em;
+  overflow: hidden;
+}
+
+.dashboard-signal-meter {
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  display: block;
+  height: 5px;
+  overflow: hidden;
+}
+
+.dashboard-signal-meter span {
+  background: linear-gradient(90deg, var(--signal), color-mix(in srgb, var(--signal) 58%, #ffffff));
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+/* Super Admin dashboard — real content below the signal-card KPI row
+   (coverage chart, role breakdown, orphaned barangays, recent approvals),
+   not just counts. Panels reuse .dashboard-smart-panel's card language. */
+.superadmin-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.superadmin-dashboard-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.superadmin-dashboard-panel {
+  background: var(--card-bg, linear-gradient(180deg, rgba(22, 23, 27, 0.98), rgba(14, 15, 18, 0.98)));
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  padding: 18px;
+}
+.superadmin-dashboard-panel h4 {
+  color: var(--text-strong, #0f172a);
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 0 0 14px;
+}
+.superadmin-dashboard-panel h4:has(+ .superadmin-panel-subtitle) {
+  margin-bottom: 2px;
+}
+.superadmin-panel-subtitle {
+  color: var(--text-muted, #64748b);
+  font-size: 0.76rem;
+  margin: 0 0 14px;
+}
+/* "Barangay snapshot" section header, above the two charts — bold title
+   left, small filter-state caption right, same idea as the reference's
+   "54 matching requirements · Charts follow all grid filters". */
+.superadmin-snapshot-head {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 2px;
+}
+.superadmin-snapshot-head h3 {
+  color: var(--text-strong, #0f172a);
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+.superadmin-snapshot-head .muted { font-size: 0.78rem; }
+
+/* Clickable filter-tabs above the barangay grid — plain text links with a
+   count, the active one bold/underlined in the brand blue. */
+.superadmin-filter-tabs {
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 0;
+}
+.superadmin-filter-tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 10px 6px 8px;
+}
+.superadmin-filter-tabs button span {
+  color: inherit;
+  font-weight: 700;
+  margin-left: 4px;
+}
+.superadmin-filter-tabs button:hover { color: #2563eb; }
+.superadmin-filter-tabs button.active {
+  border-bottom-color: #2563eb;
+  color: #2563eb;
+}
+
+/* Search + province filter + Reset + Add Barangay, above the grid — plain
+   white toolbar row, deliberately NOT .panel-header-bar (that's a blue
+   title banner, wrong look for a row of form controls). */
+.superadmin-grid-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+.superadmin-grid-toolbar .primary-button { margin-left: auto; }
+
+/* Modern <select> styling for the whole Super Admin portal — every plain
+   dropdown here (topbar Impersonate, Registration Codes, the Users role
+   picker, Recover, the grid toolbar, Add Barangay's cascade, ...), not just
+   the ones in a .smart-form. Same look .smart-form select already uses
+   elsewhere in the app (custom chevron via appearance:none + an inline SVG,
+   rounded border, focus ring) instead of the bare OS-native dropdown. */
+.superadmin-shell select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9px;
+  color: #1e293b;
+  cursor: pointer;
+  font-size: 0.85rem;
+  outline: none;
+  padding: 8px 32px 8px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.superadmin-shell select:hover { border-color: #94a3b8; }
+.superadmin-shell select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+.superadmin-shell select:disabled {
+  background-color: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+/* The topbar's own three selects (Province/Barangay/Staff — .map-boundary-
+   selector, .dev-impersonate) already carry this exact look from their own
+   rules; this file loads after theirs, so re-declare their sizing here to
+   avoid the wider default padding/border crowding that compact topbar row. */
+.superadmin-shell .map-boundary-selector select,
+.superadmin-shell .dev-impersonate select {
+  border-radius: 6px;
+  padding: 4px 28px 4px 10px;
+  font-size: 0.78rem;
+}
+
+.superadmin-dashboard-panel-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.superadmin-dashboard-panel-head h4 { margin: 0; }
+.superadmin-dashboard-donut-row {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+}
+.superadmin-dashboard-donut-row .chart-legend { flex: 1; }
+.superadmin-dashboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.superadmin-dashboard-list li {
+  align-items: center;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 8px 6px;
+}
+.superadmin-dashboard-list li:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+.superadmin-dashboard-list li > span:first-of-type {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.superadmin-dashboard-list-more {
+  cursor: default;
+  font-size: 0.8rem;
+  justify-content: center;
+}
+.superadmin-dashboard-list-more:hover { background: none; }
+.link-button {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0;
+}
+.link-button:hover { color: #1d4ed8; text-decoration: underline; }
+
+html[data-theme="light"] .superadmin-dashboard-panel {
+  background: #ffffff;
+  border-color: #cdddf0;
+}
+
+/* "No vehicle is verified ready" — the dashboard's highest-priority signal,
+   so it sits above everything and doesn't rely on colour alone (icon + text). */
+.dashboard-no-ready-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 2px solid var(--status-danger-border);
+  border-left-width: 6px;
+  border-radius: var(--radius-lg);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+.dashboard-no-ready-alert > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dashboard-no-ready-alert strong {
+  display: block;
+  font-size: var(--font-size-lg);
+}
+.dashboard-no-ready-alert p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+}
+.dashboard-no-ready-alert-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.dashboard-no-ready-alert .primary-button {
+  flex: 0 0 auto;
+}
+@media (max-width: 640px) {
+  .dashboard-no-ready-alert {
+    flex-wrap: wrap;
+  }
+  .dashboard-no-ready-alert .primary-button {
+    width: 100%;
+  }
+}
+.dashboard-smart-panel-head-note {
+  display: block;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted, #56657a);
+  text-align: right;
+}

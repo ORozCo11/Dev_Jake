@@ -1,0 +1,459 @@
+/* Split from App.css (lines 4868-5326). Order matters: see App.css. */
+/* Notifications Dropdown Panel */
+.notifications-dropdown-container {
+  position: relative;
+}
+.notifications-dropdown {
+  position: absolute; top: 48px; right: 0;
+  width: 380px; max-height: 480px;
+  background: #ffffff; border: 1px solid #e2e8f0;
+  border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  z-index: 100; display: flex; flex-direction: column; overflow: hidden;
+  animation: slideDown 0.15s ease-out;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.notifications-header {
+  padding: 14px 18px; border-bottom: 1px solid #f1f5f9;
+  display: flex; align-items: center; justify-content: space-between;
+  background: #f8fafc;
+}
+.notifications-header h4 { font-size: 0.95rem; font-weight: 700; color: #0f172a; margin: 0; }
+.notifications-header button {
+  background: none; border: none; color: #3b82f6; font-size: 0.78rem; font-weight: 600;
+  cursor: pointer; transition: color 0.15s;
+}
+.notifications-header button:hover { color: #1d4ed8; text-decoration: underline; }
+
+.notifications-list {
+  overflow-y: auto; flex-grow: 1;
+  display: flex; flex-direction: column;
+}
+.notification-item {
+  padding: 14px 18px; border: 1.5px solid #e2e8f0; margin-bottom: 8px; margin-left: 10px; margin-right: 10px;
+  display: flex; gap: 12px; transition: background 0.15s, border-color 0.15s;
+  cursor: pointer; text-align: left; position: relative; border-radius: 8px;
+}
+.notification-item:hover { background: #f8fafc; }
+.notification-item.unread { background: #f0f7ff; }
+.notification-item.unread::after {
+  content: ''; position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  width: 8px; height: 8px; background: #3b82f6; border-radius: 50%;
+}
+
+/* Color coding for different notification types - full border box */
+.notification-item.notification-success {
+  border-color: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.03));
+}
+.notification-item.notification-success:hover {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(16, 185, 129, 0.05));
+  border-color: #059669;
+}
+
+.notification-item.notification-warning {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.03));
+}
+.notification-item.notification-warning:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.05));
+  border-color: #d97706;
+}
+
+.notification-item.notification-info {
+  border-color: #3b82f6;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0.03));
+}
+.notification-item.notification-info:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.05));
+  border-color: #1d4ed8;
+}
+
+.notification-item.notification-error {
+  border-color: #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(239, 68, 68, 0.03));
+}
+.notification-item.notification-error:hover {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.05));
+  border-color: #dc2626;
+}
+
+/* Work Tracker — card grid. One compact card per vehicle/ticket regardless of
+   how many sub-issues it has, so a vehicle with many sub-issues doesn't force
+   a long scroll to reach the next one. Clicking a card opens its sub-issues
+   in a popup (FormModal) instead of expanding inline and pushing the grid
+   around — the grid's layout stays stable no matter how much detail a ticket
+   holds. */
+.work-tracker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.work-tracker-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.work-tracker-card:hover { background: var(--primary-soft); }
+.work-tracker-card.needs-action { border-left-color: #f59e0b; }
+.work-tracker-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--border-subtle);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+.work-tracker-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.work-tracker-card-heading { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.work-tracker-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.work-tracker-item-flag { color: #f59e0b; flex-shrink: 0; }
+.work-tracker-card-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.work-tracker-card-summary {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.work-tracker-card-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  width: 16px;
+  text-align: center;
+}
+
+.work-tracker-subissue-list { display: flex; flex-direction: column; gap: 10px; }
+.work-tracker-subissue-card {
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.work-tracker-subissue-card.needs-action { border-left-color: #f59e0b; }
+.work-tracker-subissue-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.work-tracker-subissue-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Operations board — Work Tracker and Work Orders share one deliberate
+   scanning pattern: context first, then a calm actionable queue. */
+.operations-board {
+  overflow: hidden;
+  border: 1px solid #d7e3f5;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 26px rgba(30, 64, 175, 0.06);
+}
+.operations-board-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #e7eef8;
+  background: linear-gradient(120deg, #f8fbff 0%, #fff 58%);
+}
+.operations-kicker { display: block; margin-bottom: 5px; color: #2563eb; font-size: .68rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.operations-board-head h3 { margin: 0; color: #102a56; font-size: 1.08rem; }
+.operations-board-head p { margin: 6px 0 0; max-width: 650px; color: #64748b; font-size: .82rem; line-height: 1.45; }
+.operations-board-head .local-search { min-width: 250px; margin-top: 8px; }
+.operations-board-note { display: flex; align-items: center; gap: 8px; margin: 16px 24px 0; padding: 10px 12px; border-radius: 8px; background: #f8fafc; color: #52657f; font-size: .78rem; }
+.operations-board-note svg { color: #2563eb; }
+.operations-card-grid { padding: 16px 24px 24px; }
+.work-tracker-grid.operations-card-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.operations-card-grid .work-tracker-card { position: relative; min-height: 112px; align-items: flex-start; padding: 15px; border: 1px solid #dbe5f1; border-left: 3px solid #cbd5e1; border-radius: 12px; box-shadow: none; }
+.operations-card-grid .work-tracker-card:hover { border-color: #93c5fd; border-left-color: #2563eb; background: #f8fbff; box-shadow: 0 7px 16px rgba(37, 99, 235, .08); transform: translateY(-1px); }
+.operations-card-grid .work-tracker-card.needs-action { border-left-color: #f59e0b; background: linear-gradient(90deg, #fffdf6, #fff); }
+.operations-card-grid .work-tracker-thumb { width: 42px; height: 42px; border-radius: 10px; background: #edf4ff; }
+.operations-card-grid .work-tracker-card-heading { gap: 4px; }
+.work-tracker-card-label { color: #2563eb; font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.operations-card-grid .work-tracker-card-title-row { font-size: .9rem; color: #172b4d; }
+.operations-card-grid .work-tracker-card-sub { color: #475569; font-size: .8rem; }
+.operations-card-grid .work-tracker-card-summary { margin-top: 3px; color: #68768a; }
+.operations-card-grid .work-tracker-card-chevron { align-self: center; color: #2563eb; }
+
+/* Maintenance record — turn a scattered detail view into a concise service
+   report with a clear identity line, progress sequence, and readable facts. */
+.maintenance-record-detail { display: flex; flex-direction: column; gap: 22px; padding: 4px; }
+.maintenance-record-hero { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 16px 18px; border: 1px solid #dce8f8; border-radius: 12px; background: linear-gradient(115deg, #f6f9ff, #fff); }
+.maintenance-record-hero .vehicle-cell { padding-right: 12px; border-right: 1px solid #dbe5f1; }
+.maintenance-progress { display: flex; align-items: flex-start; max-width: 600px; padding: 18px 14px 6px; border-bottom: 1px solid #e5edf7; }
+.maintenance-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; max-width: 940px; overflow: hidden; border: 1px solid #e0e8f3; border-radius: 12px; background: #e0e8f3; font-size: .86rem; }
+.maintenance-detail-grid > div { min-height: 88px; padding: 15px 16px; background: #fff; color: #1e293b; line-height: 1.45; }
+.maintenance-detail-label { display: block; margin-bottom: 7px; color: #64748b; font-size: .67rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+
+/* Vehicle edit becomes a composed form surface rather than a full-width field
+   dump. The media input anchors the first column while form fields retain
+   their practical two-column rhythm. */
+.veh-edit-card { border-radius: 16px; box-shadow: 0 10px 28px rgba(15, 23, 42, .08); }
+.veh-edit-card .veh-card-head { padding: 18px 22px; background: linear-gradient(110deg, #f6f9ff, #fff); }
+.veh-edit-card .veh-card-head h4 { font-size: 1rem; }
+.veh-edit-body { padding: 26px; background: #fbfdff; }
+.veh-edit-body .smart-form { gap: 18px 22px; }
+.veh-edit-body .smart-form label { padding: 8px 10px 10px; border: 1px solid transparent; border-radius: 10px; background: #fff; }
+.veh-edit-body .smart-form label:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59, 130, 246, .10); }
+.veh-edit-body .smart-form input:not([type="file"]), .veh-edit-body .smart-form select, .veh-edit-body .smart-form textarea { max-width: none; }
+.veh-edit-body .photo-box { border-radius: 12px; border-color: #bfdbfe; background: #f8fbff; }
+.veh-edit-body .smart-form .form-actions { padding-top: 16px; border-top: 1px solid #dce8f5; }
+
+/* Edit vehicle information is intentionally grouped as a small workspace:
+   identify the unit first, then keep its image beside its specifications.
+   This removes the tall, empty cells created by mixing a photo upload into
+   the general two-column form grid. */
+.form-grid-2col.veh-edit-body .smart-form {
+  grid-template-columns: minmax(280px, 330px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.veh-edit-body .smart-form > .form-group {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid #dce7f4;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, .025);
+}
+.veh-edit-body .smart-form > .form-group:nth-of-type(1),
+.veh-edit-body .smart-form > .form-group:nth-of-type(4),
+.veh-edit-body .smart-form > .form-actions {
+  grid-column: 1 / -1;
+}
+.veh-edit-body .smart-form > .form-group:nth-of-type(2) { grid-column: 1; }
+.veh-edit-body .smart-form > .form-group:nth-of-type(3) { grid-column: 2; }
+.veh-edit-body .form-group-title {
+  margin: 0 0 16px;
+  padding: 0 0 10px;
+  color: #183b70;
+  font-size: .78rem;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.veh-edit-body .form-group-body {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+.veh-edit-body .smart-form > .form-group:nth-of-type(2) .form-group-body { grid-template-columns: 1fr; }
+.veh-edit-body .smart-form > .form-group:nth-of-type(3) .form-group-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.veh-edit-body .form-group-body label { min-width: 0; padding: 0; }
+.veh-edit-body .form-group-body label:has(input[type="file"]) { grid-column: auto; }
+.veh-edit-body .form-group-body .photo-box { max-width: none; min-height: 230px; }
+.veh-edit-body .form-group-body .photo-box img { max-height: 220px; object-fit: cover; }
+.veh-edit-body .field-extra { margin-top: 12px; }
+
+@media (max-width: 720px) {
+  .operations-board-head { flex-direction: column; padding: 18px; }
+  .operations-board-head .local-search { width: 100%; min-width: 0; }
+  .operations-board-note { margin-left: 18px; margin-right: 18px; }
+  .operations-card-grid { padding: 14px 18px 18px; }
+  .maintenance-detail-grid { grid-template-columns: 1fr; }
+  .maintenance-record-hero .vehicle-cell { width: 100%; padding: 0 0 12px; border: 0; border-bottom: 1px solid #dbe5f1; }
+  .veh-edit-body { padding: 16px; }
+}
+
+/* Account avatar dropdown (topbar, replaces the old sidebar profile panel) */
+.profile-menu-container {
+  position: relative;
+}
+.profile-menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.profile-menu-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.profile-menu-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* My Profile page — clean, card-less layout: identity hero + a constrained
+   password form, separated by a hairline rather than boxed in cards. */
+.profile-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 760px;
+}
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.profile-hero-avatar {
+  width: 92px;
+  height: 92px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  font-size: 1.9rem;
+  font-weight: 800;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.28);
+}
+.profile-hero-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-hero-info h2 {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--text-strong, #0f172a);
+  margin: 0 0 4px;
+}
+.profile-hero-info p { margin: 0 0 10px; font-size: 0.9rem; }
+.profile-hero-roles { display: flex; gap: 6px; flex-wrap: wrap; }
+.profile-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--text-strong, #0f172a);
+  margin: 0 0 4px;
+}
+.profile-section-hint { margin: 0 0 16px; font-size: 0.82rem; }
+.profile-form { max-width: 440px; }
+.profile-menu-dropdown {
+  position: absolute; top: 48px; right: 0;
+  width: 240px;
+  background: #ffffff; border: 1px solid #e2e8f0;
+  border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  z-index: 100; overflow: hidden;
+  animation: slideDown 0.15s ease-out;
+  padding: 8px;
+}
+.profile-menu-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px 12px;
+}
+.profile-menu-user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.profile-menu-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-menu-role {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+.profile-menu-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 4px 0;
+}
+.profile-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.profile-menu-item:hover {
+  background: #f1f5f9;
+}
+.profile-menu-item-danger {
+  color: #dc2626;
+}
+.profile-menu-item-danger:hover {
+  background: #fef2f2;
+}
+.notification-content { flex-grow: 1; display: flex; flex-direction: column; gap: 4px; }
+.notification-title { font-size: 0.85rem; font-weight: 700; color: #1e293b; }
+.notification-msg { font-size: 0.8rem; color: #475569; line-height: 1.4; }
+.notification-time { font-size: 0.75rem; color: #94a3b8; }
+.notification-actions {
+  display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end;
+}
+.notification-close-btn {
+  background: none; border: none; color: #94a3b8; font-size: 0.85rem; cursor: pointer;
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; transition: all 0.15s;
+}
+.notification-close-btn:hover { background: #fee2e2; color: #ef4444; }
+
+.notifications-empty {
+  padding: 40px 20px; text-align: center; color: #94a3b8;
+  font-size: 0.85rem; display: flex; flex-direction: column; align-items: center; gap: 8px;
+}

@@ -20,7 +20,7 @@ function ChartTooltipCard({ rows }) {
     <div className="chart-tooltip-card">
       {rows.map((row) => (
         <div className="chart-tooltip-row" key={row.label}>
-          {row.color && <span style={{ background: row.color }} />}
+          {row.color && <span className="chart-tooltip-dot" style={{ background: row.color }} />}
           <span className="chart-tooltip-label">{row.label}</span>
           <strong>{row.value}</strong>
         </div>

@@ -1,0 +1,863 @@
+/* Split from App.css (lines 12764-13624). Order matters: see App.css. */
+/* ============================================================
+   Super Admin console — a unified workspace for platform-wide tasks
+   ============================================================ */
+.superadmin-shell .content-area {
+  background: linear-gradient(135deg, #f4f8ff 0%, #f8fafc 48%, #eef5ff 100%);
+}
+.superadmin-shell .content-body { max-width: 1500px; margin: 0 auto; }
+.superadmin-shell .page-heading-row {
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px 24px;
+  border: 1px solid #d8e5f6;
+  border-radius: 16px;
+  background: linear-gradient(110deg, #ffffff, #f1f6ff);
+  box-shadow: 0 8px 24px rgba(30, 64, 175, .055);
+}
+.superadmin-shell .page-heading-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #dbeafe, #e8f0ff);
+  color: #2563eb;
+}
+.superadmin-page-kicker { display: block; margin-bottom: 3px; color: #2563eb; font-size: .66rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.superadmin-shell .page-heading-text h2 { margin: 0; color: #102a56; font-size: 1.25rem; }
+.superadmin-shell .page-heading-text p { margin: 4px 0 0; color: #64748b; font-size: .82rem; line-height: 1.4; }
+.superadmin-tab { display: flex; flex-direction: column; gap: 16px; }
+.superadmin-tab > .panel-header-bar,
+.superadmin-tab > .panel-header-bar.inline {
+  min-height: 68px;
+  padding: 16px 20px;
+  border: 1px solid #d9e5f5;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, .04);
+}
+.superadmin-tab > .panel-header-bar h3 { color: #173664; font-size: 1rem; }
+.superadmin-tab .table-shell {
+  overflow: auto;
+  border: 1px solid #d9e5f5;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, .04);
+}
+.superadmin-tab .table-shell table { min-width: 720px; }
+.superadmin-tab .table-shell th { padding: 13px 16px; background: #f4f8fe; color: #526b91; font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; }
+.superadmin-tab .table-shell td { padding: 13px 16px; border-color: #e7eef8; }
+.superadmin-tab .table-shell tbody tr:hover { background: var(--surface-hover); }
+.superadmin-tab .table-pagination { padding: 2px 4px 0; }
+.superadmin-dashboard { gap: 20px; }
+.superadmin-dashboard .dashboard-signal-grid { gap: 14px; }
+.superadmin-dashboard-panel { border-radius: 14px; padding: 20px; box-shadow: 0 7px 20px rgba(15, 23, 42, .045); }
+.superadmin-snapshot-head { margin: 4px 2px 0; padding-top: 4px; }
+.superadmin-snapshot-head h3 { color: #173664; font-size: 1.06rem; }
+.superadmin-filter-tabs { gap: 8px; padding: 6px; border: 1px solid #d9e5f5; border-radius: 12px; background: #fff; }
+.superadmin-filter-tabs button { padding: 8px 12px; border: 0; border-radius: 8px; }
+.superadmin-filter-tabs button.active { background: #e8f0ff; color: #1d4ed8; }
+.superadmin-grid-toolbar { margin: 0; padding: 14px; border: 1px solid #d9e5f5; border-radius: 12px; background: #fff; box-shadow: 0 4px 12px rgba(15, 23, 42, .035); }
+.superadmin-grid-toolbar .local-search-bar { flex: 1 1 300px; }
+.superadmin-tab .location-form-panel,
+.superadmin-tab .superadmin-panel-spaced { border: 1px solid #d9e5f5; border-radius: 14px; background: #fff; box-shadow: 0 5px 16px rgba(15, 23, 42, .04); }
+.superadmin-tab .location-form-panel { padding: 22px; }
+.superadmin-tab .locations-tab-bar { align-self: flex-start; margin: 0; padding: 5px; border: 1px solid #d9e5f5; border-radius: 11px; background: #fff; }
+.superadmin-tab .locations-tab-button { border-radius: 8px; }
+.superadmin-tab .locations-tab-button.active { background: #e8f0ff; color: #1d4ed8; }
+.superadmin-pending-tab .approval-groups,
+.superadmin-users-tab .users-province-groups { display: flex; flex-direction: column; gap: 12px; }
+.superadmin-tab .users-province-group,
+.superadmin-tab .users-barangay-group { overflow: hidden; border: 1px solid #d9e5f5; border-radius: 13px; background: #fff; box-shadow: 0 4px 12px rgba(15, 23, 42, .035); }
+.superadmin-tab .users-province-group > summary { padding: 14px 16px; background: #f7faff; color: #173664; }
+.superadmin-tab .users-barangay-group { margin: 10px 12px 12px; }
+.superadmin-tab .users-barangay-group > summary { padding: 11px 13px; background: #fbfdff; }
+.superadmin-settings-tab .smart-form { padding: 22px; border: 1px solid #d9e5f5; border-radius: 14px; background: #fff; box-shadow: 0 5px 16px rgba(15, 23, 42, .04); }
+html[data-theme="dark"] .superadmin-shell .content-area { background: linear-gradient(135deg, #0b1220, #101827); }
+html[data-theme="dark"] .superadmin-shell .page-heading-row,
+html[data-theme="dark"] .superadmin-tab > .panel-header-bar,
+html[data-theme="dark"] .superadmin-tab .table-shell,
+html[data-theme="dark"] .superadmin-grid-toolbar,
+html[data-theme="dark"] .superadmin-tab .location-form-panel,
+html[data-theme="dark"] .superadmin-tab .users-province-group,
+html[data-theme="dark"] .superadmin-tab .users-barangay-group,
+html[data-theme="dark"] .superadmin-settings-tab .smart-form { background: #111827; border-color: #26354c; }
+html[data-theme="dark"] .superadmin-tab .table-shell th,
+html[data-theme="dark"] .superadmin-tab .users-province-group > summary { background: #172235; }
+
+/* Super Admin surface treatment — matches the reference's restrained panels:
+   white cards float above the canvas with neutral grey elevation rather than
+   conspicuous blue outlines. Blue is reserved for interactive states only. */
+html[data-theme="light"] .superadmin-shell .content-area {
+  background: #edf3fa;
+}
+html[data-theme="light"] .superadmin-shell .page-heading-row {
+  border-color: #e6ebf1;
+  background: #f7f9fc;
+  box-shadow: none;
+}
+html[data-theme="light"] .superadmin-shell .page-heading-icon {
+  background: #eef4ff;
+  box-shadow: inset 0 0 0 1px #dce6f6;
+}
+html[data-theme="light"] .superadmin-tab > .panel-header-bar,
+html[data-theme="light"] .superadmin-tab .table-shell,
+html[data-theme="light"] .superadmin-dashboard-panel,
+html[data-theme="light"] .superadmin-grid-toolbar,
+html[data-theme="light"] .superadmin-tab .location-form-panel,
+html[data-theme="light"] .superadmin-tab .superadmin-panel-spaced,
+html[data-theme="light"] .superadmin-tab .users-province-group,
+html[data-theme="light"] .superadmin-tab .users-barangay-group,
+html[data-theme="light"] .superadmin-settings-tab .smart-form {
+  border: 1px solid #e4e8ed;
+  background: #ffffff;
+  box-shadow: 0 3px 10px rgba(55, 65, 81, .16), 0 1px 2px rgba(55, 65, 81, .08);
+}
+html[data-theme="light"] .superadmin-tab .table-shell { border-radius: 8px; }
+html[data-theme="light"] .superadmin-tab > .panel-header-bar,
+html[data-theme="light"] .superadmin-dashboard-panel,
+html[data-theme="light"] .superadmin-grid-toolbar,
+html[data-theme="light"] .superadmin-tab .location-form-panel,
+html[data-theme="light"] .superadmin-settings-tab .smart-form { border-radius: 7px; }
+html[data-theme="light"] .superadmin-tab .table-shell th {
+  background: #fafbfd;
+  border-bottom: 1px solid #e3e7ec;
+  color: #64748b;
+}
+html[data-theme="light"] .superadmin-tab .table-shell td { border-color: #edf0f3; }
+html[data-theme="light"] .superadmin-tab .table-shell tbody tr:hover,
+html[data-theme="light"] .superadmin-tab .table-shell tbody tr:hover td { background: #fafcff; }
+html[data-theme="light"] .superadmin-filter-tabs,
+html[data-theme="light"] .superadmin-tab .locations-tab-bar {
+  border-color: #e3e7ec;
+  background: #ffffff;
+  box-shadow: 0 2px 7px rgba(55, 65, 81, .11);
+}
+html[data-theme="light"] .superadmin-filter-tabs button.active,
+html[data-theme="light"] .superadmin-tab .locations-tab-button.active { background: #edf4ff; color: #1d4ed8; }
+html[data-theme="light"] .superadmin-tab .users-province-group > summary,
+html[data-theme="light"] .superadmin-tab .users-barangay-group > summary { background: #fbfcfe; }
+
+/* A Super Admin works across the platform, so this is a full operational
+   canvas — not a centered, marketing-style column. */
+.superadmin-shell .content-body {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.superadmin-shell .page-heading-row {
+  min-height: 72px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  border-radius: 7px;
+}
+.superadmin-shell .page-heading-icon { width: 40px; height: 40px; border-radius: 8px; }
+.superadmin-shell .page-heading-text h2 { font-size: 1.1rem; }
+.superadmin-tab { width: 100%; gap: 14px; }
+.superadmin-dashboard-row { grid-template-columns: minmax(0, 1.45fr) minmax(340px, .85fr); }
+.superadmin-dashboard-panel { min-height: 250px; }
+.superadmin-tab .table-shell,
+.superadmin-tab .location-form-panel,
+.superadmin-tab > .panel-header-bar { width: 100%; }
+@media (max-width: 980px) {
+  .superadmin-dashboard-row { grid-template-columns: 1fr; }
+}
+
+/* Table-first console composition. KPI values read as one compact strip,
+   while the queue and data tables receive the visual weight. */
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-grid {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #e1e6eb;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(55, 65, 81, .14);
+}
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card {
+  min-height: 108px;
+  padding: 16px 18px;
+  border: 0;
+  border-right: 1px solid #e8ecf0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+}
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card:last-child { border-right: 0; }
+html[data-theme="light"] .superadmin-dashboard button.dashboard-signal-card:hover { background: #f8fbff; transform: none; }
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card-head { color: #64748b; font-size: .7rem; letter-spacing: .045em; text-transform: uppercase; }
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card strong { color: #1e293b; font-size: 1.35rem; }
+html[data-theme="light"] .superadmin-dashboard .dashboard-signal-meter { display: none; }
+html[data-theme="light"] .superadmin-dashboard-panel { padding: 18px; }
+html[data-theme="light"] .superadmin-dashboard-panel h4 { padding-bottom: 11px; border-bottom: 1px solid #e7ebef; }
+.superadmin-pending-tab .superadmin-muted-block { margin: -5px 2px 0; font-size: .8rem; }
+html[data-theme="light"] .superadmin-pending-tab .approval-group-list { gap: 6px; }
+html[data-theme="light"] .superadmin-pending-tab .approval-group-card {
+  min-height: 72px;
+  border: 1px solid #e3e7eb;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(55, 65, 81, .11);
+}
+html[data-theme="light"] .superadmin-pending-tab .approval-group-card:hover { background: #fafcff; transform: none; }
+html[data-theme="light"] .superadmin-pending-tab .approval-card-list { grid-template-columns: 1fr; gap: 7px; }
+html[data-theme="light"] .superadmin-pending-tab .approval-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.15fr) minmax(220px, 1.2fr) auto auto minmax(200px, .75fr);
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border: 1px solid #e3e7eb;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(55, 65, 81, .11);
+}
+html[data-theme="light"] .superadmin-pending-tab .approval-card.is-first-admin { border-left: 3px solid #d97706; box-shadow: 0 2px 7px rgba(55, 65, 81, .11); }
+html[data-theme="light"] .superadmin-pending-tab .approval-card-actions { margin: 0; }
+@media (max-width: 900px) {
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card:nth-child(2) { border-right: 0; }
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card:nth-child(-n+2) { border-bottom: 1px solid #e8ecf0; }
+  html[data-theme="light"] .superadmin-pending-tab .approval-card { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-grid { grid-template-columns: 1fr; }
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card { border-right: 0; border-bottom: 1px solid #e8ecf0; }
+  html[data-theme="light"] .superadmin-dashboard .dashboard-signal-card:last-child { border-bottom: 0; }
+  html[data-theme="light"] .superadmin-pending-tab .approval-card { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .superadmin-shell .page-heading-row { align-items: flex-start; padding: 16px; }
+  .superadmin-shell .page-heading-text p { max-width: 290px; }
+  .superadmin-tab > .panel-header-bar { align-items: flex-start; flex-direction: column; }
+  .superadmin-grid-toolbar .primary-button { width: 100%; margin-left: 0; }
+  .superadmin-dashboard-donut-row { align-items: flex-start; flex-direction: column; }
+}
+
+.dashboard-intelligence-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.dashboard-smart-panel {
+  background: var(--card-bg, linear-gradient(180deg, rgba(22, 23, 27, 0.98), rgba(14, 15, 18, 0.98)));
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.2));
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+}
+
+.dashboard-readiness-matrix { grid-column: span 5; }
+.dashboard-condition-matrix { grid-column: span 3; }
+.dashboard-operations-matrix { grid-column: span 4; }
+.dashboard-distribution-matrix { grid-column: 1 / -1; }
+
+.dashboard-smart-panel-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.dashboard-smart-panel-head span {
+  color: var(--primary-strong, #60a5fa);
+}
+
+.dashboard-smart-panel-head h3 {
+  color: var(--text-strong);
+  font-size: 0.98rem;
+  font-weight: 900;
+  line-height: 1.2;
+  margin: 4px 0 0;
+}
+
+.dashboard-smart-panel-head > strong {
+  color: var(--text-strong);
+  font-size: 1.35rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.dashboard-readiness-compact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-readiness-compact-list .emergency-readiness-row {
+  margin: 0;
+  padding: 9px 10px;
+}
+
+.dashboard-readiness-compact-list .emergency-readiness-row-stat {
+  min-width: 76px;
+}
+
+.dashboard-inline-action {
+  align-self: flex-start;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 8px;
+  color: var(--primary-strong, #2563eb);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 850;
+  padding: 8px 11px;
+}
+
+.dashboard-condition-core {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 116px minmax(0, 1fr);
+}
+
+.dashboard-condition-donut .donut-chart {
+  width: 112px;
+}
+
+.dashboard-condition-core .chart-legend {
+  gap: 7px;
+}
+
+.dashboard-condition-core .chart-legend li {
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+}
+
+.dashboard-status-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-status-strip div {
+  background: color-mix(in srgb, var(--strip-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--strip-color) 26%, transparent);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.dashboard-status-strip span {
+  color: var(--text-muted);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-status-strip strong {
+  /* Darkened so the number stays readable (4.5:1) on its own tinted chip. */
+  color: color-mix(in srgb, var(--strip-color) 72%, #0b1220);
+  display: block;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.1;
+  margin-top: 3px;
+}
+
+.dashboard-operations-matrix .column-chart {
+  height: 200px;
+}
+
+.dashboard-panel-note {
+  border-top: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.2));
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: auto 0 0;
+  padding-top: 10px;
+}
+
+.dashboard-dual-bars {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-dual-bars > div {
+  min-width: 0;
+}
+
+.dashboard-dual-bars h4 {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+html[data-theme="light"] .dashboard-command-center {
+  background:
+    linear-gradient(135deg, #0b1f4d 0%, #1d4ed8 55%, #2563eb 100%);
+  border-color: rgba(37, 99, 235, 0.3);
+  box-shadow: 0 16px 34px rgba(31, 75, 122, 0.18);
+}
+
+html[data-theme="light"] .dashboard-smart-panel,
+html[data-theme="light"] .dashboard-signal-card {
+  background: #ffffff;
+  border-color: #cdddf0;
+  box-shadow: 0 8px 20px rgba(31, 75, 122, 0.1);
+}
+
+html[data-theme="light"] .dashboard-signal-card p,
+html[data-theme="light"] .dashboard-signal-card-head,
+html[data-theme="light"] .dashboard-panel-note,
+html[data-theme="light"] .dashboard-status-strip span,
+html[data-theme="light"] .dashboard-dual-bars h4 {
+  color: var(--text-muted);
+}
+
+html[data-theme="light"] .dashboard-signal-card strong,
+html[data-theme="light"] .dashboard-smart-panel-head h3,
+html[data-theme="light"] .dashboard-smart-panel-head > strong {
+  color: #071a35;
+}
+
+html[data-theme="light"] .dashboard-ready-stat-inner {
+  background: rgba(248, 250, 252, 0.88);
+}
+
+html[data-theme="light"] .dashboard-ready-row strong {
+  color: #071a35;
+}
+
+html[data-theme="light"] .dashboard-ready-row.is-ready span {
+  color: #0f766e;
+}
+
+html[data-theme="light"] .dashboard-ready-row.is-not-ready span {
+  color: #b91c1c;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-command-center {
+    grid-template-columns: minmax(0, 1fr) minmax(210px, 0.72fr);
+  }
+
+  .dashboard-command-side {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-readiness-matrix,
+  .dashboard-condition-matrix,
+  .dashboard-operations-matrix {
+    grid-column: span 6;
+  }
+
+  .dashboard-operations-matrix {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 860px) {
+  .dashboard-command-center,
+  .dashboard-signal-grid,
+  .dashboard-dual-bars {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-ready-stat {
+    width: 160px;
+  }
+
+  .dashboard-readiness-matrix,
+  .dashboard-condition-matrix,
+  .dashboard-operations-matrix,
+  .dashboard-distribution-matrix {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .dashboard-command-center {
+    padding: 18px;
+  }
+
+  .dashboard-live-chips,
+  .dashboard-command-mini-grid,
+  .dashboard-condition-core,
+  .dashboard-status-strip,
+  .dashboard-operations-matrix .column-chart {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-ready-row strong {
+    font-size: 1.2rem;
+  }
+
+  .dashboard-signal-card p {
+    min-height: 0;
+  }
+}
+
+/* "File cabinet" attachment picker (Log Repairs' Photo/Doc field) — a real
+   drop-zone affordance instead of the bare native file input, using the
+   archive icon (a drawer with a lid) as the cabinet motif. The native
+   <input type="file"> is display:none inside the <label>; clicking anywhere
+   on the label still opens the file picker, since that's how label/input
+   association works regardless of the input's own visibility. */
+.file-cabinet-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 12px;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.file-cabinet-dropzone:hover {
+  border-color: #93c5fd;
+  background: #f8fafc;
+}
+.file-cabinet-dropzone-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #2563eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.file-cabinet-dropzone-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+.file-cabinet-dropzone-hint {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+/* Filled state — a file already "put away" in the cabinet. */
+.file-cabinet-drawer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.file-cabinet-drawer-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #2563eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+html[data-theme="dark"] .file-cabinet-dropzone,
+html[data-theme="dark"] .file-cabinet-drawer {
+  background: var(--surface, #1e293b);
+  border-color: var(--border, #334155);
+}
+html[data-theme="dark"] .file-cabinet-dropzone:hover {
+  background: var(--surface-hover, #263548);
+  border-color: #3b82f6;
+}
+html[data-theme="dark"] .file-cabinet-dropzone-title {
+  color: var(--text-strong, #f1f5f9);
+}
+
+/* ============================================================
+   Super Admin workspace — Pending Approvals cards, and small layout
+   utilities that replace one-off inline styles across its other tabs
+   (Barangays recovery panel, Registration Codes chip, Impersonate row),
+   so every page in this portal reads as one consistently designed module.
+   ============================================================ */
+
+.approval-card-list {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.approval-card {
+  background: var(--card-bg, #101827);
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.approval-card.is-first-admin {
+  border-color: #d97706;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35);
+}
+
+.approval-card-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.approval-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: -4px;
+}
+
+.approval-card-email {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-card-phone {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.75rem;
+}
+
+.approval-card-tags {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.badge-first-admin {
+  background: rgba(217, 119, 6, 0.16);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  border-radius: 999px;
+  color: #a55a05;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  text-transform: uppercase;
+}
+
+.approval-card-location {
+  align-items: center;
+  color: var(--text-muted, #94a3b8);
+  display: flex;
+  font-size: 0.8rem;
+  gap: 6px;
+}
+
+.approval-card-submitted {
+  font-size: 0.74rem;
+}
+
+.approval-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.approval-card-actions .ghost-button,
+.approval-card-actions .primary-button {
+  flex: 1;
+  justify-content: center;
+}
+
+/* Pending Approvals' grouped-by-barangay overview — one clickable card per
+   barangay (not per account), drilling into the same .approval-card-list
+   used before this redesign. */
+.approval-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.approval-group-card {
+  align-items: center;
+  background: var(--card-bg, #101827);
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  text-align: left;
+  transition: border-color 0.15s, transform 0.1s;
+  width: 100%;
+}
+.approval-group-card:hover {
+  border-color: #2563eb;
+  transform: translateY(-1px);
+}
+.approval-group-card.is-first-admin {
+  border-color: #d97706;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35);
+}
+.approval-group-card-location {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  min-width: 0;
+}
+.approval-group-card-location > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.approval-group-card-location strong {
+  font-size: 0.94rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-group-card-location .muted {
+  font-size: 0.78rem;
+}
+.approval-group-card-tags {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+}
+.approval-group-card-chevron {
+  color: var(--text-muted, #94a3b8);
+  flex-shrink: 0;
+}
+.approval-group-back {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  margin-right: 4px;
+  padding: 2px;
+  vertical-align: middle;
+}
+
+/* All Users — grouped Province -> Barangay via nested <details>, native
+   collapse/expand instead of hand-rolled toggle state. Both levels render
+   open by default (a constant `open` attribute — React only touches the
+   DOM when the prop VALUE changes between renders, so this never fights a
+   user's own manual collapse click). */
+.users-province-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.users-province-group {
+  background: var(--card-bg, #101827);
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 10px;
+  overflow: hidden;
+}
+.users-province-group > summary {
+  align-items: center;
+  background: rgba(37, 99, 235, 0.1);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.95rem;
+  font-weight: 700;
+  gap: 10px;
+  list-style: none;
+  padding: 12px 16px;
+}
+.users-province-group > summary::-webkit-details-marker { display: none; }
+.users-province-group > summary::before {
+  content: '';
+  border-style: solid;
+  border-width: 5px 4px 0 4px;
+  border-color: currentColor transparent transparent transparent;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.users-province-group[open] > summary::before { transform: rotate(-90deg); }
+.users-province-group > summary span:first-of-type { flex: 1; }
+.users-barangay-group {
+  border-top: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.15));
+  padding: 10px 16px 14px 16px;
+}
+.users-barangay-group > summary {
+  align-items: center;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.84rem;
+  font-weight: 600;
+  gap: 8px;
+  list-style: none;
+  padding: 6px 0;
+}
+.users-barangay-group > summary::-webkit-details-marker { display: none; }
+.users-barangay-group > summary::before {
+  content: '';
+  border-style: solid;
+  border-width: 4px 3.5px 0 3.5px;
+  border-color: currentColor transparent transparent transparent;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.users-barangay-group[open] > summary::before { transform: rotate(-90deg); }
+.users-barangay-group > summary span:first-of-type { flex: 1; color: var(--text, #e2e8f0); }
+.users-barangay-group .table-shell { margin-top: 6px; }
+
+html[data-theme="light"] .users-province-group {
+  background: #ffffff;
+  border-color: #cdddf0;
+}
+html[data-theme="light"] .users-barangay-group > summary span:first-of-type {
+  color: #1e293b;
+}
+
+.superadmin-panel-spaced { margin-top: 16px; }
+.superadmin-inline-row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.superadmin-muted-block { margin-bottom: 12px; }
+
+.superadmin-code-chip {
+  background: rgba(37, 99, 235, 0.14);
+  border: 1.5px solid rgba(96, 165, 250, 0.4);
+  border-radius: 8px;
+  color: #93c5fd;
+  display: inline-flex;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 8px 14px;
+}
+
+.superadmin-description-cell {
+  display: block;
+  max-width: 340px;
+  white-space: normal;
+}
+
+html[data-theme="light"] .approval-card,
+html[data-theme="light"] .approval-group-card {
+  background: #ffffff;
+  border-color: #cdddf0;
+  box-shadow: 0 8px 20px rgba(31, 75, 122, 0.1);
+}
+
+html[data-theme="light"] .approval-card-email,
+html[data-theme="light"] .approval-card-phone,
+html[data-theme="light"] .approval-card-location {
+  color: #64748b;
+}
+
+html[data-theme="light"] .superadmin-code-chip {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}

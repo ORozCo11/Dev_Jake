@@ -1,0 +1,168 @@
+/* Split from App.css (lines 10996-11169). Order matters: see App.css. */
+/* ============================================================= */
+/* LIGHT THEME — flip the palette variables (covers most of the  */
+/* variable-driven UI) plus targeted overrides for the few       */
+/* surfaces that hardcode dark colors. The Leaflet map stays dark */
+/* on purpose (dark basemap with green pins).                    */
+/* ============================================================= */
+[data-theme="light"] {
+  --bg: #eef1f6;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #f1f5f9;
+  --surface-hover: #eef2f7;
+  --sidebar: #ffffff;
+  --border: #e2e8f0;
+  --border-subtle: #eef2f7;
+  --text: #1e293b;
+  --text-strong: #0f172a;
+  --text-muted: #56657a;
+  --text-faint: #94a3b8;
+  --primary: #2563eb;
+  --primary-strong: #1d4ed8;
+  --primary-soft: rgba(37, 99, 235, 0.10);
+  --primary-border: rgba(37, 99, 235, 0.30);
+  --shadow-deep: 0 22px 54px rgba(15, 23, 42, 0.14);
+  --shadow-soft: 0 4px 10px rgba(15, 23, 42, 0.12);
+}
+
+[data-theme="light"] html,
+[data-theme="light"] body,
+[data-theme="light"] #root {
+  background: var(--bg);
+}
+
+/* The sidebar keeps a fixed royal-blue brand chrome regardless of the
+   light/dark content theme — only the main content area switches. Redefining
+   the neutral tokens here (not --primary*) re-themes every nav/profile rule
+   that already reads var(--text)/var(--surface)/etc. without duplicating them. */
+[data-theme="light"] .sidebar {
+  background: #1d4ed8;
+  border-right: 1px solid #1a44bd;
+  --sidebar: #1d4ed8;
+  --text: #dbe6fe;
+  --text-strong: #ffffff;
+  --text-muted: #bfd2fb;
+  --text-faint: #93b4f7;
+  --border: #1a44bd;
+  --border-subtle: rgba(255, 255, 255, 0.14);
+  --surface: rgba(255, 255, 255, 0.08);
+  --surface-hover: rgba(255, 255, 255, 0.14);
+}
+[data-theme="light"] .sidebar .module-nav button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+/* Active nav item styling lives in themes/light-admin.css (a rule here with
+   `.sidebar` in it out-ranked that one by specificity and kept the old,
+   low-contrast look). */
+[data-theme="light"] .sidebar .eyebrow {
+  color: #bfd2fb;
+}
+[data-theme="light"] .topbar {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.98));
+  border-bottom: 1px solid #cfe0f7;
+}
+[data-theme="light"] .auth-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+/* Tables */
+[data-theme="light"] thead th {
+  background: #ffffff;
+  color: #0f172a;
+  border-bottom: 2px solid #e2e8f0;
+}
+[data-theme="light"] tbody td {
+  color: #334155;
+  border-color: #e2e8f0;
+}
+[data-theme="light"] tbody tr:hover { background-color: #f8fafc; }
+
+/* Form controls that hardcode a dark field background */
+[data-theme="light"] .smart-form input,
+[data-theme="light"] .smart-form select,
+[data-theme="light"] .smart-form textarea,
+[data-theme="light"] .filter-select,
+[data-theme="light"] .local-search-input,
+[data-theme="light"] .profile-actions .smart-form input,
+[data-theme="light"] .popover-date-group input[type="date"] {
+  background: #ffffff !important;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+[data-theme="light"] .smart-form input[type="file"] { background: #f8fafc !important; }
+[data-theme="light"] .filter-select option,
+[data-theme="light"] .smart-form select option { background: #ffffff; color: #0f172a; }
+
+/* Charts / panels with hardcoded dark fills */
+[data-theme="light"] .donut-center { background: #ffffff; }
+[data-theme="light"] .ticket-inline-form,
+[data-theme="light"] .map-header { background: #ffffff; }
+[data-theme="light"] .ticket-detail-phase-bar { background: #f1f5f9; }
+
+/* Dark header/action bars that hardcode #101114 — relighten for light mode
+   so their (now-dark) text is readable. */
+[data-theme="light"] .notifications-header,
+[data-theme="light"] .ticket-detail-header,
+[data-theme="light"] .ticket-detail-actions {
+  background: #f8fafc;
+  border-color: var(--border);
+}
+[data-theme="light"] .notifications-header h4,
+[data-theme="light"] .ticket-detail-title {
+  color: #0f172a;
+}
+[data-theme="light"] .modal-body pre[style] {
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* Card / panel surfaces (in case any hardcode dark) */
+[data-theme="light"] .panel,
+[data-theme="light"] .metric-card,
+[data-theme="light"] .graph-panel,
+[data-theme="light"] .module-grid .panel {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+/* Reported-issues alert card: was forced white by the rule above, leaving its
+   light text invisible. Give it a readable light-red treatment instead. */
+[data-theme="light"] .metric-card.metric-card-alert {
+  background: linear-gradient(180deg, #fff1f2, #ffe4e6);
+  border-color: rgba(239, 68, 68, 0.55);
+}
+[data-theme="light"] .metric-card.metric-card-alert span { color: #b91c1c; }
+[data-theme="light"] .metric-card.metric-card-alert strong {
+  color: #991b1b;
+  text-shadow: none;
+}
+
+/* Dashboard hero banner: blue brand accent (not black) with light text so
+   the greeting, date, clock and weather stay readable in light mode. */
+[data-theme="light"] .dashboard-banner {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%);
+  border-color: #1a44bd;
+}
+[data-theme="light"] .dashboard-banner-weather,
+[data-theme="light"] .dashboard-banner-time {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+[data-theme="light"] .dashboard-banner-welcome h2,
+[data-theme="light"] .dashboard-banner-time strong,
+[data-theme="light"] .weather-desc,
+[data-theme="light"] .weather-temp {
+  color: #ffffff;
+}
+[data-theme="light"] .dashboard-banner-welcome p,
+[data-theme="light"] .dashboard-banner-time .time-label,
+[data-theme="light"] .weather-city,
+[data-theme="light"] .weather-extra {
+  color: #dbe6fe;
+}
+[data-theme="light"] .dashboard-greeting-role {
+  color: #bfd2fb;
+}

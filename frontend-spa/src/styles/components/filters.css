@@ -1,0 +1,735 @@
+/* Split from App.css (lines 6522-7213). Order matters: see App.css. */
+/* Filter Bar Styles */
+.filter-bar-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+  margin-bottom: 6px;
+  width: 100%;
+  animation: fadeSlide 0.2s ease;
+}
+.filter-bar-trailing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.module-filter-panel {
+  padding: 14px 18px;
+}
+.module-filter-panel .filter-bar-container {
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
+.filter-select {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9px;
+  color: #1e293b;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  min-width: 160px;
+  transition: all 0.2s ease;
+}
+.filter-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Checkbox multi-select dropdown — replaces the native <select> in filter
+   rows so a filter can hold zero, one, or many values. */
+.multi-select-dropdown {
+  position: relative;
+  display: inline-block;
+}
+/* Not scoped to a direct child of .filter-bar-container — this also needs
+   to render correctly nested inside other filter layouts (e.g. Issue
+   Reports' bespoke panel). Label sits above the input (like the
+   reference's "From Date"/"To Date" captions) instead of beside it. */
+.filter-date-group {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filter-date-group > span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+/* A bigger, blue calendar icon (the browser's native picker indicator,
+   enlarged and tinted) instead of the tiny default one. min-width (not a
+   fixed width) so callers that want a narrower, content-hugging box can
+   still override it inline (see FilterBar's date inputs) — but the default
+   here is now sized to just fit "mm/dd/yyyy" plus that icon; the old 210px
+   left dead space between the date text and the icon, so it no longer sat
+   flush against the field's own right edge the way the reference does. */
+.filter-date-group input[type="date"] {
+  min-width: 165px;
+  padding: 8px 8px 8px 10px;
+  font-size: 0.85rem;
+  cursor: text;
+}
+.filter-date-group input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  padding: 3px;
+  margin-left: 6px;
+  transform: scale(1.35);
+  filter: invert(32%) sepia(93%) saturate(1352%) hue-rotate(202deg) brightness(94%) contrast(101%);
+}
+/* DateFilterInput — the visible MM/DD/YYYY text field plus its calendar
+   button sit in one bordered box (so it still reads as a single control),
+   with the real <input type="date"> that actually drives the picker
+   collapsed to nothing behind it. */
+.date-filter-input {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 165px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  overflow: hidden;
+}
+.date-filter-input input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 0;
+  padding: 8px 8px 8px 10px;
+  font-size: 0.85rem;
+}
+.date-filter-input input[type="text"]:focus {
+  outline: none;
+  box-shadow: none;
+}
+.date-filter-input-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  border: none;
+  border-left: 1px solid #e2e8f0;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+}
+.date-filter-input-icon:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+.date-filter-input-hidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Issue Reports' bespoke filter panel (search + dropdowns + dates on top,
+   a severity range slider and colored status chips below). A 2-column
+   grid — not two independent flex rows — so the dates block (top-right)
+   and the chips+button cluster (bottom-right) share the exact same
+   track and their edges line up, instead of the dates sitting narrower
+   than whatever width the chips+button happen to render at. */
+.issue-filter-panel {
+  display: grid;
+  grid-template-columns: 1fr minmax(500px, 650px);
+  gap: 10px;
+  width: 100%;
+}
+.issue-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.issue-filter-dates {
+  display: flex;
+  gap: 10px;
+}
+.issue-filter-date-input {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.issue-filter-date-input input[type="date"] {
+  width: 100%;
+}
+.issue-filter-severity-card {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--surface-1, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+}
+.issue-filter-severity-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-strong, #0f172a);
+}
+.issue-filter-right-cluster {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+/* Fixed-width chips (not stretched to fill leftover cluster space) so the
+   Filter button is what grows to fill the rest of the cluster — sized by
+   the shared grid track above, not the whole panel width. */
+.issue-filter-status-grid {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 240px));
+  gap: 6px;
+}
+/* Checkbox pinned left, label pushed to the far edge — same reading order
+   as the reference's chips (a full-width pill, not a tight checkbox+label
+   cluster) instead of both sitting bunched together on the left. */
+.issue-filter-status-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.issue-filter-status-chip input { flex-shrink: 0; width: 15px; height: 15px; margin: 0; }
+.issue-filter-actions {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  min-width: 140px;
+}
+.issue-filter-apply-btn { width: 100%; height: 38px; font-size: 0.9rem; }
+@media (max-width: 900px) {
+  .issue-filter-panel { grid-template-columns: 1fr; }
+  .issue-filter-right-cluster { flex-wrap: wrap; }
+}
+
+/* Dual-handle range slider — two overlaid native range inputs share one
+   track; each input is fully transparent and click-through except its own
+   thumb, so only a thumb (not the bare track) is draggable per-input. */
+.dual-range-slider { padding: 6px 8px 0; }
+.dual-range-track {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2, #e2e8f0);
+  margin: 14px 0;
+}
+.dual-range-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #2563eb;
+  border-radius: 999px;
+}
+.dual-range-input {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  margin: 0;
+  transform: translateY(-50%);
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  pointer-events: none;
+}
+.dual-range-input::-webkit-slider-runnable-track { background: transparent; }
+.dual-range-input::-moz-range-track { background: transparent; }
+.dual-range-input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.dual-range-input::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.dual-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-muted, #64748b);
+  font-weight: 600;
+}
+.multi-select-trigger.filter-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+.multi-select-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multi-select-trigger.has-selection {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+.multi-select-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.multi-select-chevron.is-open {
+  transform: rotate(180deg);
+}
+.multi-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 230px;
+  max-width: 320px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  padding: 10px;
+}
+.multi-select-search {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+  outline: none;
+}
+.multi-select-search:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.multi-select-option:hover {
+  background: #f1f5f9;
+}
+.multi-select-option input[type="checkbox"] {
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+.multi-select-all-option {
+  font-weight: 700;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 4px;
+  padding-bottom: 8px;
+}
+.multi-select-option-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.multi-select-empty {
+  padding: 10px 6px;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* Type-to-search + "add as new" combobox — used wherever a catalog
+   (fault categories, maintenance types) is meant to grow with real use
+   instead of staying a fixed, admin-curated list. The input itself
+   inherits whatever surrounding input styling already applies (.smart-form
+   input, etc.) — only the dropdown panel needs its own styling here. */
+.creatable-select {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.creatable-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  /* Above .modal-overlay (200) — CreatableSelect can be nested inside a
+     FormModal (e.g. the "Add New Issue" popup), and its own dropdown panel
+     still needs to paint above that modal's content, not get trapped
+     beneath later fields in the modal's local stacking order. */
+  z-index: 250;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  padding: 6px;
+}
+.creatable-select-option-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+.creatable-select-option-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.creatable-select-option {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 7px 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.creatable-select-option:hover {
+  background: #f1f5f9;
+}
+.creatable-select-option-delete {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.creatable-select-option-delete:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+.creatable-select-option-edit {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.creatable-select-option-edit:hover {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.creatable-select-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 8px;
+  color: #2563eb;
+  font-weight: 700;
+}
+.creatable-select-add:hover {
+  background: #eff6ff;
+}
+.creatable-select-add-pinned {
+  margin-top: 0;
+  margin-bottom: 4px;
+  border-top: none;
+  border-bottom: 1px solid #e2e8f0;
+  padding-top: 7px;
+  padding-bottom: 8px;
+}
+/* The inline "custom interval" row (SelectOrAddNumberField) reuses
+   .creatable-select-add-pinned for its layout/border, but holds a real
+   input + button instead of being one clickable label — reset the
+   inherited link-style color/weight so only the icon and "Add" button
+   keep it, not the number the person is typing, and drop the whole-row
+   hover tint that only makes sense on a single clickable label. Scoped to
+   rows that actually contain the custom-number input, so the plain
+   "+ Add New X" pinned row elsewhere keeps its own hover feedback. */
+.creatable-select-add-pinned:has(.creatable-select-custom-input):hover { background: none; }
+.creatable-select-custom-input {
+  flex: 1;
+  min-width: 0;
+  color: #1e293b;
+  font-weight: 500;
+}
+.creatable-select-add-pinned .ghost-button {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
+.filter-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+}
+.filter-apply-btn {
+  background: #2563eb;
+  border: 1.5px solid #2563eb;
+  color: #ffffff;
+  border-radius: 9px;
+  padding: 8px 18px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.filter-apply-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  transform: translateY(-1px);
+}
+.filter-apply-btn:disabled {
+  opacity: 0.9;
+  cursor: not-allowed;
+}
+
+.filter-clear-btn {
+  background: transparent;
+  border: 1.5px dashed #ef4444;
+  color: #ef4444;
+  border-radius: 9px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.filter-clear-btn:hover {
+  background: #fef2f2;
+  border-color: #dc2626;
+  color: #dc2626;
+  transform: translateY(-1px);
+}
+
+/* Condition Monitoring Checklist Filter Panel */
+.filter-popover-container {
+  position: relative;
+}
+
+.filter-select.active {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.filter-popover-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  min-width: 200px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeIn 0.15s ease;
+}
+
+.filter-popover-menu.wide {
+  min-width: 260px;
+}
+
+.popover-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.popover-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #334155;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+
+.popover-checkbox-label:hover {
+  background: #f1f5f9;
+}
+
+.popover-checkbox-label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid #cbd5e1;
+  accent-color: #1d4ed8;
+}
+
+.popover-date-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.popover-date-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.popover-date-group label {
+  font-size: 0.8rem;
+  color: #64748b;
+  width: 45px;
+}
+
+.popover-date-group input[type="date"] {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.popover-date-group input[type="date"]:focus {
+  border-color: #1d4ed8;
+}
+
+.filter-apply-btn {
+  background: #1d4ed8;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 6px rgba(29, 78, 216, 0.15);
+}
+
+.filter-apply-btn:hover {
+  background: #1e40af;
+}
+
+.filter-clear-all-btn {
+  background: transparent;
+  border: 1.5px dashed #ef4444;
+  color: #ef4444;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-clear-all-btn:hover {
+  background: #fef2f2;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Applied-filter chips under a FilterBar (components/filters.jsx). */
+.active-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  flex-basis: 100%;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle, #e2ebf7);
+}
+.active-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 32px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--primary-border, rgba(37, 99, 235, 0.3));
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft, rgba(37, 99, 235, 0.1));
+  color: var(--primary-strong, #2366c2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+.active-filter-chip:hover {
+  border-color: var(--primary-strong, #2366c2);
+}
+.active-filter-clear {
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.active-filter-clear:hover {
+  color: var(--text-strong, #071a35);
+}

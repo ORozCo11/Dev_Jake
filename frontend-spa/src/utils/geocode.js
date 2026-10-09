@@ -16,9 +16,9 @@ async function fetchWithTimeout(url) {
     return await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('The address lookup timed out — please try again.');
+      throw new Error('The address lookup timed out — please try again.', { cause: err });
     }
-    throw new Error('The address lookup service is unavailable right now — please try again.');
+    throw new Error('The address lookup service is unavailable right now — please try again.', { cause: err });
   } finally {
     clearTimeout(timer);
   }

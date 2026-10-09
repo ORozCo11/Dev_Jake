@@ -1,0 +1,322 @@
+/* Split from App.css (lines 2340-2616). Order matters: see App.css. */
+/* VALUE LIST */
+.value-list { grid-column: span 4; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.value-list li { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; transition: background 0.15s; }
+.value-list li:hover { background: #eff6ff; border-color: #93c5fd; }
+.value-list span { font-size: 0.875rem; font-weight: 600; color: #0f172a; }
+.value-list strong { background: linear-gradient(90deg, #dbeafe, #bfdbfe); color: #1e40af; padding: 3px 10px; border-radius: 99px; font-size: 0.8rem; font-weight: 700; }
+
+/* TABLE */
+.table-shell {
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  margin-bottom: 24px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  table-layout: auto;
+}
+/* When a table declares explicit column widths (via colgroup), honour them
+   strictly with a fixed layout so columns are proportioned as designed
+   instead of stretching to fit content (which wastes space unevenly). */
+.table-shell.is-fixed table {
+  table-layout: fixed;
+}
+/* Let cells wrap long text instead of forcing horizontal scroll.
+   Use overflow-wrap (not word-break) so short words like "Admin" never
+   split mid-word — only over-long unbreakable tokens get broken. */
+tbody td {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+/* When a column declares an explicit width (via <colgroup>), honour it. */
+table colgroup + thead th,
+table colgroup ~ tbody td {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+td.cell-center, th.cell-center { text-align: center; }
+/* The light-theme header/cell rules below are scoped to `html[data-theme="light"] thead th`
+   (3 type selectors) which otherwise outranks the plain `.cell-center` class
+   above on specificity, even though it comes first in the cascade — repeat
+   the override at matching specificity so a column that opts into centering
+   actually gets it in light theme too. */
+html[data-theme="light"] td.cell-center,
+html[data-theme="light"] th.cell-center { text-align: center; }
+
+/* Badge/action-only cells: center their content instead of hugging the left
+   edge of a wider percentage-based column, which otherwise leaves a big
+   empty gap on one side (e.g. a small Status pill or Action icon buttons
+   sitting in a column sized for the widest row across the whole table). */
+tbody td:has(> .status-badge) {
+  text-align: center;
+}
+.row-actions {
+  justify-content: center;
+}
+
+/* Long free-text columns: cap width and wrap so the table stays readable
+   and doesn't stretch into a wide horizontal scroll. */
+td.cell-text {
+  min-width: 180px;
+  max-width: 320px;
+  white-space: normal;
+  line-height: 1.45;
+}
+
+/* Click-to-expand long text: clamped to N lines by default via inline
+   -webkit-line-clamp; clicking sets it to 'unset' and shows the rest. The
+   wrapper stacks the clamped text above a "Show more" chevron toggle, which
+   only renders (see ExpandableText) when the text actually overflows. */
+.expandable-text-wrap {
+  display: block;
+}
+.expandable-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.expandable-text.is-clickable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(148, 163, 184, 0.5);
+}
+.expandable-text.is-expanded {
+  overflow: visible;
+  text-decoration: none;
+}
+.expandable-text-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary, #2563eb);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.expandable-text-toggle svg {
+  transition: transform 0.15s ease;
+}
+.expandable-text-toggle.is-expanded svg {
+  transform: rotate(180deg);
+}
+
+/* --- Issue Reports: combined issue cell --- */
+.issue-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.issue-cell-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.issue-id-badge {
+  flex-shrink: 0;
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  padding: 1px 7px;
+  letter-spacing: 0.02em;
+}
+
+.issue-type {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text-strong, #0f172a);
+  line-height: 1.2;
+}
+
+/* Full-width note band a table row can render right below itself (see
+   DataTable's renderSubRow) — for a long free-text field that doesn't fit a
+   narrow column, instead of clamping/truncating it. */
+.table-subrow td {
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 8px 18px;
+  border-right: none;
+}
+.table-subrow-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.table-subrow-lines strong {
+  color: #334155;
+}
+
+.issue-reporter {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+thead th {
+  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  color: #1e293b;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 14px 18px;
+  border-bottom: 2px solid #cbd5e1;
+  border-right: 1px solid #cbd5e1;
+  white-space: nowrap;
+  text-align: left;
+}
+thead th:last-child {
+  border-right: none;
+}
+tbody td {
+  padding: 12px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  color: #334155;
+  vertical-align: middle;
+}
+tbody td:last-child {
+  border-right: none;
+}
+tbody tr:last-child td {
+  border-bottom: none;
+}
+tbody tr:hover {
+  background-color: #f8fafc;
+}
+tbody tr:hover td {
+  color: #0f172a;
+}
+table a {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+table a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+/* PART BADGES */
+.part-tag {
+  display: inline-flex;
+  align-items: center;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 99px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+ 
+/* STATUS BADGES */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 22px;
+  padding: 3px 10px;
+  border-radius: 16px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: 1.5px solid transparent;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
+  line-height: 1.15;
+}
+.status-badge.active, .status-badge.available, .status-badge.completed, .status-badge.passed, .status-badge.resolved, .status-badge.approved, .status-badge.good {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+.status-badge.pending, .status-badge.open, .status-badge.in-progress, .status-badge.under-maintenance, .status-badge.in-maintenance, .status-badge.for-repair, .status-badge.under-repair, .status-badge.needs-inspection {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #b45309;
+}
+.status-badge.inactive, .status-badge.decommissioned, .status-badge.rejected, .status-badge.failed, .status-badge.overdue, .status-badge.needs-repair {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+.status-badge.assigned, .status-badge.scheduled, .status-badge.info {
+  background: #dbeafe;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+/* "What do these columns mean?" disclosure under a table. */
+.column-legend {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text, #17243a);
+}
+.column-legend summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  color: var(--primary-strong, #2366c2);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+.column-legend dl {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle, #e2ebf7);
+  border-radius: var(--radius-md);
+  background: var(--surface-2, #f7faff);
+}
+.column-legend dt {
+  font-weight: var(--font-weight-bold);
+}
+.column-legend dd {
+  margin: 0;
+  color: var(--text-muted, #56657a);
+}
+
+/* A primary value with a quieter line under it (e.g. ticket # + status). */
+.cell-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.cell-subtext {
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}

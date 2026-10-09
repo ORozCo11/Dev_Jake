@@ -55,7 +55,10 @@ function Register() {
   // "you'll become this barangay's Administrator". The backend
   // independently re-derives this at submit time regardless of what this
   // says — this is purely a UX preview, never the source of truth.
-  const [isFirstForBarangay, setIsFirstForBarangay] = useState(null);
+  // Tagged with the barangay it was fetched for, so switching barangays hides
+  // the previous answer immediately instead of showing it until the next
+  // lookup lands.
+  const [firstForBarangayResult, setFirstForBarangayResult] = useState({ key: null, isFirst: null });
 
   useEffect(() => {
     api.get('/provinces')
@@ -83,22 +86,28 @@ function Register() {
   // Live "will I become this barangay's Admin?" preview. Instant for a
   // dropdown pick (a discrete choice); debounced for free-typed names so it
   // doesn't fire on every keystroke.
+  const hasBarangayChoice = Boolean(form.city_id && (form.barangay_id || form.barangay_name.trim()));
+  const barangayKey = hasBarangayChoice
+    ? `${form.city_id}|${form.barangay_id}|${form.barangay_name.trim().toLowerCase()}`
+    : null;
+  const isFirstForBarangay = barangayKey && firstForBarangayResult.key === barangayKey
+    ? firstForBarangayResult.isFirst
+    : null;
+  const setIsFirstForBarangay = (isFirst) => setFirstForBarangayResult({ key: barangayKey, isFirst });
+
   useEffect(() => {
-    if (!form.city_id || (!form.barangay_id && !form.barangay_name.trim())) {
-      setIsFirstForBarangay(null);
-      return;
-    }
+    if (!hasBarangayChoice) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       const params = { city_id: form.city_id };
       if (form.barangay_id) params.barangay_id = form.barangay_id;
       else params.barangay_name = form.barangay_name.trim();
       api.get('/registration-status', { params })
-        .then((response) => { if (!cancelled) setIsFirstForBarangay(response.data.is_first); })
-        .catch(() => { if (!cancelled) setIsFirstForBarangay(null); });
+        .then((response) => { if (!cancelled) setFirstForBarangayResult({ key: barangayKey, isFirst: response.data.is_first }); })
+        .catch(() => { if (!cancelled) setFirstForBarangayResult({ key: barangayKey, isFirst: null }); });
     }, form.barangay_id ? 0 : 500);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [form.city_id, form.barangay_id, form.barangay_name]);
+  }, [hasBarangayChoice, barangayKey, form.city_id, form.barangay_id, form.barangay_name]);
 
   if (token && user) {
     return <Navigate to={roleRoutes[user.role] ?? '/unauthorized'} replace />;

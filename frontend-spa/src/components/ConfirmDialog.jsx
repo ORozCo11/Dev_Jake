@@ -3,17 +3,31 @@
 // changes...) needs a yes/no gate, instead of the browser's own native
 // window.confirm(). `dialog` is null when closed; set it to
 // { title?, message, confirmLabel?, variant?: 'primary', onConfirm } to open.
+import { useId, useRef } from 'react';
+import useDialogA11y from '../hooks/useDialogA11y';
+
 export default function ConfirmDialog({ busy, dialog, onCancel, onConfirm }) {
+  const dialogRef = useRef(null);
+  const cancelRef = useRef(null);
+  const titleId = useId();
+  const messageId = useId();
+
+  // Focus starts on Cancel — the safe choice for a consequential action.
+  useDialogA11y(dialogRef, { open: Boolean(dialog), onClose: onCancel, initialFocusRef: cancelRef, closeOnEscape: !busy });
+
   if (!dialog) return null;
 
   return (
     <div className="confirm-overlay" onClick={busy ? undefined : onCancel}>
       <section
-        aria-labelledby="confirm-dialog-title"
+        ref={dialogRef}
+        aria-labelledby={titleId}
+        aria-describedby={messageId}
         aria-modal="true"
         className="confirm-dialog"
         onClick={(event) => event.stopPropagation()}
-        role="dialog"
+        role="alertdialog"
+        tabIndex={-1}
       >
         <div className="confirm-dialog-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -24,11 +38,11 @@ export default function ConfirmDialog({ busy, dialog, onCancel, onConfirm }) {
         </div>
         <div className="confirm-dialog-copy">
           <p className="eyebrow">Confirmation</p>
-          <h3 id="confirm-dialog-title">{dialog.title ?? 'Confirm Action'}</h3>
-          <p>{dialog.message}</p>
+          <h3 id={titleId}>{dialog.title ?? 'Confirm Action'}</h3>
+          <p id={messageId}>{dialog.message}</p>
         </div>
         <div className="confirm-dialog-actions">
-          <button className="ghost-button" disabled={busy} onClick={onCancel} type="button">
+          <button ref={cancelRef} className="ghost-button" disabled={busy} onClick={onCancel} type="button">
             Cancel
           </button>
           <button

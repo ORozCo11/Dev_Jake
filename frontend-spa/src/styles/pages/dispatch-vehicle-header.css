@@ -1,0 +1,138 @@
+/* Split from App.css (lines 5327-5464). Order matters: see App.css. */
+/* Dispatch Map Layout */
+.location-layout-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 16px;
+}
+@media (max-width: 1024px) {
+  .location-layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.map-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 450px;
+}
+.map-header {
+  padding: 14px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.map-header h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+.map-iframe-container {
+  flex-grow: 1;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+}
+.map-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* --- Ticket Card Photo Layout --- */
+.ticket-card-content-wrapper {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.ticket-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.ticket-card-photo {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #d9e6f8;
+  flex-shrink: 0;
+  margin-top: 4px;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.05);
+}
+.ticket-card-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ticket-detail-label {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+.ticket-detail-description-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.ticket-detail-description-box p,
+.ticket-detail-description-box .expandable-text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.vehicle-detail-specs {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 20px;
+}
+.vehicle-detail-specs dt { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.vehicle-detail-specs dd { font-size: 0.85rem; font-weight: 600; margin-top: 2px; }
+.vehicle-detail-status-hint { margin-top: 10px; }
+
+/* --- Vehicle Profile Page header --- */
+.vehicle-profile-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+}
+.vehicle-profile-photo {
+  width: 88px;
+  height: 66px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+.vehicle-profile-photo .photo-cell,
+.vehicle-profile-photo .photo-thumb {
+  width: 100%;
+  height: 100%;
+}
+.vehicle-profile-identity {
+  flex: 1;
+  min-width: 200px;
+}
