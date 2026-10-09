@@ -138,7 +138,19 @@ export function categoryColumns(onEdit, deleteRecord) {
     { key: 'category', label: 'Vehicle Type', width: '18%', render: (row) => row.category_name },
     { key: 'domain', label: 'Domain', width: '10%', className: 'cell-center', render: (row) => <StatusBadge value={row.domain ?? 'Land'} /> },
     { key: 'vehicles', label: 'Vehicles', width: '9%', className: 'cell-center', render: (row) => row.vehicles_count ?? 0 },
-    { key: 'description', label: 'Description', width: '49%', render: (row) => row.description ?? '-' },
+    // UI audit §14 — preview of the extra fields this type asks for, so an
+    // Admin can see them without opening the edit page.
+    {
+      key: 'fields',
+      label: 'Custom Fields',
+      width: '18%',
+      render: (row) => {
+        const active = (row.fields ?? []).filter((f) => f.is_active !== false);
+        if (!active.length) return <span className="muted">None</span>;
+        return <span title={active.map((f) => f.label).join(', ')}>{active.length}: {active.slice(0, 3).map((f) => f.label).join(', ')}{active.length > 3 ? '…' : ''}</span>;
+      },
+    },
+    { key: 'description', label: 'Description', width: '31%', render: (row) => row.description ?? '-' },
     {
       key: 'action',
       label: 'Action',
@@ -147,8 +159,22 @@ export function categoryColumns(onEdit, deleteRecord) {
       className: 'cell-center',
       render: (row) => (
         <div className="row-actions">
-          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-          <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/categories/${row.category_id}`, 'Category deleted.', `Delete the "${row.category_name}" vehicle type? This cannot be undone.`, { title: 'Delete vehicle type', confirmLabel: 'Delete' })} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
+          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label={`Edit ${row.category_name}`}><Icon name="edit" size={14} /></button>
+          {/* UI audit §14 — a type still assigned to vehicles can't be
+              deleted (the backend refuses it); say why up front instead of
+              letting the request fail. aria-disabled (not disabled) keeps
+              it focusable so the reason is reachable by keyboard too. */}
+          {row.vehicles_count > 0 ? (
+            <button
+              className="btn-delete-action icon-btn is-blocked"
+              type="button"
+              aria-disabled="true"
+              title={`Can't delete — ${row.vehicles_count} vehicle${row.vehicles_count === 1 ? '' : 's'} still use this type. Reassign them first.`}
+              aria-label={`Delete unavailable: ${row.vehicles_count} vehicle${row.vehicles_count === 1 ? '' : 's'} still use ${row.category_name}`}
+            ><Icon name="trash" size={14} /></button>
+          ) : (
+            <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/categories/${row.category_id}`, 'Category deleted.', `Delete the "${row.category_name}" vehicle type? This cannot be undone.`, { title: 'Delete vehicle type', confirmLabel: 'Delete' })} type="button" title="Delete" aria-label={`Delete ${row.category_name}`}><Icon name="trash" size={14} /></button>
+          )}
         </div>
       ),
     },
