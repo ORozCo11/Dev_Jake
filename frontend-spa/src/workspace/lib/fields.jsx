@@ -452,26 +452,28 @@ export function scheduleFields(lookups, allHubs = [], isEdit = false, suggestOnl
     // Recurring PM: completing this schedule auto-creates the next at the chosen
     // interval. Left blank = one-time (the default "Select" option).
     {
-      label: 'Repeat Every (optional)',
+      label: 'Repeats (optional)',
       name: 'recurrence_months',
       type: 'select-or-other',
+      // Spelled out in full (audit §12) — same wording as the list's
+      // Repeat column (RECURRENCE_LABEL).
       options: [
-        { value: 1, label: 'Month' },
-        { value: 3, label: 'Quarter (3 months)' },
-        { value: 6, label: '6 Months' },
-        { value: 12, label: 'Year' },
+        { value: 1, label: 'Every month' },
+        { value: 3, label: 'Every 3 months (quarterly)' },
+        { value: 6, label: 'Every 6 months' },
+        { value: 12, label: 'Every year' },
       ],
-      otherLabel: 'Add Custom Month',
+      otherLabel: 'Custom number of months…',
       otherInputLabel: 'Repeat every how many months? (1–60)',
       otherPlaceholder: 'e.g. 4',
       otherSuffix: 'months',
       otherType: 'number',
       otherMin: 1,
       otherMax: 60,
-      hint: 'Leave blank for one-time maintenance. Completing a recurring schedule creates its next occurrence.',
+      hint: 'Leave blank for one-time maintenance. When a repeating schedule is marked done, the next one is created automatically, counted from the completion date.',
     },
     // A known hub, or "Other" for an outside repair shop not in that list.
-    { label: 'Service Location', name: 'service_location', type: 'select-or-other', options: hubOptions, otherLabel: 'Other / External Shop', otherPlaceholder: 'e.g. Toyota Service Center' },
+    { label: 'Service Location', name: 'service_location', type: 'select-or-other', options: hubOptions, otherLabel: 'Other / External Shop', otherPlaceholder: 'e.g. Toyota Service Center', hint: 'Pick a hub for in-house work, or "Other / External Shop" to name an outside service provider.' },
     // Full-width only on create: with Status hidden there, it's the trailing
     // odd-one-out in the 2-column grid — spanning the full row reads as
     // intentional instead of leaving an empty cell beside it. On edit, Status

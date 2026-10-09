@@ -3,7 +3,8 @@ import { DateBadge, PhotoCell, StatusBadge, TicketStageBadge, TicketStatusBadge,
 import { formatDate, formatLogDateTime, formatTime, prettifyKey, resolvePhotoUrl, resolveRelationLabel } from './lib/format';
 import { canDo, hasRole } from './lib/permissions';
 import { moduleBadgeTone } from './lib/statCards';
-import { READINESS_BADGE, RECURRENCE_LABEL, isScheduleOverdue, issueNeedsTicket } from './lib/workflow';
+import { READINESS_BADGE, isScheduleOverdue, issueNeedsTicket } from './lib/workflow';
+import { MAINTENANCE_PROGRESS_STAGES, MAINTENANCE_SOURCE_INFO, findNextScheduleOccurrence, formatMaintenanceCost, isClosedUnverified, isRecordReturnedForRework, maintenanceStageIndex, recurrenceLabel, recurrenceSentence, scheduleDueLabel, scheduleStatusNote } from './lib/workflow';
 import { ScheduleActionMenu } from './maintenance/maintenance';
 
 export function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket, onReadinessCheck) {
@@ -456,28 +457,49 @@ export function maintenanceColumns(role, setEditTarget, updateRecord, onViewReco
         <div>
           <div>{row.maintenance_type}</div>
           {row.is_external && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-              <span className="badge" style={{ fontSize: '0.68rem', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }} title={row.external_vendor || 'External shop'}>External</span>
+            <div className="p23-chip-row">
+              <span className="p23-chip tone-info" title={row.external_vendor || 'External shop'}>External{row.external_vendor ? ` — ${row.external_vendor}` : ''}</span>
               {row.receipt_url && (
-                <a href={resolvePhotoUrl(row.receipt_url)} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#0369a1', textDecoration: 'underline' }}>
+                <a className="p23-inline-link" href={resolvePhotoUrl(row.receipt_url)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                   Receipt
                 </a>
               )}
             </div>
           )}
           {row.source_vehicle && (
-            <div style={{ marginTop: 2 }}>
-              <span className="badge" style={{ fontSize: '0.68rem', background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa' }} title={`${row.part_name ? `${row.part_name} c` : 'C'}annibalized from ${row.source_vehicle.vehicle_name}`}>
-                ⚙ {row.part_name ? `${row.part_name} ` : ''}from {row.source_vehicle.vehicle_name}
+            <div className="p23-chip-row">
+              <span className="p23-chip tone-accent" title={`${row.part_name ? `${row.part_name} c` : 'C'}annibalized from ${row.source_vehicle.vehicle_name}`}>
+                Part{row.part_name ? ` (${row.part_name})` : ''} from {row.source_vehicle.vehicle_name}
               </span>
             </div>
           )}
         </div>
       ),
     },
-    { key: 'source', label: 'Source', width: '9%', className: 'cell-center', render: (row) => <StatusBadge value={row.source} /> },
-    { key: 'personnel', label: 'Personnel', width: '10%', className: 'cell-center', render: (row) => <UserAvatarName user={row.maintenance_personnel} fallback={row.performed_by_other ?? '-'} /> },
-    { key: 'progress', label: 'Progress', width: '8%', className: 'cell-center', render: (row) => <StatusBadge value={row.progress_status} /> },
+    { key: 'source', label: 'Source', width: '9%', className: 'cell-center', render: (row) => <span title={MAINTENANCE_SOURCE_INFO[row.source]?.description}><StatusBadge value={row.source} /></span> },
+    // Same "who did it" rule as the card/detail: an external job names the
+    // shop rather than showing a blank personnel cell.
+    { key: 'personnel', label: 'Performed By', width: '10%', className: 'cell-center', render: (row) => (row.is_external && !row.maintenance_personnel ? (row.external_vendor ? `External shop — ${row.external_vendor}` : 'External shop') : <UserAvatarName user={row.maintenance_personnel} fallback={row.performed_by_other ?? 'Not recorded'} />) },
+    { key: 'cost', label: 'Cost', width: '6%', className: 'cell-center', render: (row) => formatMaintenanceCost(row.maintenance_cost) ?? <span className="muted">Not recorded</span> },
+    {
+      key: 'progress',
+      label: 'Progress',
+      width: '8%',
+      className: 'cell-center',
+      // Stage number from the same maintenanceStageIndex() the card's and
+      // detail page's trail use, plus a text flag for rework/unverified.
+      render: (row) => {
+        const stage = maintenanceStageIndex(row);
+        return (
+          <span className="p23-progress-cell">
+            <StatusBadge value={row.progress_status} />
+            {stage >= 0 && <span className="p23-stage-count">Stage {stage + 1} of {MAINTENANCE_PROGRESS_STAGES.length}</span>}
+            {isRecordReturnedForRework(row) && <span className="p23-chip tone-danger">Failed verification — rework</span>}
+            {isClosedUnverified(row) && <span className="p23-chip tone-warning">Closed unverified</span>}
+          </span>
+        );
+      },
+    },
     { key: 'verification', label: 'Verification', width: '8%', className: 'cell-center', render: (row) => row.verification_result ? <StatusBadge value={row.verification_result} /> : '-' },
     { key: 'date_started', label: 'Date Started', width: '5%', className: 'cell-center', render: (row) => <DateBadge value={row.date_started} /> },
     { key: 'date_completed', label: 'Date Completed', width: '5%', className: 'cell-center', render: (row) => <DateBadge value={row.date_completed} /> },
@@ -550,7 +572,7 @@ export function maintenanceStatusColumns(setEditTarget, currentUserId) {
   ];
 }
 
-export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord, onReassign, onViewTicket, onApprove, onDecline) {
+export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord, onReassign, onViewTicket, onApprove, onDecline, allSchedules) {
   const currentUserId = currentUser?.id;
   return [
     { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.schedule_id },
@@ -567,17 +589,32 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {name}
-            {isMe && <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>YOU</span>}
+            {isMe && <span className="p23-chip tone-info">You</span>}
           </span>
         );
       },
     },
-    { key: 'date', label: 'Date', className: 'cell-center', render: (row) => <DateBadge value={row.scheduled_date} /> },
+    // Exact date always, with the relative "due in / overdue" label under it
+    // — never one without the other.
+    {
+      key: 'date',
+      label: 'Date',
+      className: 'cell-center',
+      render: (row) => {
+        const due = scheduleDueLabel(row);
+        return (
+          <span className="p23-date-cell">
+            <DateBadge value={row.scheduled_date} />
+            {due && <span className={`p23-due-text${isScheduleOverdue(row) ? ' is-overdue' : ''}`}>{due}</span>}
+          </span>
+        );
+      },
+    },
     { key: 'time', label: 'Time', className: 'cell-center', render: (row) => row.scheduled_time ?? '-' },
     // "One-time" (plain text, no badge) needs the same explicit centering the
     // recurring branch gets for free from <StatusBadge> — otherwise it'd
     // sit flush left while every other row in this column is centered.
-    { key: 'repeat', label: 'Repeat', className: 'cell-center', render: (row) => row.recurrence_months ? <StatusBadge value={RECURRENCE_LABEL[row.recurrence_months] ?? `Every ${row.recurrence_months} mo`} /> : <span className="muted">One-time</span> },
+    { key: 'repeat', label: 'Repeat', className: 'cell-center', render: (row) => <span className={row.recurrence_months ? 'p23-repeat-text' : 'muted'} title={recurrenceSentence(row.recurrence_months)}>{recurrenceLabel(row.recurrence_months)}</span> },
     { key: 'location', label: 'Location', render: (row) => row.service_location ?? '-' },
     {
       key: 'status',
@@ -597,7 +634,7 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
           {/* #11 — a scheduled PM whose date has passed is overdue: flag it
               loudly instead of leaving it to sit silently on the calendar. */}
           {isScheduleOverdue(row) && (
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>OVERDUE</span>
+            <span className="p23-chip tone-danger"><Icon name="alert" size={11} /> Overdue</span>
           )}
           {/* Traceability — the schedule row only ever showed "Completed" as
               a label with nothing to verify it against. This shows what the
@@ -608,28 +645,36 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
           {row.status === 'Completed' && row.resulting_maintenance && (
             row.resulting_maintenance.progress_status === 'Completed' ? (
               <span
-                style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }}
+                className="p23-chip tone-success"
                 title={`Verification: ${row.resulting_maintenance.verification_result ?? 'Pending'}`}
               >
-                Done {formatDate(row.resulting_maintenance.date_completed)}
+                Record closed {formatDate(row.resulting_maintenance.date_completed)}
               </span>
             ) : (
               <span
-                style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a' }}
+                className="p23-chip tone-warning"
                 title="The calendar task is done, but the record it created still needs Custodian verification before it's fully closed."
               >
                 Record: {row.resulting_maintenance.progress_status}
               </span>
             )
           )}
-          {row.status === 'Declined' && row.decline_reason && (
-            <span
-              style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', cursor: 'help' }}
-              title={`Reason: ${row.decline_reason}`}
-            >
-              Why? <Icon name="info" size={11} />
+          {/* Pending/Declined/Cancelled spelled out in text (the decline
+              reason included) rather than a hover-only "Why?" tooltip. */}
+          {scheduleStatusNote(row) && (
+            <span className={`p23-status-note${row.status === 'Declined' ? ' tone-danger' : ''}`} title={scheduleStatusNote(row)}>
+              {scheduleStatusNote(row)}
             </span>
           )}
+          {(() => {
+            if (row.status !== 'Completed' || !row.recurrence_months) return null;
+            const next = findNextScheduleOccurrence(row, allSchedules);
+            return (
+              <span className="p23-status-note">
+                {next ? `Next: ${formatDate(next.scheduled_date)} (#${next.schedule_id})` : 'Next occurrence created from completion date'}
+              </span>
+            );
+          })()}
         </span>
       ),
     },
@@ -641,7 +686,7 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
       render: (row) => (
         <ScheduleActionMenu label={`Actions for schedule ${row.schedule_id}`}>
           {row.status === 'Scheduled' && row.resulting_ticket_id && onViewTicket && (
-            <button className="btn-view-action icon-btn" onClick={() => onViewTicket({ ticket_id: row.resulting_ticket_id })} type="button" title={`This schedule became Ticket #${row.resulting_ticket_id} — open it`} aria-label={`Open Ticket #${row.resulting_ticket_id}`}><Icon name="ticket" size={14} /></button>
+            <button className="schedule-menu-item" onClick={() => onViewTicket({ ticket_id: row.resulting_ticket_id })} type="button" title={`This schedule became Ticket #${row.resulting_ticket_id}`}><Icon name="ticket" size={15} /><span>Open Ticket #{row.resulting_ticket_id}</span></button>
           )}
           {row.status === 'Scheduled' && !row.resulting_ticket_id && onComplete && (currentUserId != null && String(row.assigned_to) === String(currentUserId)) && (
             <button className="schedule-menu-item" onClick={() => onComplete(row)} type="button"><Icon name="checkCircle" size={15} /><span>Mark as Done</span></button>
@@ -666,7 +711,7 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
               Custodian may edit or cancel any schedule in their barangay,
               not only the ones they booked. A Maintenance Personnel assigned
               to it only ever gets to act on it via Mark as Done above. */}
-          {canDo(currentUser, 'schedule.edit') && (
+          {canDo(currentUser, 'schedule.edit') && row.status !== 'Completed' && (
             <button className="schedule-menu-item" onClick={() => onEdit(row)} type="button"><Icon name="edit" size={15} /><span>Edit Schedule</span></button>
           )}
           {/* schedule.reassign (Admin only, config/permissions.php) — Admin's
@@ -679,12 +724,26 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
           {/* Cancelling a schedule is a soft cancel — the row survives — so a
               cancelled one gets Restore instead of a Delete that would do
               nothing. Same swap vehicleColumns makes for archived vehicles. */}
+          {/* Completed schedules are history: the work lives in the record
+              they produced, so Edit/Cancel are withheld — and said why,
+              rather than the options silently vanishing. */}
+          {row.status === 'Completed' && (canDo(currentUser, 'schedule.edit') || canDo(currentUser, 'schedule.delete')) && (
+            <p className="p23-menu-note" role="none">
+              Completed schedules can't be edited or cancelled — correct the maintenance record instead.
+            </p>
+          )}
           {row.status === 'Cancelled'
             ? canDo(currentUser, 'schedule.restore') && restoreRecord && (
-              <button className="schedule-menu-item" onClick={() => restoreRecord(`/maintenance-schedules/${row.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?', { title: 'Restore schedule' })} type="button"><Icon name="undo" size={15} /><span>Restore Schedule</span></button>
+              <>
+                <div className="p23-menu-separator" role="separator" />
+                <button className="schedule-menu-item" onClick={() => restoreRecord(`/maintenance-schedules/${row.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?', { title: 'Restore schedule' })} type="button"><Icon name="undo" size={15} /><span>Restore Schedule</span></button>
+              </>
             )
-            : canDo(currentUser, 'schedule.delete') && (
-              <button className="schedule-menu-item is-danger" onClick={() => deleteRecord(`/maintenance-schedules/${row.schedule_id}`, 'Schedule cancelled.', `Cancel the ${row.maintenance_type} schedule for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`, { title: 'Cancel schedule', confirmLabel: 'Cancel schedule' })} type="button"><Icon name="trash" size={15} /><span>Cancel Schedule</span></button>
+            : row.status !== 'Completed' && canDo(currentUser, 'schedule.delete') && (
+              <>
+                <div className="p23-menu-separator" role="separator" />
+                <button className="schedule-menu-item is-danger" onClick={() => deleteRecord(`/maintenance-schedules/${row.schedule_id}`, 'Schedule cancelled.', `Cancel the ${row.maintenance_type} schedule for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`, { title: 'Cancel schedule', confirmLabel: 'Cancel schedule' })} type="button"><Icon name="trash" size={15} /><span>Cancel Schedule</span></button>
+              </>
             )}
         </ScheduleActionMenu>
       ),

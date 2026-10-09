@@ -43,7 +43,116 @@ export function isClosedUnverified(record) {
   return record.progress_status === 'Completed' && !record.verification_result;
 }
 
-export const RECURRENCE_LABEL = { 1: 'Monthly', 3: 'Quarterly', 6: 'Every 6 months', 12: 'Yearly' };
+// Spelled out in full (audit §12) — "Every 6 mo." / "Quarterly" made people
+// do the arithmetic themselves. Used for badges and form option text.
+export const RECURRENCE_LABEL = { 1: 'Every month', 3: 'Every 3 months', 6: 'Every 6 months', 12: 'Every year' };
+
+// Short label for any interval, including custom ones not in the preset map.
+export function recurrenceLabel(months) {
+  const n = Number(months);
+  if (!n) return 'One-time';
+  return RECURRENCE_LABEL[n] ?? `Every ${n} months`;
+}
+
+// Full sentence for a schedule's recurrence — "Repeats every 6 months".
+export function recurrenceSentence(months) {
+  const n = Number(months);
+  if (!n) return 'One-time — does not repeat';
+  if (n === 1) return 'Repeats every month';
+  if (n === 12) return 'Repeats every year';
+  if (n === 3) return 'Repeats every 3 months (quarterly)';
+  return `Repeats every ${n} months`;
+}
+
+// What a record's derived `source` (VehicleMaintenanceRecord::getSourceAttribute)
+// actually means, in the audit's vocabulary: ticket/issue-generated, direct,
+// external or schedule-generated. Same keys the Sources filter uses.
+export const MAINTENANCE_SOURCE_INFO = {
+  'Scheduled Maintenance': { short: 'Schedule-generated', description: 'Created when a preventive maintenance schedule was marked done.' },
+  'From Issue Report': { short: 'Ticket / issue-generated', description: 'Created from a reported vehicle issue through the ticket workflow.' },
+  'External Shop': { short: 'External shop', description: 'Repair for a reported issue that was done by an outside service provider.' },
+  'Field Repair': { short: 'Direct / historical entry', description: 'Logged directly, without a ticket or schedule — e.g. a roadside fix or an older repair entered after the fact.' },
+};
+
+// A record Custodian verification rejected — sent back to Under Repair with
+// the Failed verdict kept on it until the rework is re-submitted.
+export function isRecordReturnedForRework(record) {
+  return record?.verification_result === 'Failed' && record?.progress_status !== 'Completed';
+}
+
+// "Where is this record, why is it waiting, and who acts next" — one answer
+// shared by the record card and the detail page so they never disagree.
+// tone maps onto the status-* design tokens (success/warning/danger/info/neutral).
+export function maintenanceNextStep(record) {
+  if (!record) return null;
+  const status = record.progress_status;
+  if (status === 'Completed') {
+    if (isClosedUnverified(record)) {
+      return { tone: 'warning', title: 'Closed without verification', reason: 'An Admin closed this record without waiting for a Custodian to check the work.', next: 'No further action needed.' };
+    }
+    return { tone: 'success', title: 'Completed and confirmed', reason: 'The work passed Custodian verification and was confirmed.', next: 'No further action needed.' };
+  }
+  if (isRecordReturnedForRework(record)) {
+    return { tone: 'danger', title: 'Returned for rework', reason: 'A Custodian checked this repair and it failed verification.', next: 'Next: the maintenance personnel fixes the problem and submits it for verification again.' };
+  }
+  if (status === 'For Verification' && record.verification_result === 'Passed') {
+    return { tone: 'info', title: 'Awaiting Admin confirmation', reason: 'A Custodian verified the work and it passed.', next: 'Next: an Admin confirms the record to close it and return the vehicle to service — or reopens it for more work.' };
+  }
+  if (status === 'For Verification') {
+    return { tone: 'info', title: 'Awaiting Custodian verification', reason: 'The work was reported done, but nobody has independently checked it yet.', next: 'Next: a Custodian who did not perform the repair inspects the vehicle and records Passed or Failed.' };
+  }
+  if (status === 'On Hold - Awaiting Parts') {
+    return { tone: 'warning', title: 'On hold — awaiting parts', reason: 'Work has stopped until the needed parts arrive.', next: 'Next: the maintenance personnel resumes the repair once parts are in.' };
+  }
+  if (status === 'Under Repair') {
+    return { tone: 'neutral', title: 'Repair in progress', reason: 'The maintenance personnel is working on the vehicle.', next: 'Next: the work is reported done and sent for Custodian verification.' };
+  }
+  if (status === 'Assigned') {
+    return { tone: 'neutral', title: 'Assigned — not started', reason: 'Someone is assigned but has not started the repair yet.', next: 'Next: the maintenance personnel starts the repair.' };
+  }
+  return { tone: 'neutral', title: status ?? 'Unknown status', reason: '', next: '' };
+}
+
+// Peso amount, formatted the same way everywhere a record's cost shows.
+export function formatMaintenanceCost(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (Number.isNaN(n)) return null;
+  return `₱${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+// The one "who did it" string for a record: a registered user, a free-text
+// name, or the external shop. Kept identical across list, card and detail.
+export function maintenancePerformerText(record) {
+  if (record?.is_external) return record.external_vendor ? `External shop — ${record.external_vendor}` : 'External shop';
+  return record?.maintenance_personnel?.name ?? record?.performed_by_other ?? null;
+}
+
+// Plain-language line under a schedule's status badge, so Pending Approval /
+// Declined / Cancelled say what they mean for the calendar, not just a colour.
+export function scheduleStatusNote(row) {
+  if (row.status === 'Pending Approval') return 'Waiting for Admin approval — not on the calendar yet.';
+  if (row.status === 'Declined') return row.decline_reason ? `Declined: ${row.decline_reason}` : 'Declined by Admin — no reason given.';
+  if (row.status === 'Cancelled') return 'Cancelled — a Custodian can restore it if it is needed again.';
+  return null;
+}
+
+// The next occurrence a completed recurring schedule seeded
+// (VehicleMaintenanceSchedule::seedNextRecurrence). There's no FK back to it,
+// so match it the way it was created: same vehicle, type and interval, dated
+// after this one, not cancelled — earliest wins.
+export function findNextScheduleOccurrence(row, allSchedules) {
+  if (!row || row.status !== 'Completed' || !row.recurrence_months || !Array.isArray(allSchedules)) return null;
+  const after = String(row.scheduled_date ?? '');
+  return allSchedules
+    .filter((s) => s.schedule_id !== row.schedule_id
+      && String(s.vehicle_id) === String(row.vehicle_id)
+      && s.maintenance_type === row.maintenance_type
+      && Number(s.recurrence_months) === Number(row.recurrence_months)
+      && s.status !== 'Cancelled'
+      && String(s.scheduled_date ?? '') > after)
+    .sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)))[0] ?? null;
+}
 
 // #11 — a schedule is overdue when it's still 'Scheduled' but its date has
 // already passed (compared date-only, so "today" is never overdue).
