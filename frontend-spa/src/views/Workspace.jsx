@@ -13056,9 +13056,9 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
             <div className="ticket-process-stat-grid">
               {processStats.map((stat) => (
                 <div key={stat.label} className="ticket-process-stat">
-                  <Icon name={stat.icon} size={14} />
-                  <span>{stat.label}</span>
-                  <strong>{stat.value}</strong>
+                  <span className="ticket-process-stat-icon"><Icon name={stat.icon} size={14} /></span>
+                  <strong className="ticket-process-stat-value">{stat.value}</strong>
+                  <span className="ticket-process-stat-label">{stat.label}</span>
                 </div>
               ))}
             </div>
@@ -13083,9 +13083,9 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 Closed: 'Return or archive',
               }[s];
               return (
-                <div key={s} className={`ticket-process-flow-step is-${state}`} role="listitem">
+                <div key={s} className={`ticket-process-flow-step is-${state}`} role="listitem" style={state === 'active' ? { '--ticket-flow-active-color': PHASE_STEP_COLORS[s] } : undefined}>
                   <span className="ticket-process-flow-marker" style={state === 'active' ? { background: PHASE_STEP_COLORS[s], borderColor: PHASE_STEP_COLORS[s] } : undefined}>
-                    {state === 'done' ? <Icon name="checkCircle" size={15} /> : <Icon name={PHASE_STEP_ICONS[s]} size={15} />}
+                    {state === 'done' ? <Icon name="checkCircle" size={16} /> : <Icon name={PHASE_STEP_ICONS[s]} size={16} />}
                   </span>
                   <span className="ticket-process-flow-label" style={state !== 'upcoming' ? { color: PHASE_STEP_COLORS[s] } : undefined}>{s}</span>
                   <small>{hint}</small>
@@ -13098,17 +13098,17 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
           <div className="ticket-detail-col-left">
             <section className="ticket-section">
               <h4><Icon name="vehicle" size={14} /> Overview</h4>
-              <div className="ticket-preview-card" style={{ marginBottom: 10 }}>
+              <div className="ticket-preview-card ticket-preview-card--detail">
                 {ticket.vehicle?.photo_url ? (
-                  <img className="ticket-preview-photo" style={{ width: 120, height: 120 }} src={resolvePhotoUrl(ticket.vehicle.photo_url)} alt={ticket.vehicle.vehicle_name} />
+                  <img className="ticket-preview-photo" src={resolvePhotoUrl(ticket.vehicle.photo_url)} alt={ticket.vehicle.vehicle_name} />
                 ) : (
-                  <span className="ticket-preview-photo ticket-preview-photo-empty" style={{ width: 120, height: 120 }}><Icon name="vehicle" size={40} /></span>
+                  <span className="ticket-preview-photo ticket-preview-photo-empty"><Icon name="vehicle" size={34} /></span>
                 )}
                 <div className="ticket-preview-body">
                   <strong>{ticket.vehicle?.vehicle_name}</strong>
                   <span>{ticket.vehicle?.plate_number} &middot; {ticket.vehicle?.category?.category_name ?? 'Unclassified'}</span>
                   <span className="muted">{[ticket.vehicle?.brand, ticket.vehicle?.model].filter(Boolean).join(' ') || '—'} &middot; {ticket.vehicle?.current_location ?? 'No location on file'}</span>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                  <div className="ticket-preview-badges">
                     <StatusBadge value={ticket.vehicle?.status} />
                     <StatusBadge value={ticket.vehicle?.condition} />
                   </div>
@@ -13126,7 +13126,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
             </section>
 
             {ticket.assigned_custodian_id && (
-              <section className="ticket-section">
+              <section className={`ticket-section${ticket.inspection_result === 'Needs Maintenance' ? ' ticket-section--flag-warn' : ticket.inspection_result === 'No Issues' ? ' ticket-section--flag-ok' : ''}`}>
                 <h4><Icon name="search" size={14} /> Custodian Inspection</h4>
                 <div className="ticket-kv-row" style={{ marginBottom: (ticket.inspection_notes ? 8 : 0) }}>
                   <div>
@@ -13335,11 +13335,11 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 return (
                 <div key={si.sub_issue_id} className="subissue-card">
                   <div className="subissue-card-head">
-                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, flexShrink: 0 }}>{index + 1}</span>
-                    <strong style={{ fontSize: '0.9rem' }}>{si.title}</strong>
+                    <span className="subissue-index">{index + 1}</span>
+                    <strong className="subissue-title">{si.title}</strong>
                     <TicketStatusBadge value={si.status} />
                     {onEditSubIssue && ticket.status === 'Active' && ['Open', 'Under Repair'].includes(si.status) && canDo(user, 'subissue.manage') && (hasRole(user, 'Admin') || String(ticket.assigned_custodian_id) === String(userId)) && (
-                      <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4 }}>
+                      <span className="subissue-card-head-actions">
                         <button type="button" className="btn-edit-action icon-btn" title="Edit sub-issue" aria-label="Edit sub-issue" onClick={() => setSubDraft({ id: si.sub_issue_id, title: si.title, maintenance_type: si.maintenance_type ?? '' })}><Icon name="edit" size={13} /></button>
                         {subIssues.length > 1 && (
                           <button type="button" className="btn-delete-action icon-btn" title="Remove sub-issue" aria-label="Remove sub-issue" onClick={() => onDeleteSubIssue(ticket, si)}><Icon name="trash" size={13} /></button>
@@ -13355,10 +13355,10 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                       badge = verdict), which cuts the block's height by more
                       than half without losing any information. */}
                   {(si.assigned_mechanic || si.maintenance_type || si.verification_verdict || si.source_vehicle || si.external_vendor || (si.maintenance_cost !== null && si.maintenance_cost !== undefined)) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 10px', marginTop: 8, padding: '6px 9px', background: '#f8fafc', borderRadius: 8, fontSize: '0.8rem' }}>
+                    <div className="subissue-meta-strip">
                       {si.assigned_mechanic && <UserAvatarName user={si.assigned_mechanic} />}
                       {si.maintenance_type && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#475569' }}>
+                        <span className="subissue-meta-chip">
                           <Icon name="wrench" size={11} /> {si.maintenance_type}
                         </span>
                       )}
@@ -13368,18 +13368,18 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                           opens Log Repairs (where it's pre-filled but otherwise
                           invisible on the ticket itself in the meantime). */}
                       {si.source_vehicle && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#475569' }}>
+                        <span className="subissue-meta-chip">
                           <Icon name="vehicle" size={11} /> Donor: {si.source_vehicle.vehicle_name} ({si.source_vehicle.plate_number})
                         </span>
                       )}
                       {si.external_vendor && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#475569' }}>
+                        <span className="subissue-meta-chip">
                           <Icon name="clipboard" size={11} /> External Shop: {si.external_vendor}
                           {si.warranty_until && ` (warranty until ${formatDate(si.warranty_until)})`}
                         </span>
                       )}
                       {si.maintenance_cost !== null && si.maintenance_cost !== undefined && (
-                        <strong style={{ color: '#16a34a' }}>₱{Number(si.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+                        <strong className="subissue-meta-cost">₱{Number(si.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
                       )}
                       {si.verification_verdict && <TicketStatusBadge value={si.verification_verdict} />}
                     </div>
@@ -13398,35 +13398,31 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                       verification step between the mechanic's repair and the
                       Admin's final confirmation, so it never looks skipped. */}
                   {stageBanner && (
-                    <div style={{ marginTop: 8 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 11px', background: stageBanner.bg, border: `1px solid ${stageBanner.color}40`, borderRadius: 999, fontSize: '0.76rem', fontWeight: 600, color: stageBanner.text }}>
-                        <Icon name={stageBanner.icon} size={12} /> {stageBanner.label}
-                      </span>
-                    </div>
+                    <span className="subissue-stage-banner" style={{ '--stage-color': stageBanner.color, '--stage-bg': stageBanner.bg, '--stage-text': stageBanner.text }}>
+                      <Icon name={stageBanner.icon} size={12} /> {stageBanner.label}
+                    </span>
                   )}
 
-                  {si.repair_logs && <div style={{ marginTop: 8 }}><RepairLogEntries text={si.repair_logs} compact /></div>}
+                  {si.repair_logs && <RepairLogEntries text={si.repair_logs} compact />}
                   {si.parts_used && (
-                    <div style={{ marginTop: 8 }}>
-                      <span style={{ display: 'block', fontSize: '0.66rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 3 }}>Parts Used</span>
+                    <div className="subissue-field">
+                      <span className="subissue-field-label">Parts Used</span>
                       <PartsTags value={si.parts_used} />
                     </div>
                   )}
                   {si.attachment_url && (
-                    <p style={{ marginTop: 8 }}>
-                      <a href={resolvePhotoUrl(si.attachment_url)} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.85rem' }}>
-                        <Icon name="clipboard" size={13} /> View attached photo/document
-                      </a>
-                    </p>
+                    <a className="subissue-attachment-link" href={resolvePhotoUrl(si.attachment_url)} target="_blank" rel="noreferrer">
+                      <Icon name="clipboard" size={13} /> View attached photo/document
+                    </a>
                   )}
                   {Array.isArray(si.functional_test) && si.functional_test.length > 0 && (
-                    <div style={{ marginTop: 8, padding: '8px 10px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                      <span style={{ display: 'block', fontSize: '0.66rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 5 }}>
+                    <div className="subissue-functional-test">
+                      <span className="subissue-field-label">
                         Functional Test{si.test_attested ? ' · operator-attested' : ''}
                       </span>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      <div className="subissue-test-chip-row">
                         {si.functional_test.map((t, ti) => (
-                          <span key={ti} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.76rem', padding: '2px 8px', borderRadius: 999, background: t.passed ? '#ecfdf5' : '#fef2f2', color: t.passed ? '#065f46' : '#991b1b', border: `1px solid ${t.passed ? '#a7f3d0' : '#fecaca'}` }}>
+                          <span key={ti} className={`subissue-test-chip ${t.passed ? 'is-pass' : 'is-fail'}`}>
                             <Icon name={t.passed ? 'checkCircle' : 'alert'} size={11} /> {t.item}
                           </span>
                         ))}
@@ -13435,26 +13431,26 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                   )}
 
                   {si.confirmation_verdict && si.status !== 'Deferred' && (
-                    <p className="muted" style={{ marginTop: 8 }}>Admin verdict: <TicketStatusBadge value={si.confirmation_verdict} /> {si.confirmation_notes}</p>
+                    <p className="muted">Admin verdict: <TicketStatusBadge value={si.confirmation_verdict} /> {si.confirmation_notes}</p>
                   )}
 
                   {si.reopened_at && si.status === 'For Inspection' && (
-                    <div style={{ marginTop: 8, padding: '10px 12px', background: '#fef3c7', borderLeft: '3px solid #f59e0b', borderRadius: 6, fontSize: '0.82rem', color: '#92400e' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <div className="subissue-alert-banner">
+                      <div className="subissue-alert-banner-head">
                         <Icon name="alert" size={14} /> <strong>Reopened by {si.reopened_by?.name || 'Admin'}</strong>
                       </div>
-                      {si.confirmation_notes && <p style={{ margin: 0 }}><strong>Reason:</strong> {si.confirmation_notes}</p>}
-                      <p style={{ margin: '4px 0 0', fontStyle: 'italic', opacity: 0.85 }}>This repair was unconfirmed and needs to be re-verified.</p>
+                      {si.confirmation_notes && <p><strong>Reason:</strong> {si.confirmation_notes}</p>}
+                      <p className="subissue-alert-banner-footnote">This repair was unconfirmed and needs to be re-verified.</p>
                     </div>
                   )}
 
                   {si.status === 'Deferred' && (
-                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbeb', borderLeft: '3px solid #f59e0b', borderRadius: 6, fontSize: '0.82rem', color: '#92400e' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div className="subissue-alert-banner">
+                      <div className="subissue-alert-banner-head">
                         <Icon name="alert" size={14} /> <strong>Deferred{si.deferred_by?.name ? ` by ${si.deferred_by.name}` : ''}</strong>
                       </div>
-                      {si.deferred_reason && <p style={{ margin: '4px 0 0' }}>{si.deferred_reason}</p>}
-                      <p style={{ margin: '4px 0 0', fontStyle: 'italic', opacity: 0.85 }}>
+                      {si.deferred_reason && <p>{si.deferred_reason}</p>}
+                      <p className="subissue-alert-banner-footnote">
                         A follow-up issue report{si.deferred_issue_report_id ? ` (Issue #${si.deferred_issue_report_id})` : ''} was opened so this defect isn't forgotten — the Custodian can propose a ticket from it.
                       </p>
                     </div>
@@ -13469,7 +13465,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                       mechanic. */}
                   {ticket.status === 'Active' && (canDo(user, 'repair.approve_cannibalized') || canDo(user, 'repair.reject_cannibalized')) && si.status === 'Pending Approval' && (
                     reviewingCannibalizationId === si.sub_issue_id ? (
-                      <div className="ticket-inline-form" style={{ marginTop: 8, padding: '10px 12px' }}>
+                      <div className="ticket-inline-form subissue-inline-form">
                         <SmartForm
                           fields={[
                             { label: 'Rejection Reason', name: 'cannibalization_rejection_reason', type: 'textarea', rows: 2, required: true, placeholder: 'e.g., Needed on the donor vehicle itself' },
@@ -13482,11 +13478,11 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                         />
                       </div>
                     ) : (
-                      <div style={{ marginTop: 10 }}>
-                        <p className="muted" style={{ marginBottom: 6, fontSize: '0.8rem' }}>
+                      <div className="subissue-cannibal-approval">
+                        <p className="muted">
                           Donor vehicle: <strong>{si.source_vehicle?.vehicle_name ?? 'Unknown'}</strong> ({si.source_vehicle?.plate_number ?? '-'}). Approving opens an Issue Report on it for the removed part.
                         </p>
-                        <div style={{ display: 'flex', gap: 8 }}>
+                        <div className="subissue-cannibal-approval-actions">
                           {canDo(user, 'repair.approve_cannibalized') && (
                             <button
                               className="primary-button"
@@ -13512,7 +13508,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
 
                   {ticket.status === 'Active' && canDo(user, 'subissue.reopen_confirmed') && si.status === 'Done' && (
                     editingDoneId === si.sub_issue_id ? (
-                      <div className="ticket-inline-form" style={{ marginTop: 8, padding: '10px 12px' }}>
+                      <div className="ticket-inline-form subissue-inline-form">
                         <p className="muted" style={{ marginBottom: 8, fontSize: '0.8rem' }}>Unconfirm this repair so you can make adjustments and re-confirm it.</p>
                         <SmartForm
                           fields={[
@@ -13526,7 +13522,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                         />
                       </div>
                     ) : (
-                      <button className="ghost-button btn-edit-action" style={{ marginTop: 10 }} type="button" onClick={() => setEditingDoneId(si.sub_issue_id)}>
+                      <button className="ghost-button btn-edit-action" type="button" onClick={() => setEditingDoneId(si.sub_issue_id)}>
                         <Icon name="undo" size={14} /> Unconfirm
                       </button>
                     )
@@ -13591,7 +13587,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
               ticket in one step. There is no separate close/decision-close
               action anymore — if work genuinely can't be finished, cancel
               the ticket instead (below). */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div className="ticket-detail-actions-row">
             {canDo(user, 'ticket.uncancel') && ticket.status === 'Cancelled' && onUncancel && (
               <button className="primary-button" type="button" onClick={() => onUncancel(ticket)}>Restore Ticket</button>
             )}
@@ -13606,7 +13602,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 record — Delete is only for genuine mistakes, not for
                 discarding finished repairs. */}
             {canDo(user, 'ticket.delete') && ticket.status !== 'Closed' && ticket.status !== 'Pending Approval' && (
-              <button className="danger-button" type="button" onClick={requestDelete}>Delete Ticket</button>
+              <button className="danger-button ticket-detail-actions-danger" type="button" onClick={requestDelete}>Delete Ticket</button>
             )}
           </div>
         </div>
