@@ -2,12 +2,13 @@ import { useLocation } from 'react-router-dom';
 import Icon from '../../components/Icon';
 import api from '../../api/axios';
 import Modal from '../components/Modal';
-import { ModulePanel, StatusBadge } from '../components/ui';
+import { ModulePanel, StatusBadge, UserAvatarName } from '../components/ui';
 import { SmartForm } from '../forms/SmartForm';
 import { cleanPayload, sendPayload, showError } from '../lib/data';
 import { passwordFields, profileFields } from '../lib/fields';
-import { resolvePhotoUrl } from '../lib/format';
+import { formatDate, resolvePhotoUrl } from '../lib/format';
 import { canDo } from '../lib/permissions';
+import { accountStatus, splitRoles } from '../lib/userAccounts';
 
 export function UserInfoModal({ user, onClose }) {
   const initials = user.name
@@ -56,7 +57,8 @@ export function UserViewPage({ userId, users = [], currentUser, onEdit }) {
   }
 
   const initials = user.name ? user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'U';
-  const isActive = user.is_active !== false;
+  const status = accountStatus(user);
+  const { primary, additional } = splitRoles(user);
 
   return (
     <ModulePanel description="User account profile and contact details.">
@@ -64,6 +66,10 @@ export function UserViewPage({ userId, users = [], currentUser, onEdit }) {
         <div className="vehicle-profile-identity">
           <span className="ticket-detail-id">User ID #{user.id}</span>
           <h3 className="ticket-detail-title">{user.name}</h3>
+          <div className="p23-account-strip">
+            <StatusBadge value={status.label} />
+            <span>{status.detail}</span>
+          </div>
         </div>
         {canDo(currentUser, 'user.edit') && (
           <button className="primary-button" type="button" onClick={onEdit}><Icon name="edit" size={14} /> Edit User</button>
@@ -79,8 +85,10 @@ export function UserViewPage({ userId, users = [], currentUser, onEdit }) {
             </div>
             <dl className="veh-kv">
               <div><dt>Full Name</dt><dd>{user.name}</dd></div>
-              <div><dt>Role</dt><dd>{user.role ?? '-'}</dd></div>
-              <div><dt>Account Status</dt><dd><StatusBadge value={isActive ? 'Active' : 'Inactive'} /></dd></div>
+              <div><dt>Primary Role</dt><dd>{primary ? <StatusBadge value={primary} /> : '-'}</dd></div>
+              <div><dt>Additional Roles</dt><dd>{additional.length ? <span className="p23-role-list">{additional.map((r) => <StatusBadge key={r} value={r} />)}</span> : 'None'}</dd></div>
+              <div><dt>Account Status</dt><dd><StatusBadge value={status.label} /></dd></div>
+              <div><dt>{status.key === 'pending' ? 'Registered' : 'Approved'}</dt><dd>{status.key === 'pending' ? formatDate(user.created_at) : (user.approved_at ? formatDate(user.approved_at) : 'Created by an Admin')}</dd></div>
             </dl>
           </div>
         </section>
@@ -241,7 +249,8 @@ export function ProfilePage({ user, onBack, setNotice, refreshUser, onDirty }) {
 // MaintenanceRecordCard's click-to-edit convention for this module's card view.
 export function UserCard({ user: person, onClick }) {
   const initials = (person.name || '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-  const roles = (Array.isArray(person.roles) && person.roles.length) ? person.roles : [person.role].filter(Boolean);
+  const { primary, additional } = splitRoles(person);
+  const status = accountStatus(person);
 
   return (
     <div className="user-card" onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
@@ -249,13 +258,79 @@ export function UserCard({ user: person, onClick }) {
         {person.photo_url ? <img src={resolvePhotoUrl(person.photo_url)} alt={person.name} /> : <span>{initials}</span>}
       </div>
       <strong className="user-card-name">{person.name}</strong>
-      <span className="user-card-role">{roles.join(', ') || '—'}</span>
+      <span className="user-card-role">{primary ?? '—'}{additional.length ? <span className="p23-role-extra"> + {additional.join(', ')}</span> : null}</span>
       <span className="user-card-underline" />
       <div className="user-card-contact">
         <span>{person.phone || 'No phone on file'}</span>
         <a href={`mailto:${person.email}`} onClick={(e) => e.stopPropagation()}>{person.email}</a>
       </div>
-      <StatusBadge value={person.is_active ? 'Active' : 'Inactive'} />
+      <StatusBadge value={status.label} />
+      <span className="p23-card-status-detail">{status.detail}</span>
     </div>
+  );
+}
+
+// Users-page status/role quick filters as toggle chips (aria-pressed), driving
+// the same filterActive / filterStatus state the dropdowns used.
+export function UserFilterChips({ statusOptions, selectedStatus, onStatusChange, roleOptions, selectedRoles, onRolesChange, counts = {} }) {
+  const toggle = (list, value, set) => set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+  const anyActive = selectedStatus.length > 0 || selectedRoles.length > 0;
+  return (
+    <div className="p23-chip-bar">
+      <div className="p23-chip-group" role="group" aria-label="Filter by account status">
+        <span className="p23-chip-label">Status</span>
+        {statusOptions.map((value) => (
+          <button key={value} type="button" className="p23-chip" aria-pressed={selectedStatus.includes(value)} onClick={() => toggle(selectedStatus, value, onStatusChange)}>
+            {value}{counts[value] != null ? <span className="p23-chip-count">{counts[value]}</span> : null}
+          </button>
+        ))}
+      </div>
+      <div className="p23-chip-group" role="group" aria-label="Filter by role">
+        <span className="p23-chip-label">Role</span>
+        {roleOptions.map((value) => (
+          <button key={value} type="button" className="p23-chip" aria-pressed={selectedRoles.includes(value)} onClick={() => toggle(selectedRoles, value, onRolesChange)}>
+            {value}{counts[value] != null ? <span className="p23-chip-count">{counts[value]}</span> : null}
+          </button>
+        ))}
+      </div>
+      {anyActive && (
+        <button type="button" className="ghost-button p23-chip-clear" onClick={() => { onStatusChange([]); onRolesChange([]); }}>
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Self-registrations waiting for an Admin — kept apart from working accounts
+// so approving someone is its own clear task, not a row hidden among the rest.
+export function PendingRegistrations({ rows, onReview }) {
+  if (!rows.length) {
+    return (
+      <div className="empty-state p23-empty">
+        <p>No registrations are waiting for approval.</p>
+        <p>New staff sign up with your barangay's Staff Registration Code; their requests appear here for you to review.</p>
+      </div>
+    );
+  }
+  return (
+    <ul className="p23-pending-list">
+      {rows.map((row) => (
+        <li key={row.id} className="p23-pending-card">
+          <div className="p23-pending-who">
+            <UserAvatarName user={row} />
+            <span className="p23-pending-email">{row.email}</span>
+          </div>
+          <dl className="p23-pending-meta">
+            <div><dt>Requested role</dt><dd>{row.role ? <StatusBadge value={row.role} /> : '—'}</dd></div>
+            <div><dt>Registered</dt><dd>{formatDate(row.created_at)}</dd></div>
+            {row.phone && <div><dt>Phone</dt><dd>{row.phone}</dd></div>}
+          </dl>
+          <button type="button" className="primary-button" onClick={() => onReview(row)} aria-label={`Review and approve ${row.name}`}>
+            Review &amp; approve
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
