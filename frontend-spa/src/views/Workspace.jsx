@@ -11877,7 +11877,7 @@ function RepairLogEntries({ text, compact = false, limit = null }) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {shown.map((entry, i) => (
-          <p key={i} style={{ margin: 0, fontSize: '0.82rem', color: '#334155' }}>
+          <p key={i} style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text, #334155)' }}>
             {entry.iso && <span className="muted" style={{ fontSize: '0.7rem', marginRight: 6 }}>{formatDate(entry.iso)}</span>}
             {entry.message}
           </p>
@@ -12424,8 +12424,8 @@ function VerificationForm({ target, onCancel, onSubmit }) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {results.map((r, i) => (
-          <div key={r.item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 10px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '0.85rem', flex: 1 }}>{r.item}</span>
+          <div key={r.item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--surface-2, #f8fafc)', borderRadius: 8, border: '1px solid var(--border, #e2e8f0)' }}>
+            <span style={{ fontSize: '0.85rem', flex: 1, color: 'var(--text, #1e293b)' }}>{r.item}</span>
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
               <button
                 type="button"
@@ -12930,6 +12930,9 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
   // ticket-level step.
   const [verifying, setVerifying] = useState(false);
   const [submittingForVerification, setSubmittingForVerification] = useState(false);
+  // Which sub-issue cards show their full repair details. null = untouched,
+  // so a short list starts open and a long one starts collapsed.
+  const [expandedSubIds, setExpandedSubIds] = useState(null);
 
   if (!ticket) return null;
 
@@ -12939,6 +12942,14 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
     deferred: subIssues.filter((s) => s.status === 'Deferred').length,
     total: subIssues.length,
   };
+  const defaultExpandedSubs = subIssues.length <= 3 ? subIssues.map((s) => s.sub_issue_id) : [];
+  const expandedSubs = expandedSubIds ?? defaultExpandedSubs;
+  const isSubExpanded = (id) => expandedSubs.includes(id);
+  const allSubsExpanded = subIssues.length > 0 && subIssues.every((s) => expandedSubs.includes(s.sub_issue_id));
+  const toggleSubExpanded = (id) => setExpandedSubIds((prev) => {
+    const ids = prev ?? defaultExpandedSubs;
+    return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+  });
   const isAdminUser = hasRole(user, 'Admin');
   const isAssignedMechanic = ticket.assigned_mechanic_id != null && String(ticket.assigned_mechanic_id) === String(userId);
   const isAssignedCustodian = ticket.assigned_custodian_id != null && String(ticket.assigned_custodian_id) === String(userId);
@@ -13098,7 +13109,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
           <div className="ticket-detail-col-left">
             <section className="ticket-section">
               <h4><Icon name="vehicle" size={14} /> Overview</h4>
-              <div className="ticket-preview-card ticket-preview-card--detail">
+              <div className="ticket-preview-card ticket-preview-card--detail ticket-preview-card--stacked">
                 {ticket.vehicle?.photo_url ? (
                   <img className="ticket-preview-photo" src={resolvePhotoUrl(ticket.vehicle.photo_url)} alt={ticket.vehicle.vehicle_name} />
                 ) : (
@@ -13180,7 +13191,10 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 <div className="ticket-kv-row">
                   <div>
                     <span>Doing the repair</span>
-                    <UserAvatarName user={ticket.assigned_mechanic} />
+                    <div className="ticket-person-row">
+                      <UserAvatarName user={ticket.assigned_mechanic} />
+                      <span className="ticket-role-tag">Maintenance Personnel</span>
+                    </div>
                   </div>
                 </div>
                 {canDo(user, 'ticket.assign_mechanic') && onAssignTicketMechanic && !['Closed', 'Cancelled'].includes(ticket.status) && (
@@ -13271,6 +13285,15 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 >
                   <Icon name="info" size={13} />
                 </span>
+                {subIssues.length > 1 && (
+                  <button
+                    type="button"
+                    className="ticket-subissue-toggle-all"
+                    onClick={() => setExpandedSubIds(allSubsExpanded ? [] : subIssues.map((s) => s.sub_issue_id))}
+                  >
+                    {allSubsExpanded ? 'Collapse all' : 'Expand all'}
+                  </button>
+                )}
               </h4>
 
               {/* The actionable "ready to close" banner lives once, down in
@@ -13326,15 +13349,28 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 </div>
               )}
 
+              <div className="ticket-subissue-scroll">
               {subIssues.map((si, index) => {
                 const stageBanner = {
                   'Pending Approval': { color: '#d97706', bg: '#fffbeb', text: '#92400e', icon: 'alert', label: 'Cannibalized repair — awaiting Admin approval' },
                   'For Inspection':   { color: '#7c3aed', bg: '#f5f3ff', text: '#5b21b6', icon: 'search', label: ticket.status === 'For Verification' ? 'Repair logged — awaiting Custodian verification' : 'Repair logged — waiting on the rest of the ticket' },
                 }[si.status];
+                const open = isSubExpanded(si.sub_issue_id);
+                const detailsId = `subissue-details-${si.sub_issue_id}`;
 
                 return (
-                <div key={si.sub_issue_id} className="subissue-card">
+                <div key={si.sub_issue_id} className={`subissue-card${open ? ' is-open' : ' is-collapsed'}`}>
                   <div className="subissue-card-head">
+                    <button
+                      type="button"
+                      className="subissue-toggle"
+                      aria-expanded={open}
+                      aria-controls={detailsId}
+                      title={open ? 'Hide repair details' : 'Show repair details'}
+                      onClick={() => toggleSubExpanded(si.sub_issue_id)}
+                    >
+                      <Icon name="chevronDown" size={14} />
+                    </button>
                     <span className="subissue-index">{index + 1}</span>
                     <strong className="subissue-title">{si.title}</strong>
                     <TicketStatusBadge value={si.status} />
@@ -13384,7 +13420,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                       {si.verification_verdict && <TicketStatusBadge value={si.verification_verdict} />}
                     </div>
                   )}
-                  <RepairContextDetails si={si} />
+                  {open && <RepairContextDetails si={si} />}
 
                   {onLogRepairs && ticket.status === 'Active' && canDo(user, 'subissue.log_repair') && si.status === 'Under Repair' && String(si.assigned_mechanic_id) === String(userId) && (
                     <div className="subissue-head-right">
@@ -13397,12 +13433,14 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                   {/* Makes every handoff visible — in particular, the Custodian's
                       verification step between the mechanic's repair and the
                       Admin's final confirmation, so it never looks skipped. */}
-                  {stageBanner && (
+                  {open && stageBanner && (
                     <span className="subissue-stage-banner" style={{ '--stage-color': stageBanner.color, '--stage-bg': stageBanner.bg, '--stage-text': stageBanner.text }}>
                       <Icon name={stageBanner.icon} size={12} /> {stageBanner.label}
                     </span>
                   )}
 
+                  {open && (
+                  <div className="subissue-details" id={detailsId}>
                   {si.repair_logs && <RepairLogEntries text={si.repair_logs} compact />}
                   {si.parts_used && (
                     <div className="subissue-field">
@@ -13432,6 +13470,8 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
 
                   {si.confirmation_verdict && si.status !== 'Deferred' && (
                     <p className="muted">Admin verdict: <TicketStatusBadge value={si.confirmation_verdict} /> {si.confirmation_notes}</p>
+                  )}
+                  </div>
                   )}
 
                   {si.reopened_at && si.status === 'For Inspection' && (
@@ -13533,6 +13573,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
                 </div>
                 );
               })}
+              </div>
             </section>
           )}
           {ticket.status === 'Open' && (

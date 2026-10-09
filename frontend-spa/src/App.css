@@ -14421,3 +14421,106 @@ html[data-theme="dark"] .lr-history { background: rgba(148, 163, 184, 0.06); }
 html[data-theme="dark"] .lr-label,
 html[data-theme="dark"] .lr-file-name,
 html[data-theme="dark"] .lr-total { color: var(--text-strong, #e2e8f0); }
+
+/* ==========================================================================
+   Ticket Details — density pass on the original layout
+   Tighter header and cards, a 16:9 vehicle photo, a sticky left column, and
+   a sub-issue list that collapses its details and scrolls within the card
+   so tickets with many sub-issues don't stretch the page.
+   ========================================================================== */
+.ticket-detail-panel.is-page { overflow: visible; }
+
+/* Header card + stepper */
+html .ticket-detail-panel.is-page .ticket-process-hero {
+  margin: 16px 20px 0; padding: 14px 18px; gap: 16px;
+}
+html .ticket-detail-panel.is-page .ticket-process-meter { width: 88px; min-width: 88px; max-width: 88px; }
+html .ticket-detail-panel.is-page section.ticket-process-hero .ticket-detail-title { font-size: 1.3rem; line-height: 1.25; margin-bottom: 6px; }
+html .ticket-detail-panel.is-page .ticket-process-hero .ticket-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+html .ticket-detail-panel.is-page .ticket-process-next-card { padding: 10px 12px; border-radius: 10px; }
+html .ticket-detail-panel.is-page .ticket-process-next-card > strong { font-size: 1rem; }
+html .ticket-detail-panel.is-page .ticket-process-next-card > p { margin: 2px 0 8px; }
+html .ticket-detail-panel.is-page .ticket-process-stat-grid { gap: 6px; padding-top: 8px; }
+html .ticket-detail-panel.is-page .ticket-process-stat {
+  padding: 6px 4px; gap: 2px;
+  background: #ffffff; border: 1px solid #dbe5f3; border-radius: 8px;
+}
+html .ticket-detail-panel.is-page .ticket-process-stat-icon { width: 20px; height: 20px; }
+html .ticket-detail-panel.is-page .ticket-process-flow { padding: 10px 28px 2px; }
+html .ticket-detail-panel.is-page .ticket-process-flow-step { gap: 3px; }
+html .ticket-detail-panel.is-page .ticket-process-flow-marker { width: 28px; height: 28px; }
+html .ticket-detail-panel.is-page .ticket-process-flow-step:not(:last-child)::after { top: 13px; }
+html .ticket-detail-panel.is-page .ticket-process-flow-step > small { font-size: 0.66rem; }
+
+/* Body + cards: one padding scale, light shadow */
+html .ticket-detail-panel.is-page .ticket-detail-body { padding: 14px 20px 18px; gap: 14px; }
+html .ticket-detail-panel.is-page .ticket-detail-body.ticket-detail-body-columns { gap: 14px; }
+html .ticket-detail-panel.is-page .ticket-detail-col-left,
+html .ticket-detail-panel.is-page .ticket-detail-col-right { gap: 12px; }
+html .ticket-detail-panel.is-page .ticket-section {
+  padding: 14px 16px; border-color: #e2e8f0; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+html .ticket-detail-panel.is-page .ticket-section h4 { margin-bottom: 10px; padding-bottom: 8px; }
+html .ticket-detail-panel.is-page .ticket-section h4 svg { color: #1d4ed8; stroke: #1d4ed8; }
+
+/* Overview: photo on top in 16:9 */
+html .ticket-preview-card.ticket-preview-card--stacked {
+  flex-direction: column; align-items: stretch; gap: 10px; padding: 10px;
+}
+html .ticket-preview-card--stacked .ticket-preview-photo {
+  width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 8px; object-fit: cover;
+}
+html .ticket-preview-card--stacked .ticket-preview-photo-empty { display: flex; }
+html .ticket-preview-card--stacked .ticket-preview-body { padding: 0 4px 2px; }
+html .ticket-detail-panel.is-page .ticket-detail-description-box { margin-top: 10px; }
+
+/* Mechanic card: avatar + role tag */
+html .ticket-person-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+html .ticket-role-tag {
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+}
+
+/* Inspection notes: secondary text */
+html .ticket-detail-panel.is-page .ticket-section--flag-warn p.muted,
+html .ticket-detail-panel.is-page .ticket-section--flag-ok p.muted { color: #64748b; font-size: 0.8rem; line-height: 1.45; }
+
+/* Sub-issues: header toggle, collapsible details, scrolling list */
+html .ticket-subissue-toggle-all {
+  margin-left: auto; background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 0.74rem; font-weight: 700; color: #1d4ed8; text-transform: none; letter-spacing: 0;
+}
+html .ticket-subissue-toggle-all:hover { text-decoration: underline; }
+html .subissue-toggle {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; flex-shrink: 0;
+  border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #64748b; cursor: pointer;
+}
+html .subissue-toggle:hover { color: #1d4ed8; border-color: #bfdbfe; }
+html .subissue-toggle svg { transition: transform 0.15s ease; transform: rotate(-90deg); }
+html .subissue-card.is-open .subissue-toggle svg { transform: rotate(0deg); }
+html .subissue-card.is-collapsed { padding: 8px 12px; }
+html .subissue-card.is-collapsed .subissue-body-main { gap: 6px; }
+html .subissue-card .subissue-body-grid { margin-top: 8px; }
+html .subissue-details { display: flex; flex-direction: column; gap: 10px; }
+
+@media (min-width: 861px) {
+  html .ticket-detail-panel.is-page .ticket-detail-col-left { position: sticky; top: 1rem; align-self: start; }
+  html .ticket-subissue-scroll {
+    max-height: calc(100vh - 260px); min-height: 160px; overflow-y: auto;
+    margin-right: -6px; padding-right: 6px; scrollbar-width: thin;
+  }
+}
+@media (max-width: 860px) {
+  html .ticket-detail-panel.is-page .ticket-process-hero { margin: 12px 12px 0; padding: 12px; }
+  html .ticket-detail-panel.is-page .ticket-detail-body { padding: 12px; }
+  html .ticket-detail-panel.is-page .ticket-process-flow { padding: 10px 12px 2px; }
+}
+
+/* Dark theme: keep the polished pieces on theme surfaces */
+html[data-theme="dark"] .ticket-detail-panel.is-page .ticket-process-stat,
+html[data-theme="dark"] .subissue-toggle { background: var(--surface-2); border-color: var(--border); }
+html[data-theme="dark"] .ticket-role-tag { background: var(--primary-soft); border-color: var(--primary-border); color: #93c5fd; }html .ticket-detail-panel.is-page .ticket-process-stat-value { font-size: 0.92rem; white-space: nowrap; }
+html .subissue-card.is-collapsed .subissue-body-grid { margin-top: 6px; }
+html .subissue-card.is-collapsed .subissue-meta-strip { padding: 4px 8px; }html .ticket-detail-panel.is-page .ticket-detail-actions { position: static; padding: 12px 20px; }
+html .ticket-detail-panel.is-page .ticket-detail-actions:not(:has(button)) { display: none; }
+html .subissue-card-head .subissue-title { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
