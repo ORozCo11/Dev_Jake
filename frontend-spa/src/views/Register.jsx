@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import api from '../api/axios';
 import Icon from '../components/Icon';
+import Swirling from '../components/Swirling';
 import Aurora from '../components/Aurora';
 import AuthHeader from '../components/AuthHeader';
 import AuthFooter from '../components/AuthFooter';
@@ -405,7 +406,7 @@ function Register() {
                     </button>
                     <button className="primary-button" disabled={submitting} type="submit">
                       {submitting ? (
-                        <span className="btn-loading"><span className="btn-spinner" aria-hidden="true" />Submitting…</span>
+                        <span className="btn-loading"><Swirling size={16} />Submitting…</span>
                       ) : 'Create account'}
                     </button>
                   </div>

@@ -5,6 +5,7 @@ import api from '../api/axios';
 import LocationDensityMap from '../components/LocationDensityMap';
 import VehicleLocationMap from '../components/VehicleLocationMap';
 import Icon from '../components/Icon';
+import Swirling from '../components/Swirling';
 import TextType from '../components/TextType';
 import WorkspaceFooter from '../components/WorkspaceFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -2246,6 +2247,9 @@ function Workspace() {
                   <p className="breadcrumb-path">{moduleLabel(modules, breadcrumbModule)} »</p>
                 )}
                 <h2>{subPageTitle ?? moduleLabel(modules, activeModule)}</h2>
+                {activeModule === 'vehicles' && !subPageTitle && (
+                  <p className="page-heading-subtitle">Manage fleet assets and monitor vehicle availability.</p>
+                )}
               </div>
             </div>
           )}
@@ -2519,6 +2523,31 @@ function Workspace() {
     }
 
     if (activeModule === 'vehicles') {
+      const resetVehicleFilters = () => {
+        setFilterCategory([]);
+        setFilterCapacity([]);
+        setFilterStatus([]);
+        setFilterPriority([]);
+        setFilterLocation([]);
+        setFilterDomain([]);
+        setFilterReadiness([]);
+      };
+      const showAllVehicles = () => {
+        resetVehicleFilters();
+        setFilterStatus(['Available', 'Under Maintenance', 'Inactive', 'Decommissioned']);
+      };
+      const showNeedsAttention = () => {
+        resetVehicleFilters();
+        setFilterPriority(['Needs Inspection', 'Needs Repair']);
+      };
+      const showUnderMaintenance = () => {
+        resetVehicleFilters();
+        setFilterStatus(['Under Maintenance']);
+      };
+      const showReadyVehicles = () => {
+        resetVehicleFilters();
+        setFilterReadiness(['Ready']);
+      };
       return (
         <ModulePanel
           description={((hasRole(user, 'Custodian') && !hasRole(user, 'Admin')) ? 'View-only fleet information.' : 'Register, edit, and archive vehicle records.') + ' Status = availability (can it be dispatched right now?). Condition = physical state (does it need repair or inspection?). Click a row to see full vehicle details.'}
@@ -2526,14 +2555,16 @@ function Workspace() {
             <ModuleStatCards
               totalLabel="Total Vehicles"
               total={vehicleStats.total}
-              cards={VEHICLE_STAT_CARDS}
+              cards={VEHICLE_OVERVIEW_CARDS}
               counts={vehicleStats}
               activeFilter={filterStatus}
               onFilterChange={setFilterStatus}
+              onTotalClick={showAllVehicles}
+              className="fleet-summary-grid"
             />
           }
           filterBar={
-            <FilterBar
+            <VehicleFilterPanel
               categories={lookups.categories}
               vehicles={lookups.vehicles}
               filterCategory={filterCategory}
@@ -2546,34 +2577,42 @@ function Workspace() {
               setFilterPriority={setFilterPriority}
               statusOptions={lookups.vehicle_statuses}
               priorityOptions={lookups.condition_results}
-              priorityLabel="Condition"
-              showAdvanced
               filterLocation={filterLocation}
               setFilterLocation={setFilterLocation}
               filterDomain={filterDomain}
               setFilterDomain={setFilterDomain}
-              extraFilters={[{
-                key: 'readiness',
-                label: 'Ready to Respond',
-                options: ['Ready', 'Not Ready'],
-                selected: filterReadiness,
-                setSelected: setFilterReadiness,
-              }]}
+              filterReadiness={filterReadiness}
+              setFilterReadiness={setFilterReadiness}
             />
           }
         >
-          <div className="panel-header-bar">
-            <h3>All Vehicles <span className="count-badge">{visibleRows.length}</span></h3>
+          <div className="fleet-context" role="note" aria-label="How fleet states are determined">
+            <Icon name="clipboard" size={16} />
+            <p><strong>Three separate checks protect deployment decisions.</strong> Operational status shows availability, condition records physical findings, and response readiness requires a current authorized assessment.</p>
+          </div>
+          <div className="fleet-quick-filters" aria-label="Quick fleet filters">
+            <span>Quick filters</span>
+            <button type="button" onClick={showAllVehicles}>All Vehicles</button>
+            <button type="button" onClick={showNeedsAttention}>Needs Attention</button>
+            <button type="button" onClick={showUnderMaintenance}>Under Maintenance</button>
+            <button type="button" onClick={showReadyVehicles}>Ready to Respond</button>
+          </div>
+          <div className="panel-header-bar fleet-list-header">
+            <div>
+              <h3>Fleet Vehicles <span className="count-badge">{visibleRows.length}</span></h3>
+              <p className="fleet-list-caption">Select a vehicle to view its full profile, history, and operational records.</p>
+            </div>
             <LocalSearchInput
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search vehicles..."
+              placeholder="Search by vehicle name or plate number"
               onAdd={hasRole(user, 'Admin') ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`) : undefined}
               addLabel="Add Vehicle"
               onExport={() => exportRowsToCsv('vehicles.csv', VEHICLE_EXPORT_COLUMNS, visibleRows)}
+              showExportLabel
             />
           </div>
-          <PaginatedTable columns={vehicleColumns(user.role, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile)} rows={visibleRows} onRowClick={openVehicleProfile} emptyMessage="No vehicles here yet — click the + button to register one." />
+          <PaginatedTable className="fleet-table" columns={vehicleColumns(hasRole(user, 'Admin'), openVehicleProfile, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile)} rows={visibleRows} onRowClick={openVehicleProfile} emptyMessage="No vehicles match the current search and filters." />
         </ModulePanel>
       );
     }
@@ -4067,9 +4106,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           setWeather({ temp, desc, icon, humidity });
         }
       })
-      .catch(() => {
-        setWeather({ temp: 33, desc: 'Partly Cloudy', icon: '⛅', humidity: 68 });
-      });
+      .catch(() => setWeather(null));
 
     return () => clearInterval(interval);
   }, []);
@@ -4162,11 +4199,12 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
   const operationalTotal = fleetSummary?.operational_total ?? totalVehicles;
   const verifiedReady = fleetSummary?.verified_ready ?? Math.max(0, availableVehicles - readinessWatch.length);
   const readinessRate = operationalTotal ? clampPercent((verifiedReady / operationalTotal) * 100) : 0;
-  const availabilityRate = totalVehicles ? clampPercent((availableVehicles / totalVehicles) * 100) : 0;
   const atRiskCount = noCoverage.length + readinessWatch.length + fragility.length + forecastOut.length + preventiveWatch.length + overdueMaintenanceCount;
-  const riskPenalty = Math.min(35, (noCoverage.length * 10) + (overdueMaintenanceCount * 6) + (criticalActionCount * 5) + (readinessWatch.length * 3) + (reportedIssues * 2));
-  const opsScore = clampPercent((readinessRate * 0.42) + (goodConditionRate * 0.28) + (availabilityRate * 0.3) - riskPenalty);
-  const opsTone = opsScore >= 75 ? 'ok' : opsScore >= 45 ? 'warn' : 'alert';
+  const opsTone = noCoverage.length > 0 || overdueMaintenanceCount > 0
+    ? 'alert'
+    : readinessRate >= 75
+      ? 'ok'
+      : 'warn';
   const maintenanceLoad = underMaintenanceVehicles + upcomingMaintenance + overdueMaintenanceCount;
   const statusSegments = [
     { label: 'Available', value: availableVehicles, color: '#16a34a' },
@@ -4223,11 +4261,11 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           </div>
         </div>
 
-        <div className="dashboard-hologram-core" style={{ '--score': `${opsScore}%`, '--readiness': `${readinessRate}%` }}>
+        <div className="dashboard-hologram-core" style={{ '--score': `${readinessRate}%` }}>
           <span className="dashboard-hologram-scan" />
           <div className="dashboard-hologram-inner">
-            <span>Ops Score</span>
-            <strong>{opsScore}</strong>
+            <span>Readiness</span>
+            <strong>{readinessRate}%</strong>
             <small>{verifiedReady}/{operationalTotal} verified ready</small>
           </div>
         </div>
@@ -4241,7 +4279,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
             {weather && (
               <div>
                 <span>Mandaue City, Cebu</span>
-                <strong><span className="dashboard-weather-mark">{weather.icon}</span>{weather.temp}C</strong>
+                <strong><span className="dashboard-weather-mark">{weather.icon}</span>{weather.temp}°C</strong>
                 <small>{weather.desc} / {weather.humidity}% humidity</small>
               </div>
             )}
@@ -4263,7 +4301,11 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           detail={primaryActionLabel}
           tone={criticalActionCount > 0 ? 'alert' : primaryActionCount > 0 ? 'warn' : 'ok'}
           meter={primaryActionCount > 0 ? Math.min(100, primaryActionCount * 18) : 100}
-          onClick={isAdminDashboard ? () => setOpenDashboardModal('actionQueue') : onGoToIssues}
+          onClick={isAdminDashboard
+            ? () => setOpenDashboardModal('actionQueue')
+            : isMaintenanceDashboard
+              ? onGoToSchedules
+              : onGoToIssues}
         />
         <DashboardSignalCard
           icon="checkCircle"
@@ -6112,7 +6154,7 @@ function PartsTags({ value }) {
   );
 }
 
-function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 'No records found.', scrollable = false }) {
+function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 'No records found.', scrollable = false, className = '' }) {
   if (!rows?.length) {
     return <p className="empty-state">{emptyMessage}</p>;
   }
@@ -6120,7 +6162,7 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
   const hasWidths = columns.some((column) => column.width);
 
   return (
-    <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}${scrollable ? ' has-scroll' : ''}`}>
+    <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}${scrollable ? ' has-scroll' : ''}${className ? ` ${className}` : ''}`}>
       <table>
         {hasWidths && (
           <colgroup>
@@ -6144,7 +6186,7 @@ function DataTable({ columns, rows, compact = false, onRowClick, emptyMessage = 
               onClick={onRowClick ? (e) => { if (!e.target.closest('button, a')) onRowClick(row); } : undefined}
             >
               {columns.map((column) => (
-                <td key={column.label} className={[column.className, column.align === 'center' ? 'text-center' : ''].filter(Boolean).join(' ') || undefined}>{column.render ? column.render(row) : row[column.key]}</td>
+                <td key={column.label} data-label={column.label} className={[column.className, column.align === 'center' ? 'text-center' : ''].filter(Boolean).join(' ') || undefined}>{column.render ? column.render(row) : row[column.key]}</td>
               ))}
             </tr>
           ))}
@@ -6158,12 +6200,7 @@ function ModuleLoader({ label = 'Loading module data' }) {
   return (
     <div className="module-loader" role="status" aria-live="polite">
       <div className="module-loader-card">
-        <span className="module-loader-spinner" aria-hidden="true">
-          <svg viewBox="0 0 50 50" width="44" height="44">
-            <circle className="module-loader-track" cx="25" cy="25" r="20" fill="none" strokeWidth="5" />
-            <circle className="module-loader-arc" cx="25" cy="25" r="20" fill="none" strokeWidth="5" strokeLinecap="round" />
-          </svg>
-        </span>
+        <Swirling className="module-loader-swirling" size={44} />
         <span className="module-loader-label">{label}<span className="module-loader-dots" /></span>
       </div>
 
@@ -7195,15 +7232,12 @@ const DASHBOARD_METRIC_STYLE_DEFAULT = { icon: 'grid', bg: '#dbeafe', color: '#2
 
 // NOTE: no "In Use" card — the status exists in the DB enum but this system
 // tracks availability only (no dispatch flow ever sets a vehicle to In Use).
-const VEHICLE_STAT_CARDS = [
-  { key: 'Available', label: 'Available', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
-  { key: 'Under Maintenance', label: 'Under Maintenance', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
-  { key: 'Inactive', label: 'Inactive', icon: 'archive', bg: '#fee2e2', color: '#dc2626' },
-  { key: 'Decommissioned', label: 'Decommissioned', icon: 'close', bg: '#f1f5f9', color: '#475569' },
-  // Distinct from "Available" — a vehicle can be Available yet never (or no
-  // longer) proven ready by an actual readiness check. See responseReadinessState().
-  { key: 'ReadyToRespond', label: 'Ready to Respond', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
-  { key: 'NotReady', label: 'Not Ready to Respond', icon: 'alert', bg: '#fee2e2', color: '#dc2626' },
+// The fleet landing view intentionally keeps retired and ready counts in the
+// filters instead of presenting six equally prominent metrics.
+const VEHICLE_OVERVIEW_CARDS = [
+  { key: 'Available', label: 'Available', icon: 'checkCircle', color: '#15803d' },
+  { key: 'Under Maintenance', label: 'Under Maintenance', icon: 'wrench', color: '#b45309' },
+  { key: 'NotReady', label: 'Not Ready to Respond', icon: 'alert', color: '#b91c1c' },
 ];
 
 const ISSUE_STAT_CARDS = [
@@ -7282,11 +7316,11 @@ const USER_STAT_CARDS = [
 // module's table, matching the Vehicle Management stat cards exactly.
 // `cards` is [{ key, label, icon, bg, color }]; `counts` maps key -> number;
 // clicking a card toggles `activeFilter` via `onFilterChange`.
-function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange, onTotalClick }) {
+function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange, onTotalClick, className = '' }) {
   const isTotalMulti = Array.isArray(activeFilter);
   const isTotalActive = isTotalMulti ? activeFilter.length === 0 : !activeFilter;
   return (
-    <section className="metric-grid" aria-label="Status summary" style={{ marginBottom: '16px' }}>
+    <section className={`metric-grid ${className}`.trim()} aria-label="Status summary" style={{ marginBottom: '16px' }}>
       <button
         type="button"
         className={`metric-card metric-card-iconic metric-card-solid stat-filter-card${isTotalActive ? ' is-active' : ''}`}
@@ -7344,25 +7378,48 @@ function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFil
   );
 }
 
-function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket) {
+function VehicleActions({ row, canManage, onView, onEdit, deleteRecord, restoreRecord, onViewTicket }) {
+  return (
+    <details className="vehicle-actions-menu" onClick={(event) => event.stopPropagation()}>
+      <summary aria-label={`Actions for ${row.vehicle_name}`}>Actions <Icon name="chevronDown" size={13} /></summary>
+      <div className="vehicle-actions-popover">
+        <button type="button" onClick={() => onView(row)}><Icon name="search" size={14} /> View Vehicle</button>
+        {row.open_ticket_id && onViewTicket && (
+          <button type="button" onClick={() => onViewTicket({ ticket_id: row.open_ticket_id })}><Icon name="ticket" size={14} /> View Maintenance</button>
+        )}
+        {canManage && (
+          <>
+            <button type="button" onClick={() => onEdit(row)}><Icon name="edit" size={14} /> Edit Vehicle</button>
+            {(row.status === 'Inactive' || row.status === 'Decommissioned') ? (
+              <button type="button" onClick={() => restoreRecord(`/vehicles/${row.vehicle_id}/restore`, row.status === 'Decommissioned' ? 'Vehicle recommissioned.' : 'Vehicle restored.')}>
+                <Icon name="undo" size={14} /> {row.status === 'Decommissioned' ? 'Recommission Vehicle' : 'Restore Vehicle'}
+              </button>
+            ) : (
+              <button type="button" className="is-danger" onClick={() => deleteRecord(`/vehicles/${row.vehicle_id}`, 'Vehicle marked inactive.')}>
+                <Icon name="archive" size={14} /> Archive Vehicle
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function vehicleColumns(canManage, onView, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket) {
   const columns = [
-    { label: 'ID', align: 'center', render: (row) => row.vehicle_id },
     {
       label: 'Vehicle',
       render: (row) => (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+        <div className="fleet-vehicle-cell">
           <PhotoCell alt={row.vehicle_name} url={row.photo_url} />
-          <span>{row.vehicle_name}</span>
+          <span><strong>{row.vehicle_name}</strong><small>{row.category?.category_name ?? 'Unassigned type'}</small></span>
         </div>
       ),
     },
-    { label: 'Plate', align: 'center', render: (row) => row.plate_number },
-    { label: 'Type', render: (row) => row.category?.category_name ?? 'Unassigned' },
-    { label: 'Brand / Model', render: (row) => `${row.brand} ${row.model}` },
-    { label: 'Capacity', align: 'center', render: (row) => row.capacity },
-    { label: 'Location', render: (row) => row.current_location },
+    { label: 'Plate Number', render: (row) => <span className="plate-number">{row.plate_number}</span> },
     {
-      label: 'Status',
+      label: 'Operational Status',
       align: 'center',
       render: (row) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
@@ -7384,7 +7441,7 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
         </div>
       ),
     },
-    { label: 'Condition', align: 'center', render: (row) => <StatusBadge value={row.condition} /> },
+    { label: 'Physical Condition', align: 'center', render: (row) => <StatusBadge value={row.condition} /> },
     {
       label: 'Ready to Respond',
       align: 'center',
@@ -7410,32 +7467,11 @@ function vehicleColumns(role, onEdit, deleteRecord, restoreRecord, filterStatus,
     );
   }
 
-  if (role === 'Admin') {
-    columns.push({
-      label: 'Action',
-      align: 'center',
-      render: (row) => (
-        <div className="row-actions">
-          {/* Jumps straight to whatever ticket is keeping this vehicle
-              unavailable — no need to go hunt for it in Maintenance Tickets.
-              A same-size invisible spacer holds this slot when absent, so
-              Edit/Delete always land in the same column across rows instead
-              of shifting depending on whether a row has this button. */}
-          {row.open_ticket_id && onViewTicket ? (
-            <button className="btn-view-action icon-btn" onClick={() => onViewTicket({ ticket_id: row.open_ticket_id })} type="button" title={`View Ticket #${row.open_ticket_id}`} aria-label={`View Ticket #${row.open_ticket_id}`}><Icon name="ticket" size={14} /></button>
-          ) : (
-            <span className="icon-btn-spacer" aria-hidden="true" />
-          )}
-          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-          {(row.status === 'Inactive' || row.status === 'Decommissioned') ? (
-            <button className="btn-edit-action icon-btn" onClick={() => restoreRecord(`/vehicles/${row.vehicle_id}/restore`, row.status === 'Decommissioned' ? 'Vehicle recommissioned.' : 'Vehicle restored.')} type="button" title={row.status === 'Decommissioned' ? 'Recommission' : 'Restore'} aria-label="Restore"><Icon name="undo" size={14} /></button>
-          ) : (
-            <button className="btn-archive-action icon-btn" onClick={() => deleteRecord(`/vehicles/${row.vehicle_id}`, 'Vehicle marked inactive.')} type="button" title="Deactivate (reversible)" aria-label="Deactivate"><Icon name="archive" size={14} /></button>
-          )}
-        </div>
-      ),
-    });
-  }
+  columns.push({
+    label: 'Actions',
+    align: 'center',
+    render: (row) => <VehicleActions row={row} canManage={canManage} onView={onView} onEdit={onEdit} deleteRecord={deleteRecord} restoreRecord={restoreRecord} onViewTicket={onViewTicket} />,
+  });
 
   return columns;
 }
@@ -8389,7 +8425,7 @@ function logColumns(vehicles, onViewVehicle) {
   ];
 }
 
-function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = false, scrollable = false, pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
+function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = false, scrollable = false, className = '', pageSizeOptions = [10, 25, 50, 100], initialPageSize = 25 }) {
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [page, setPage] = useState(1);
 
@@ -8398,7 +8434,7 @@ function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = fal
   }, [rows.length, pageSize]);
 
   if (!rows?.length) {
-    return <DataTable columns={columns} rows={rows} onRowClick={onRowClick} emptyMessage={emptyMessage} compact={compact} />;
+    return <DataTable columns={columns} rows={rows} onRowClick={onRowClick} emptyMessage={emptyMessage} compact={compact} className={className} />;
   }
 
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -8408,7 +8444,7 @@ function PaginatedTable({ columns, rows, onRowClick, emptyMessage, compact = fal
 
   return (
     <>
-      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} compact={compact} scrollable={scrollable} />
+      <DataTable columns={columns} rows={pageRows} onRowClick={onRowClick} compact={compact} scrollable={scrollable} className={className} />
       <div className="table-pagination">
         <span className="muted">Showing {start + 1}-{Math.min(start + pageSize, rows.length)} of {rows.length}</span>
         <div className="table-pagination-controls">
@@ -10772,7 +10808,7 @@ function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCreateTic
           <button className="primary-button" type="submit" disabled={submitting}>
             {submitting ? (
               <span className="btn-loading">
-                <Icon name="gear" size={16} className="btn-gear-spinner" filled />
+                <Swirling size={16} />
                 Creating…
               </span>
             ) : (preDiagnosed ? 'Create Pre-Diagnosed Ticket' : 'Create Ticket & Assign')}
@@ -10812,8 +10848,9 @@ function TicketModule({
   setFilterDateEnd,
 }) {
   const [ticketViewMode, setTicketViewMode] = useState(
-    () => localStorage.getItem('vms_ticket_view') || 'card'
+    () => localStorage.getItem('vms_ticket_view') || 'table'
   );
+  const [showTicketFilters, setShowTicketFilters] = useState(false);
 
   const changeTicketViewMode = (mode) => {
     setTicketViewMode(mode);
@@ -10855,93 +10892,126 @@ function TicketModule({
     return counts;
   }, [statSourceTickets]);
 
-  return (
-    <div className="module-grid">
-      <DismissibleHint description="Central Ticket Ledger — create tickets, assign custodians for inspection, dispatch mechanics, and confirm closures through the 5-phase workflow." />
-      <ModuleStatCards
-        totalLabel="Total Tickets"
-        total={ticketStats.total}
-        cards={TICKET_STAT_CARDS}
-        counts={ticketStats}
-        activeFilter={filterStatus}
-        onFilterChange={setFilterStatus}
-        onTotalClick={() => {
-          setFilterStatus([]);
-          setFilterCategory([]);
-          setFilterCapacity([]);
-          setFilterPriority([]);
-          setFilterDateStart('');
-          setFilterDateEnd('');
-        }}
-      />
-      <section className="panel module-filter-panel">
-        <FilterBar
-          categories={categories}
-          vehicles={vehicles}
-          filterCategory={filterCategory}
-          setFilterCategory={setFilterCategory}
-          filterCapacity={filterCapacity}
-          setFilterCapacity={setFilterCapacity}
-          filterStatus={filterStatus}
-          setFilterStatus={setFilterStatus}
-          filterPriority={filterPriority}
-          setFilterPriority={setFilterPriority}
-          statusOptions={ticketLookups.ticket_statuses}
-          priorityOptions={ticketLookups.priorities}
-          priorityLabel="Priority"
-          dateRange={{
-            start: filterDateStart,
-            setStart: setFilterDateStart,
-            end: filterDateEnd,
-            setEnd: setFilterDateEnd,
-          }}
-        />
-      </section>
-      <section className="panel">
-        {/* Alert banners */}
-        {openSubIssueCount > 0 && (
-          <div className="ticket-alert-banner formaint">
-            <Icon name="alert" size={16} /> <strong>{openSubIssueCount}</strong> sub-issue{openSubIssueCount > 1 ? 's' : ''} waiting for mechanic assignment.
-          </div>
-        )}
-        {forConfirmSubIssueCount > 0 && (
-          <div className="ticket-alert-banner forconfirm">
-            <Icon name="checkCircle" size={16} /> <strong>{forConfirmSubIssueCount}</strong> sub-issue{forConfirmSubIssueCount > 1 ? 's' : ''} awaiting your final confirmation.
-          </div>
-        )}
-        {readyToCloseCount > 0 && (
-          <div className="ticket-alert-banner forconfirm">
-            <Icon name="checkCircle" size={16} /> <strong>{readyToCloseCount}</strong> ticket{readyToCloseCount > 1 ? 's' : ''} fully done and ready to close.
-          </div>
-        )}
+  const actionableTickets = useMemo(() => statSourceTickets
+    .filter((ticket) => ticketWorkflowStage(ticket)?.tone === 'action'), [statSourceTickets]);
+  const visibleActionableTickets = actionableTickets.slice(0, 5);
 
-        <div className="panel-header-bar" style={{ marginBottom: '8px' }}>
-          <h3>All Tickets <span className="count-badge">{tickets.length}</span></h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <ViewModeDropdown value={ticketViewMode} onChange={changeTicketViewMode} />
-            <LocalSearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search tickets..."
-              onAdd={onCreateNew}
-              addLabel="Create Ticket"
-            />
+  const activeFilterCount = filterCategory.length + filterCapacity.length + filterStatus.length
+    + filterPriority.length + (filterDateStart ? 1 : 0) + (filterDateEnd ? 1 : 0);
+
+  const clearTicketFilters = () => {
+    setFilterCategory([]);
+    setFilterCapacity([]);
+    setFilterStatus([]);
+    setFilterPriority([]);
+    setFilterDateStart('');
+    setFilterDateEnd('');
+  };
+
+  return (
+    <div className="module-grid ticket-enterprise-page">
+      <header className="ticket-page-header">
+        <div>
+          <span className="ticket-page-eyebrow">Operations</span>
+          <h2>Maintenance Tickets</h2>
+          <p>Manage vehicle maintenance, repairs, and approvals.</p>
+        </div>
+        <button type="button" className="primary-button ticket-create-button" onClick={onCreateNew}>
+          <Icon name="plus" size={16} /> Create Ticket
+        </button>
+      </header>
+
+      <section className="ticket-summary-grid" aria-label="Ticket summary">
+        {[
+          { label: 'Total Tickets', value: ticketStats.total, icon: 'clipboard', status: null },
+          { label: 'Open', value: ticketStats.Open, icon: 'search', status: 'Open' },
+          { label: 'Active Repairs', value: ticketStats.Active, icon: 'wrench', status: 'Active' },
+          { label: 'Completed', value: ticketStats.Closed, icon: 'checkCircle', status: 'Closed' },
+        ].map((metric) => {
+          const active = metric.status ? filterStatus.length === 1 && filterStatus[0] === metric.status : filterStatus.length === 0;
+          return (
+            <button type="button" className={`ticket-summary-card${active ? ' is-active' : ''}`} key={metric.label} onClick={() => metric.status ? setFilterStatus(active ? [] : [metric.status]) : clearTicketFilters()}>
+              <span className="ticket-summary-icon"><Icon name={metric.icon} size={17} /></span>
+              <span><small>{metric.label}</small><strong>{metric.value ?? 0}</strong></span>
+            </button>
+          );
+        })}
+      </section>
+
+      <section className="panel ticket-action-panel">
+        <div className="ticket-section-heading">
+          <div><span>Action Required</span><h3>Tickets needing your attention</h3></div>
+          <span className="ticket-action-count">{actionableTickets.length}</span>
+        </div>
+        {actionableTickets.length === 0 ? (
+          <p className="ticket-action-empty"><Icon name="checkCircle" size={16} /> No ticket currently requires an administrative action.</p>
+        ) : (
+          <div className="ticket-action-list">
+            {visibleActionableTickets.map((ticket) => {
+              const stage = ticketWorkflowStage(ticket);
+              return (
+                <button type="button" className="ticket-action-row" key={ticket.ticket_id} onClick={() => onViewTicket(ticket)}>
+                  <span className="ticket-action-id">#{ticket.ticket_id}</span>
+                  <span className="ticket-action-main"><strong>{ticket.ticket_title}</strong><small>{ticket.vehicle?.vehicle_name ?? 'Vehicle unavailable'} · {stage?.label}</small></span>
+                  <TicketStatusBadge value={ticket.priority} />
+                  <Icon name="chevronRight" size={15} />
+                </button>
+              );
+            })}
           </div>
+        )}
+        {actionableTickets.length > visibleActionableTickets.length && (
+          <p className="ticket-action-overflow">Showing the first {visibleActionableTickets.length} priorities. Review the complete ticket table below for all {actionableTickets.length} actionable tickets.</p>
+        )}
+        {(openSubIssueCount > 0 || forConfirmSubIssueCount > 0 || readyToCloseCount > 0) && (
+          <div className="ticket-action-summary" aria-label="Action breakdown">
+            {openSubIssueCount > 0 && <span><strong>{openSubIssueCount}</strong> awaiting assignment</span>}
+            {forConfirmSubIssueCount > 0 && <span><strong>{forConfirmSubIssueCount}</strong> awaiting confirmation</span>}
+            {readyToCloseCount > 0 && <span><strong>{readyToCloseCount}</strong> ready to close</span>}
+          </div>
+        )}
+      </section>
+
+      <section className="panel ticket-management-panel">
+        <div className="ticket-management-header">
+          <div><span className="ticket-page-eyebrow">Ticket Management</span><h3>All Tickets <span className="count-badge">{tickets.length}</span></h3></div>
+          <ViewModeDropdown value={ticketViewMode} onChange={changeTicketViewMode} />
         </div>
 
-        <div style={{ height: '12px' }} />
+        <div className="ticket-toolbar">
+          <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search ticket ID, issue, vehicle, or personnel..." />
+          <button type="button" className={`ghost-button ticket-filter-trigger${showTicketFilters ? ' is-active' : ''}`} onClick={() => setShowTicketFilters((open) => !open)} aria-expanded={showTicketFilters}>
+            <Icon name="filter" size={15} /> Advanced Filters {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
+          </button>
+          {activeFilterCount > 0 && <button type="button" className="ticket-clear-filters" onClick={clearTicketFilters}>Clear filters</button>}
+        </div>
+
+        {showTicketFilters && (
+          <div className="ticket-advanced-filters">
+            <FilterBar
+              categories={categories}
+              vehicles={vehicles}
+              filterCategory={filterCategory}
+              setFilterCategory={setFilterCategory}
+              filterCapacity={filterCapacity}
+              setFilterCapacity={setFilterCapacity}
+              filterStatus={filterStatus}
+              setFilterStatus={setFilterStatus}
+              filterPriority={filterPriority}
+              setFilterPriority={setFilterPriority}
+              statusOptions={ticketLookups.ticket_statuses}
+              priorityOptions={ticketLookups.priorities}
+              priorityLabel="Priority"
+              dateRange={{ start: filterDateStart, setStart: setFilterDateStart, end: filterDateEnd, setEnd: setFilterDateEnd }}
+            />
+          </div>
+        )}
 
         {tickets.length === 0
-          ? <p className="empty-state">No tickets yet. Create one to begin the workflow.</p>
+          ? <p className="empty-state">No tickets match the current search and filters.</p>
           : ticketViewMode === 'table'
-            ? <PaginatedTable columns={ticketTableColumns(unreadByTicket)} rows={tickets} onRowClick={onViewTicket} scrollable />
-            : (
-              <div className="ticket-card-grid">
-                {tickets.map((t) => (
-                  <TicketCard key={t.ticket_id} ticket={t} unreadCount={unreadByTicket[t.ticket_id] ?? 0} onClick={() => onViewTicket(t)} />
-                ))}
-              </div>
-            )
+            ? <PaginatedTable columns={ticketTableColumns(unreadByTicket, onViewTicket)} rows={tickets} onRowClick={onViewTicket} />
+            : <PaginatedCardGrid items={tickets} keyOf={(ticket) => ticket.ticket_id} emptyMessage="No tickets match the current search and filters." renderItem={(ticket) => <TicketCard ticket={ticket} unreadCount={unreadByTicket[ticket.ticket_id] ?? 0} onClick={() => onViewTicket(ticket)} />} />
         }
       </section>
     </div>
@@ -12654,11 +12724,11 @@ function LogRepairsPage({ ticket, onBack, onSubmit, onDirty }) {
 // TICKET TABLE VIEW COLUMNS (alternative to the ticket card grid)
 // =========================================================================
 
-function ticketTableColumns(unreadByTicket = {}) {
+function ticketTableColumns(unreadByTicket = {}, onViewTicket) {
   return [
     { label: 'Ticket ID', render: (r) => r.ticket_id },
     {
-      label: 'Title',
+      label: 'Maintenance Issue',
       render: (r) => {
         const unread = unreadByTicket[r.ticket_id] ?? 0;
         return (
@@ -12680,12 +12750,27 @@ function ticketTableColumns(unreadByTicket = {}) {
         );
       },
     },
-    { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle} /> }, { label: 'Plate', render: (r) => r.vehicle?.plate_number ?? '-' },
-    { label: 'Status', render: (r) => <TicketStatusBadge value={r.status} /> },
-    { label: 'Next Step', render: (r) => <TicketStageBadge ticket={r} /> },
+    { label: 'Vehicle', render: (r) => <VehicleCell vehicle={r.vehicle} /> },
     { label: 'Priority', render: (r) => <TicketStatusBadge value={r.priority} /> },
-    { label: 'Created', render: (r) => <DateBadge value={r.created_at} /> },
-    { label: 'Time', render: (r) => formatTime(r.created_at) },
+    { label: 'Status', render: (r) => <TicketStatusBadge value={r.status} /> },
+    {
+      label: 'Assigned Personnel',
+      render: (r) => {
+        const names = [r.assigned_custodian?.name, ...(r.sub_issues ?? []).map((issue) => issue.assigned_mechanic?.name)].filter(Boolean);
+        const uniqueNames = [...new Set(names)];
+        return uniqueNames.length ? uniqueNames.join(', ') : 'Unassigned';
+      },
+    },
+    { label: 'Last Updated', render: (r) => <DateBadge value={r.updated_at ?? r.created_at} /> },
+    {
+      label: 'Actions',
+      align: 'center',
+      render: (r) => (
+        <button type="button" className="ticket-table-open" onClick={(event) => { event.stopPropagation(); onViewTicket?.(r); }} aria-label={`Open ticket ${r.ticket_id}`}>
+          View
+        </button>
+      ),
+    },
   ];
 }
 
@@ -13284,6 +13369,49 @@ function NewIssueModalField({ value, onChange, issueTypeOptions = [] }) {
   );
 }
 
+function VehicleFilterPanel(props) {
+  const [expanded, setExpanded] = useState(false);
+  const activeCount = [
+    props.filterCategory, props.filterCapacity, props.filterStatus,
+    props.filterPriority, props.filterLocation, props.filterDomain,
+    props.filterReadiness,
+  ].reduce((sum, values) => sum + (values?.length ?? 0), 0);
+
+  return (
+    <div className="vehicle-filter-panel">
+      <button
+        type="button"
+        className="vehicle-filter-toggle"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-controls="vehicle-advanced-filters"
+      >
+        <span><Icon name="filter" size={15} /> Advanced Filters {activeCount > 0 && <strong>{activeCount}</strong>}</span>
+        <Icon name="chevronDown" size={15} className={expanded ? 'is-expanded' : ''} />
+      </button>
+      {expanded && (
+        <div id="vehicle-advanced-filters">
+          <FilterBar
+            {...props}
+            priorityLabel="Condition"
+            showAdvanced
+            extraFilters={[{
+              key: 'readiness',
+              label: 'Response Readiness',
+              options: ['Ready', 'Not Ready'],
+              selected: props.filterReadiness,
+              setSelected: props.setFilterReadiness,
+            }]}
+          />
+        </div>
+      )}
+      {!expanded && activeCount > 0 && (
+        <p className="vehicle-filter-summary">{activeCount} applied filter{activeCount === 1 ? '' : 's'} · Expand to review or clear</p>
+      )}
+    </div>
+  );
+}
+
 function FilterBar({
   categories = [],
   vehicles = [],
@@ -13521,7 +13649,7 @@ function FilterBar({
   );
 }
 
-function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add" }) {
+function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add", showExportLabel = false }) {
   return (
     <div className="local-search-bar">
       <div className="local-search-container">
@@ -13549,8 +13677,9 @@ function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport
         </button>
       )}
       {onExport && (
-        <button className="export-btn" onClick={onExport} type="button" title="Export to CSV" aria-label="Export to CSV">
+        <button className={`export-btn${showExportLabel ? ' has-label' : ''}`} onClick={onExport} type="button" title="Export to CSV" aria-label="Export to CSV">
           <Icon name="download" size={15} />
+          {showExportLabel && <span>Export</span>}
         </button>
       )}
     </div>
