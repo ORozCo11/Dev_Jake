@@ -178,6 +178,27 @@ class PhaseB3DataScopingTest extends TestCase
     }
 
     #[Test]
+    public function custodian_cannot_edit_cancel_or_restore_another_barangays_schedule(): void
+    {
+        $otherBarangayId = Barangay::create(['name' => 'Other Barangay', 'city_id' => $this->cityId])->id;
+        $foreignVehicle = $this->vehicle();
+        $foreignVehicle->update(['barangay_id' => $otherBarangayId]);
+        $schedule = VehicleMaintenanceSchedule::create([
+            'vehicle_id' => $foreignVehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+            'scheduled_date' => now()->addWeek()->toDateString(),
+            'status' => 'Cancelled',
+            'created_by' => $this->admin->id,
+        ]);
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", ['notes' => 'Not ours.'])->assertNotFound();
+        $this->deleteJson("/api/maintenance-schedules/{$schedule->schedule_id}")->assertNotFound();
+        $this->postJson("/api/maintenance-schedules/{$schedule->schedule_id}/restore")->assertNotFound();
+        $this->assertNull($schedule->fresh()->notes);
+    }
+
+    #[Test]
     public function custodian_sees_own_and_mechanic_reports_but_not_another_custodians(): void
     {
         $vehicle = $this->vehicle();

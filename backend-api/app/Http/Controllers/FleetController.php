@@ -2781,12 +2781,7 @@ class FleetController extends Controller
     public function updateSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
     {
         $this->requireAbility($request, 'schedule.edit');
-
-        // Admin edits any schedule; a Custodian may only edit the one they
-        // themselves created (same ownership pattern as condition.edit).
-        if (!$request->user()->hasRole('Admin')) {
-            abort_unless($schedule->created_by === $request->user()->id, 403, 'You can only edit a schedule you created yourself.');
-        }
+        $this->abortUnlessOwnBarangaySchedule($schedule);
 
         $data = $request->validate([
             'vehicle_id' => ['sometimes', 'exists:vehicles,vehicle_id'],
@@ -3034,11 +3029,20 @@ class FleetController extends Controller
         return $schedule->fresh(['vehicle.category', 'createdBy', 'assignedToUser']);
     }
 
+    // Schedules carry no barangay scope of their own, but their vehicle does
+    // (BelongsToBarangay) — so a schedule whose vehicle isn't visible to this
+    // user belongs to another barangay.
+    private function abortUnlessOwnBarangaySchedule(VehicleMaintenanceSchedule $schedule): void
+    {
+        abort_unless($schedule->vehicle()->exists(), 404);
+    }
+
     public function deleteSchedule(Request $request, VehicleMaintenanceSchedule $schedule)
     {
         // Admin-only — cancelling a plan is a planning decision, same as
         // updateSchedule() above.
         $this->requireAbility($request, 'schedule.delete');
+        $this->abortUnlessOwnBarangaySchedule($schedule);
 
         $schedule->update(['status' => 'Cancelled']);
         $this->history($schedule->vehicle, 'Maintenance Schedule Cancelled', "Maintenance schedule #{$schedule->schedule_id} was cancelled.", 'vehicle_maintenance_schedules', $schedule->schedule_id, $request);
@@ -3057,6 +3061,7 @@ class FleetController extends Controller
     {
         // Admin-only — same reasoning as deleteSchedule()/updateSchedule().
         $this->requireAbility($request, 'schedule.restore');
+        $this->abortUnlessOwnBarangaySchedule($schedule);
 
         abort_unless(
             $schedule->status === 'Cancelled',
