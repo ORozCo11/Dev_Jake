@@ -181,7 +181,7 @@ function groupVehiclesByHub(vehicles, hubs) {
 }
 
 // Captures the live Leaflet map (tiles + overlays) to a PNG and triggers a download.
-async function captureMapToPng(mapEl) {
+async function captureMapToPng(mapEl, areaLabel = '') {
   if (!mapEl) {
     throw new Error('Map element not found');
   }
@@ -200,12 +200,16 @@ async function captureMapToPng(mapEl) {
       node.classList.contains('leaflet-control-zoom')
       || node.classList.contains('leaflet-control-attribution')
       || node.classList.contains('location-density-basemap-toggle')
+      || node.classList.contains('p23-map-tile-error')
     )),
   });
 
   const link = document.createElement('a');
   link.href = dataUrl;
-  link.download = `vehicle-map-${new Date().toISOString().split('T')[0]}.png`;
+  // Barangay + date in the filename so a downloaded snapshot still says
+  // which area and day it shows once it leaves the app (UI audit §15).
+  const areaSlug = String(areaLabel).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  link.download = `vehicle-map-${areaSlug ? `${areaSlug}-` : ''}${new Date().toISOString().split('T')[0]}.png`;
   link.click();
 }
 
@@ -331,6 +335,14 @@ function LocationDensityMap({
   const [resetViewRequest, setResetViewRequest] = useState(0);
   const [isMaximized, setIsMaximized] = useState(false);
   const [basemap, setBasemap] = useState('satellite'); // 'map' | 'satellite'
+  // UI audit §15/§27 — hub-load and tile failures used to fail silently
+  // (console only), leaving an empty map that looked like "no hubs".
+  const [hubsLoadFailed, setHubsLoadFailed] = useState(false);
+  const [tileErrors, setTileErrors] = useState({ map: false, satellite: false });
+  const tileEvents = useMemo(
+    () => ({ tileerror: () => setTileErrors((prev) => (prev[basemap] ? prev : { ...prev, [basemap]: true })) }),
+    [basemap],
+  );
   const mapShellRef = useRef(null);
   const nameInputRef = useRef(null);
 
@@ -359,8 +371,10 @@ function LocationDensityMap({
   const fetchHubs = useCallback(async () => {
     try {
       applyHubs(await loadHubs());
+      setHubsLoadFailed(false);
     } catch (error) {
       console.error('Failed to load hubs:', error);
+      setHubsLoadFailed(true);
     }
   }, [applyHubs]);
 
@@ -370,7 +384,10 @@ function LocationDensityMap({
     let cancelled = false;
     loadHubs()
       .then((normalized) => { if (!cancelled) applyHubs(normalized); })
-      .catch((error) => console.error('Failed to load hubs:', error));
+      .catch((error) => {
+        console.error('Failed to load hubs:', error);
+        if (!cancelled) setHubsLoadFailed(true);
+      });
     return () => { cancelled = true; };
   }, [applyHubs]);
 
@@ -434,11 +451,11 @@ function LocationDensityMap({
     }
   }, [canManageHubs, fetchHubs, hasValidPendingCoords, hubNameDraft, pendingLat, pendingLng]);
 
-  const captureMap = useCallback(async () => {
+  const captureMap = useCallback(async (areaLabel) => {
     setCapturing(true);
     setMapNotice(null);
     try {
-      await captureMapToPng(mapShellRef.current?.querySelector('.location-density-map'));
+      await captureMapToPng(mapShellRef.current?.querySelector('.location-density-map'), areaLabel);
       setMapNotice({ type: 'success', text: 'Map image downloaded.' });
     } catch (error) {
       console.error('Failed to capture map:', error);
@@ -573,7 +590,24 @@ function LocationDensityMap({
             ? '"Add Hub" opens the add-location form, or use "By Coordinates" to type its name and lat/lng directly.'
             : 'Hubs shown here are shared by every workspace user.'}
         </span>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="p23-map-toolbar-actions">
+          {/* UI audit §15 — "Fit to barangay": re-frames the map on the
+              active boundary after panning/zooming away (same reset the
+              Cancel Focus action already used). */}
+          <button
+            type="button"
+            className="location-density-btn is-secondary"
+            onClick={() => setResetViewRequest((value) => value + 1)}
+            title={`Zoom the map back to the whole ${boundaryLabel} area`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 8V3h5" />
+              <path d="M21 8V3h-5" />
+              <path d="M3 16v5h5" />
+              <path d="M21 16v5h-5" />
+            </svg>
+            Fit to {boundaryLabel}
+          </button>
           {selectedVehicleId != null && (
             <button
               type="button"
@@ -634,7 +668,7 @@ function LocationDensityMap({
           <button
             type="button"
             className="location-density-btn is-secondary"
-            onClick={captureMap}
+            onClick={() => captureMap(boundaryLabel)}
             disabled={capturing}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -674,14 +708,14 @@ function LocationDensityMap({
           </button>
         </div>
       </div>
-      <div className="location-density-legend" aria-label="Map legend">
+      <div className="location-density-legend" role="group" aria-label="Map legend">
         <span className="location-density-legend-item">
           <span className="legend-symbol legend-symbol-hub" aria-hidden="true" />
-          Hub
+          Hub (assigned station)
         </span>
         <span className="location-density-legend-item">
           <span className="legend-symbol legend-symbol-vehicle" aria-hidden="true" />
-          Vehicle count
+          Number of vehicles at a hub
         </span>
         <span className="location-density-legend-item">
           <span className="legend-symbol legend-symbol-focus" aria-hidden="true">
@@ -690,7 +724,7 @@ function LocationDensityMap({
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </span>
-          FOCUS
+          Focused vehicle
         </span>
         {boundaryRings.length > 0 && (
           <span className="location-density-legend-item">
@@ -698,7 +732,16 @@ function LocationDensityMap({
             {boundaryLabel} boundary
           </span>
         )}
+        <span className="location-density-legend-item p23-legend-note">
+          Positions are assigned hubs, not live GPS.
+        </span>
       </div>
+      {hubsLoadFailed && (
+        <div className="location-density-notice error" role="alert">
+          <span>Hubs couldn&apos;t be loaded, so vehicles may be missing from the map. The Vehicle Location Record tab still lists every vehicle.</span>
+          <button type="button" className="p23-notice-action" onClick={fetchHubs}>Retry</button>
+        </div>
+      )}
       {hasBoundarySelection && !hasBoundaryGeometry && (
         <div className="location-density-notice info" role="status">
           <span>No boundary outline on file for {boundaryLabel} yet — only Mandaue City barangays have one today. Hubs and vehicles below aren't affected.</span>
@@ -732,11 +775,11 @@ function LocationDensityMap({
       >
         {basemap === 'satellite' ? (
           <>
-            <TileLayer attribution={ESRI_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={ESRI_IMAGERY_URL} />
+            <TileLayer attribution={ESRI_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={ESRI_IMAGERY_URL} eventHandlers={tileEvents} />
             <TileLayer attribution="" crossOrigin="anonymous" maxZoom={19} url={ESRI_LABELS_URL} />
           </>
         ) : (
-          <TileLayer attribution={STREET_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={STREET_TILE_URL} />
+          <TileLayer attribution={STREET_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={STREET_TILE_URL} eventHandlers={tileEvents} />
         )}
 
         {/* Map / Satellite base-layer toggle — floats over the map like Google.
@@ -744,11 +787,18 @@ function LocationDensityMap({
             clicks from panning the map underneath. */}
         <div
           className="location-density-basemap-toggle"
+          role="group"
+          aria-label="Base map"
           ref={(el) => { if (el) { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); } }}
         >
-          <button type="button" className={basemap === 'map' ? 'is-active' : ''} onClick={() => setBasemap('map')}>Map</button>
-          <button type="button" className={basemap === 'satellite' ? 'is-active' : ''} onClick={() => setBasemap('satellite')}>Satellite</button>
+          <button type="button" aria-pressed={basemap === 'map'} className={basemap === 'map' ? 'is-active' : ''} onClick={() => setBasemap('map')}>Map</button>
+          <button type="button" aria-pressed={basemap === 'satellite'} className={basemap === 'satellite' ? 'is-active' : ''} onClick={() => setBasemap('satellite')}>Satellite</button>
         </div>
+        {tileErrors[basemap] && (
+          <div className="p23-map-tile-error" role="status">
+            Some map tiles didn&apos;t load — check your connection or switch to {basemap === 'satellite' ? 'Map' : 'Satellite'}.
+          </div>
+        )}
         {/* Dark casing (halo) drawn UNDER the boundary so the yellow line pops
             on both the light street map and the dark satellite imagery. One
             <Polygon> per ring so a MultiPolygon (e.g. a city with islands)

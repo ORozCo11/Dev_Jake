@@ -3220,7 +3220,7 @@ function Workspace() {
               addLabel="Add Type"
             />
           </div>
-          <DataTable columns={categoryColumnChooser.visibleColumns} onReorderColumn={categoryColumnChooser.reorderColumn} rows={visibleRows} emptyMessage="No vehicle types yet — click the + button to add one." />
+          <DataTable columns={categoryColumnChooser.visibleColumns} onReorderColumn={categoryColumnChooser.reorderColumn} rows={visibleRows} emptyMessage={(searchQuery || filterDomain.length) ? 'No vehicle types match the current search or domain filter.' : 'No vehicle types yet — click the + button to add one.'} />
         </ModulePanel>
       );
     }
@@ -3339,6 +3339,8 @@ function Workspace() {
           <ModulePanel description="Record current vehicle stationing and keep a location history.">
             <div className="locations-tab-bar">
               <button
+                type="button"
+                aria-pressed={locationsTab === 'map'}
                 className={`locations-tab-button ${locationsTab === 'map' ? 'active' : ''}`}
                 onClick={() => setLocationsTab('map')}
               >
@@ -3350,6 +3352,8 @@ function Workspace() {
                 Vehicles Map
               </button>
               <button
+                type="button"
+                aria-pressed={locationsTab === 'records'}
                 className={`locations-tab-button ${locationsTab === 'records' ? 'active' : ''}`}
                 onClick={() => setLocationsTab('records')}
               >
@@ -3427,7 +3431,9 @@ function Workspace() {
                     onReorderColumn={locationColumnChooser.reorderColumn}
                     rows={locationRows}
                     onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
-                    emptyMessage="No location records yet."
+                    emptyMessage={(searchQuery || filterStatus.length || filterLocation.length)
+                      ? 'No location records match the current search or filters — clear them to see every vehicle.'
+                      : 'No location records yet.'}
                   />
                 </div>
               </div>

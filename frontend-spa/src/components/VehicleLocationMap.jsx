@@ -47,8 +47,19 @@ function ResizeMapOnContainerResize() {
   return null;
 }
 
+function ShortAttribution() {
+  const map = useMap();
+  useEffect(() => { map.attributionControl?.setPrefix(false); }, [map]);
+  return null;
+}
+
 export default function VehicleLocationMap({ lat, lng, label, scrollWheelZoom = false }) {
   const [basemap, setBasemap] = useState('satellite'); // 'map' | 'satellite'
+  // UI audit §15 — a blocked/offline tile server used to leave a blank grey
+  // box with no explanation. Tracked per basemap so switching to the other
+  // one (a different tile server) gets a fresh chance.
+  const [tileErrors, setTileErrors] = useState({ map: false, satellite: false });
+  const tileEvents = { tileerror: () => setTileErrors((prev) => (prev[basemap] ? prev : { ...prev, [basemap]: true })) };
   const hasCoords = lat != null && lng != null && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
 
   if (!hasCoords) {
@@ -64,7 +75,9 @@ export default function VehicleLocationMap({ lat, lng, label, scrollWheelZoom = 
       zoom={16}
       scrollWheelZoom={scrollWheelZoom}
       className="veh-map-canvas"
-      attributionControl={false}
+      // Attribution stays visible (tile licence terms; UI audit §15) —
+      // ShortAttribution below drops the "Leaflet" prefix to keep it short.
+      attributionControl
       // The default top-left zoom control sat directly under the Map/
       // Satellite toggle below, making the +/- buttons unreachable —
       // moved to the opposite corner instead of just disabled.
@@ -72,20 +85,28 @@ export default function VehicleLocationMap({ lat, lng, label, scrollWheelZoom = 
     >
       <ZoomControl position="bottomright" />
       <ResizeMapOnContainerResize />
+      <ShortAttribution />
       {basemap === 'satellite' ? (
         <>
-          <TileLayer url={ESRI_IMAGERY_URL} attribution={ESRI_ATTRIBUTION} maxZoom={19} />
+          <TileLayer url={ESRI_IMAGERY_URL} attribution={ESRI_ATTRIBUTION} maxZoom={19} eventHandlers={tileEvents} />
           <TileLayer url={ESRI_LABELS_URL} attribution="" maxZoom={19} />
         </>
       ) : (
-        <TileLayer url={CARTO_TILE_URL} attribution={CARTO_ATTRIBUTION} />
+        <TileLayer url={CARTO_TILE_URL} attribution={CARTO_ATTRIBUTION} eventHandlers={tileEvents} />
+      )}
+      {tileErrors[basemap] && (
+        <div className="p23-map-tile-error" role="status">
+          Some map tiles didn&apos;t load — check your connection or switch to {basemap === 'satellite' ? 'Map' : 'Satellite'}.
+        </div>
       )}
       <div
         className="location-density-basemap-toggle"
+        role="group"
+        aria-label="Base map"
         ref={(el) => { if (el) { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); } }}
       >
-        <button type="button" className={basemap === 'map' ? 'is-active' : ''} onClick={() => setBasemap('map')}>Map</button>
-        <button type="button" className={basemap === 'satellite' ? 'is-active' : ''} onClick={() => setBasemap('satellite')}>Satellite</button>
+        <button type="button" aria-pressed={basemap === 'map'} className={basemap === 'map' ? 'is-active' : ''} onClick={() => setBasemap('map')}>Map</button>
+        <button type="button" aria-pressed={basemap === 'satellite'} className={basemap === 'satellite' ? 'is-active' : ''} onClick={() => setBasemap('satellite')}>Satellite</button>
       </div>
       <Marker position={center} icon={vehiclePin}>
         {label && (

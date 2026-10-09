@@ -324,6 +324,10 @@ export function CategoryFieldsManager({ categoryId, onChanged }) {
     options: d.field_type === 'dropdown' ? String(d.options).split(',').map((o) => o.trim()).filter(Boolean) : null,
   });
 
+  // UI audit §14 — two fields with the same label would render as
+  // indistinguishable inputs on the vehicle form; catch it before saving.
+  const duplicateLabel = draft.label.trim() && fields.some((f) => f.field_id !== editingId && f.label.trim().toLowerCase() === draft.label.trim().toLowerCase());
+
   const save = () => run(async () => {
     if (editingId) await api.put(`/category-fields/${editingId}`, toPayload(draft));
     else await api.post(`/categories/${categoryId}/fields`, toPayload(draft));
@@ -354,15 +358,16 @@ export function CategoryFieldsManager({ categoryId, onChanged }) {
           <div key={f.field_id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', opacity: f.is_active ? 1 : 0.55 }}>
             <strong style={{ flex: '1 1 200px' }}>{f.label}{f.is_required ? ' *' : ''}</strong>
             <span style={{ fontSize: 13 }}>{CUSTOM_FIELD_TYPES.find((t) => t.value === f.field_type)?.label}{f.unit ? ` · ${f.unit}` : ''}{f.options?.length ? ` · ${f.options.join(', ')}` : ''}{f.is_active ? '' : ' · archived'}</span>
-            <button type="button" className="ghost-button" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label="Move up">▲</button>
-            <button type="button" className="ghost-button" disabled={busy || i === fields.length - 1} onClick={() => move(i, 1)} aria-label="Move down">▼</button>
-            <button type="button" className="ghost-button" disabled={busy} onClick={() => startEdit(f)}>Edit</button>
+            <button type="button" className="ghost-button" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label={`Move ${f.label} up`} title="Move up">▲</button>
+            <button type="button" className="ghost-button" disabled={busy || i === fields.length - 1} onClick={() => move(i, 1)} aria-label={`Move ${f.label} down`} title="Move down">▼</button>
+            <button type="button" className="ghost-button" disabled={busy} onClick={() => startEdit(f)} aria-label={`Edit ${f.label}`}>Edit</button>
             <button type="button" className="ghost-button" disabled={busy} onClick={() => run(() => api.put(`/category-fields/${f.field_id}`, { label: f.label, is_active: !f.is_active }))}>{f.is_active ? 'Archive' : 'Restore'}</button>
           </div>
         ))}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', borderTop: '1px solid var(--border, #d0d7e2)', paddingTop: 12 }}>
           <label style={{ flex: '1 1 180px' }}>Field name
-            <input type="text" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} placeholder="e.g. Tank Capacity" />
+            <input type="text" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} placeholder="e.g. Tank Capacity" aria-invalid={duplicateLabel || undefined} aria-describedby={duplicateLabel ? 'category-field-dup' : undefined} />
+            {duplicateLabel && <small id="category-field-dup" className="field-error" role="alert">This type already has a field called “{draft.label.trim()}”.</small>}
           </label>
           <label>Type
             <select value={draft.field_type} disabled={!!editingId} onChange={(e) => setDraft({ ...draft, field_type: e.target.value })}>
@@ -382,7 +387,7 @@ export function CategoryFieldsManager({ categoryId, onChanged }) {
           <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <input type="checkbox" checked={draft.is_required} onChange={(e) => setDraft({ ...draft, is_required: e.target.checked })} /> Required
           </label>
-          <button type="button" className="primary-button" disabled={busy || !draft.label.trim()} onClick={save}>{editingId ? 'Update Field' : 'Add Field'}</button>
+          <button type="button" className="primary-button" disabled={busy || !draft.label.trim() || duplicateLabel} onClick={save}>{editingId ? 'Update Field' : 'Add Field'}</button>
           {editingId && <button type="button" className="ghost-button" onClick={() => { setEditingId(null); setDraft(BLANK_FIELD_DRAFT); }}>Cancel</button>}
         </div>
       </div>

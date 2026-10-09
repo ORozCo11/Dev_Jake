@@ -14,7 +14,6 @@ import { customValueRows, defaultCriticalityFor, plateFieldLabel, vehicleCritica
 import { formatDate, formatForecastDate, resolvePhotoUrl } from '../lib/format';
 import { canDo, hasRole } from '../lib/permissions';
 import { CAPABILITY_STATE_LABEL } from '../lib/statCards';
-import { READINESS_BADGE } from '../lib/workflow';
 import { ReadinessCheckForm } from './ReadinessCheckForm';
 
 // Production-readiness audit finding #8 — FleetController::vehicleReliability()
@@ -38,6 +37,9 @@ export function VehicleReliabilityCard({ vehicleId }) {
   }, [vehicleId]);
 
   const peso = (n) => `₱${Number(n ?? 0).toLocaleString()}`;
+  // UI audit §5 — a vehicle with no repair history used to show a wall of
+  // "0" / "₱0" that read like a measured result; say "no data yet" instead.
+  const noHistory = data && !Number(data.failures_12mo) && !Number(data.total_spend) && data.avg_days_out == null;
 
   return (
     <section className="veh-card">
@@ -46,6 +48,8 @@ export function VehicleReliabilityCard({ vehicleId }) {
         <p className="muted" style={{ padding: '10px 14px' }}>Loading…</p>
       ) : !data ? (
         <p className="muted" style={{ padding: '10px 14px' }}>Reliability data is unavailable right now.</p>
+      ) : noHistory ? (
+        <p className="muted" style={{ padding: '10px 14px', margin: 0 }}>No data yet — figures appear once a repair or maintenance cost is recorded for this vehicle.</p>
       ) : (
         <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(data.chronic || data.decommission_signal) && (
@@ -62,11 +66,12 @@ export function VehicleReliabilityCard({ vehicleId }) {
             <div><dt>Failures (6 mo)</dt><dd>{data.failures_6mo}</dd></div>
             <div><dt>Failures (12 mo)</dt><dd>{data.failures_12mo}</dd></div>
             <div><dt>Avg. Days Out of Service</dt><dd>{data.avg_days_out ?? '-'}</dd></div>
-            <div><dt>Lifetime Repair Spend</dt><dd>{peso(data.total_spend)}</dd></div>
+            <div><dt>Recorded Repair Spend</dt><dd>{peso(data.total_spend)}</dd></div>
             {data.acquisition_cost != null && (
               <div><dt>Spend vs. Acquisition Cost</dt><dd>{data.cost_ratio != null ? `${Math.round(data.cost_ratio * 100)}%` : '-'}</dd></div>
             )}
           </dl>
+          <p className="p23-source-note">Source: maintenance tickets and records logged in VMS. Spend covers recorded costs only — repairs paid outside the system aren&apos;t included.</p>
         </div>
       )}
     </section>
@@ -80,14 +85,15 @@ export function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
   // Custodian (their own upload only) and Delete to Admin only.
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [initialFile, setInitialFile] = useState(null);
   const [modalKey, setModalKey] = useState(0);
 
   const load = useCallback(() => {
     api.get(`/vehicles/${vehicleId}/documents`)
-      .then((r) => setDocuments(r.data))
-      .catch(() => setDocuments([]))
+      .then((r) => { setDocuments(r.data); setLoadFailed(false); })
+      .catch(() => { setDocuments([]); setLoadFailed(true); })
       .finally(() => setLoading(false));
   }, [vehicleId]);
 
@@ -141,6 +147,11 @@ export function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
       >
         {loading ? (
           <p className="empty-state">Loading files…</p>
+        ) : loadFailed ? (
+          <div className="file-card-empty" role="alert">
+            Files couldn&apos;t be loaded.{' '}
+            <button type="button" className="p23-link-btn" onClick={load}>Retry</button>
+          </div>
         ) : documents.length ? (
           <div className="veh-files-compact-list">
             {documents.slice(0, 4).map((doc) => (
@@ -154,7 +165,7 @@ export function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
             )}
           </div>
         ) : (
-          <div className="file-card-empty">No data</div>
+          <div className="file-card-empty">No files uploaded yet</div>
         )}
         {canManage && (
           <button type="button" className="file-card-dropzone veh-files-dropzone-trigger" onClick={() => openModal()}>
@@ -279,13 +290,13 @@ export function VehicleFilesModal({ onClose, vehicleId, documents, canManage, on
                   className="file-card-icon-btn"
                   disabled={!canEditSelected}
                   onClick={() => canEditSelected && startEdit(selected)}
-                  title={selected && !canEditSelected ? 'You can only edit a file you uploaded yourself' : 'Edit selected'}
+                  title={!selected ? 'Select a file first to edit it' : !canEditSelected ? 'You can only edit a file you uploaded yourself' : 'Edit selected'}
                   aria-label="Edit selected"
                 >
                   <Icon name="edit" size={14} />
                 </button>
                 {canDeleteDocs && (
-                  <button type="button" className="file-card-icon-btn" disabled={!selected} onClick={() => selected && handleDelete(selected)} title="Delete selected" aria-label="Delete selected">
+                  <button type="button" className="file-card-icon-btn" disabled={!selected} onClick={() => selected && handleDelete(selected)} title={selected ? 'Delete selected' : 'Select a file first to delete it'} aria-label="Delete selected">
                     <Icon name="trash" size={14} />
                   </button>
                 )}
@@ -310,7 +321,7 @@ export function VehicleFilesModal({ onClose, vehicleId, documents, canManage, on
               </thead>
               <tbody>
                 {documents.length === 0 ? (
-                  <tr><td colSpan={5} className="files-modal-empty">No data</td></tr>
+                  <tr><td colSpan={5} className="files-modal-empty">No files uploaded yet</td></tr>
                 ) : documents.map((doc) => (
                   <tr key={doc.document_id} className={selectedId === doc.document_id ? 'is-selected' : ''}>
                     <td>
@@ -409,12 +420,156 @@ export function VehicleFilesModal({ onClose, vehicleId, documents, canManage, on
   );
 }
 
+// UI audit §5/§6 — the profile's top band answers "can this vehicle go out
+// right now, and if not, why and what's next?" before any record detail.
+// Every state carries a text label + icon, never colour alone, and the
+// tone maps onto the theme-aware --status-* tokens (p23-vehicles.css) instead
+// of READINESS_BADGE's fixed light-theme hex values.
+const READINESS_VIEW = {
+  ready:          { label: 'Ready to respond', tone: 'success', icon: 'checkCircle' },
+  stale:          { label: 'Stale — check expired', tone: 'warning', icon: 'alert' },
+  not_ready:      { label: 'Failed last check', tone: 'danger', icon: 'alert' },
+  unchecked:      { label: 'Never checked', tone: 'neutral', icon: 'info' },
+  in_maintenance: { label: 'In maintenance', tone: 'warning', icon: 'wrench' },
+  retired:        { label: 'Out of fleet', tone: 'neutral', icon: 'archive' },
+};
+
+// last_checked + the backend's freshness window (24h) — the exact moment a
+// passed check stops counting, so "Stale" can say when it lapsed.
+function readinessExpiry(readiness) {
+  if (!readiness?.last_checked) return null;
+  const checked = new Date(readiness.last_checked);
+  if (Number.isNaN(checked.getTime())) return null;
+  return new Date(checked.getTime() + (readiness.freshness_hours ?? 24) * 3600 * 1000).toISOString();
+}
+
+// One plain-language sentence for the operational decision, built only from
+// what /vehicles/{id}/readiness and the vehicle row already return.
+function readinessReason(vehicle, readiness) {
+  const checked = readiness?.last_checked ? formatDate(readiness.last_checked) : null;
+  const expiry = formatDate(readinessExpiry(readiness));
+  const hours = readiness?.freshness_hours ?? 24;
+  switch (readiness?.state) {
+    case 'ready':
+      return vehicle.condition === 'Needs Repair'
+        ? `Passed its readiness check (valid until ${expiry}), but its condition is still recorded as Needs Repair.`
+        : `Passed its readiness check on ${checked}. Valid until ${expiry}.`;
+    case 'stale':
+      return `Not ready because the last check (${checked}) expired on ${expiry} — checks are only valid for ${hours} hours. Recheck the vehicle.`;
+    case 'not_ready':
+      return `Not ready because the last readiness check on ${checked} did not pass. Fix the problem, then recheck.`;
+    case 'unchecked':
+      return 'Not ready because no readiness check has been recorded for this vehicle yet.';
+    case 'in_maintenance': {
+      const ticket = readiness.active_ticket_id ? ` — “${readiness.active_ticket_title ?? `Ticket #${readiness.active_ticket_id}`}” is still open` : '';
+      const back = vehicle.estimated_return_date ? ` Expected back ${formatForecastDate(vehicle.estimated_return_date)}.` : '';
+      return `Not ready because it is ${vehicle.status}${ticket}.${back}`;
+    }
+    case 'retired':
+      return `This vehicle is ${vehicle.status} and no longer counts toward readiness.`;
+    default:
+      return null;
+  }
+}
+
+function ReadinessPill({ state }) {
+  const view = READINESS_VIEW[state];
+  if (!view) return null;
+  return (
+    <span className={`p23-pill tone-${view.tone}`}>
+      <Icon name={view.icon} size={12} /> {view.label}
+    </span>
+  );
+}
+
+function VehicleOperationalSummary({ vehicle, readiness, readinessError, onRetryReadiness, openIssueCount, canCheck, onCheck, onOpenTicket, showActions }) {
+  const operational = !['Decommissioned', 'Inactive'].includes(vehicle.status);
+  const state = readiness?.state;
+  const view = READINESS_VIEW[state];
+  const expiry = readinessExpiry(readiness);
+  const reason = readiness ? readinessReason(vehicle, readiness) : null;
+  const headline = state === 'ready' ? 'Ready to respond' : state === 'retired' ? 'Out of fleet' : 'Not ready to respond';
+
+  return (
+    <section className={`p23-summary tone-${view?.tone ?? 'neutral'}`} aria-labelledby="p23-summary-title">
+      <div className="p23-decision">
+        <div className="p23-decision-text">
+          <span className="p23-eyebrow" id="p23-summary-title">Operational decision</span>
+          {readinessError ? (
+            <p className="p23-decision-line">
+              Readiness couldn&apos;t be loaded right now.{' '}
+              <button type="button" className="p23-link-btn" onClick={onRetryReadiness}>Retry</button>
+            </p>
+          ) : !readiness ? (
+            <p className="p23-decision-line muted">Checking readiness…</p>
+          ) : (
+            <>
+              <strong className="p23-decision-head">
+                {view && <Icon name={view.icon} size={18} />}
+                {headline}
+              </strong>
+              {reason && <p className="p23-decision-line">{reason}</p>}
+            </>
+          )}
+        </div>
+        {showActions && operational && (readiness?.active_ticket_id || canCheck) && (
+          <div className="p23-decision-actions">
+            {readiness?.active_ticket_id && (
+              <button type="button" className="ghost-button p23-action" onClick={onOpenTicket}>
+                <Icon name="ticket" size={14} /> Open active ticket
+              </button>
+            )}
+            {canCheck && (
+              <button type="button" className={`p23-action ${state === 'ready' ? 'ghost-button' : 'success-button'}`} onClick={onCheck}>
+                <Icon name="checkCircle" size={14} /> {state === 'unchecked' ? 'Run readiness check' : 'Recheck vehicle'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <dl className="p23-tiles">
+        <div className="p23-tile">
+          <dt>Availability</dt>
+          <dd><StatusBadge value={vehicle.status} /></dd>
+          <span className="p23-tile-meta">{vehicle.updated_at ? `Record updated ${formatDate(vehicle.updated_at)}` : 'No update recorded'}</span>
+        </div>
+        <div className="p23-tile">
+          <dt>Condition</dt>
+          <dd><StatusBadge value={vehicle.condition} /></dd>
+          <span className="p23-tile-meta">Physical condition — not the same as verified ready</span>
+        </div>
+        <div className="p23-tile">
+          <dt>Readiness</dt>
+          <dd>{readiness ? <ReadinessPill state={state} /> : <span className="muted">—</span>}</dd>
+          <span className="p23-tile-meta">
+            {readiness?.last_checked
+              ? <>Checked {formatDate(readiness.last_checked)}<br />{state === 'stale' ? 'Expired' : 'Valid until'} {formatDate(expiry)}</>
+              : 'No check recorded yet'}
+          </span>
+        </div>
+        <div className="p23-tile">
+          <dt>Open issues</dt>
+          <dd className="p23-tile-value">{openIssueCount}</dd>
+          <span className="p23-tile-meta">{openIssueCount ? 'Reported and not yet resolved' : 'No unresolved issue reports'}</span>
+        </div>
+        <div className="p23-tile">
+          <dt>Location</dt>
+          <dd className="p23-tile-text">{vehicle.current_location ?? 'Not assigned'}</dd>
+          <span className="p23-tile-meta">Assigned hub, not live GPS</span>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canManage = false, canManageDocuments = false, canViewDocuments = false, canCheckReadiness = false, canRequestInspection = false, canViewReliability = false, setNotice, onSaved, onRequestConfirmation }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('tab') === 'edit');
   const [decommissioning, setDecommissioning] = useState(false);
   const [readiness, setReadiness] = useState(null);
+  const [readinessError, setReadinessError] = useState(false);
   const [checkingReadiness, setCheckingReadiness] = useState(false);
   // Live-tracks the Edit form's Vehicle Type select so switching a vehicle
   // to a Water category shows Hull Material/Engine Type immediately,
@@ -432,7 +587,9 @@ export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canM
 
   // Gap A — response-readiness state.
   const loadReadiness = useCallback(() => {
-    api.get(`/vehicles/${vehicleId}/readiness`).then((r) => setReadiness(r.data)).catch(() => setReadiness(null));
+    api.get(`/vehicles/${vehicleId}/readiness`)
+      .then((r) => { setReadiness(r.data); setReadinessError(false); })
+      .catch(() => { setReadiness(null); setReadinessError(true); });
   }, [vehicleId]);
 
   useEffect(() => {
@@ -535,52 +692,83 @@ export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canM
   // Derived data for the redesigned overview dashboard.
   const hub = (allHubs ?? []).find((h) => h.name === vehicle.current_location);
   const isWater = (vehicle.category?.domain ?? 'Land') === 'Water';
+  const operational = !['Decommissioned', 'Inactive'].includes(vehicle.status);
+  // /lookups already returns every unresolved issue report (Resolved ones —
+  // dismissals included — are excluded server-side).
+  const openIssueCount = (lookups.issue_reports ?? []).filter((issue) => String(issue.vehicle_id) === String(vehicle.vehicle_id)).length;
   return (
     <ModulePanel description="Full profile, maintenance, and tickets for this vehicle.">
+      {/* UI audit §5 — actions grouped by risk: routine field actions,
+          record maintenance, then lifecycle/destructive last and visually
+          set apart so Decommission never sits beside a routine button. The
+          readiness check itself lives in the Operational decision band
+          below, next to the reason it's needed. */}
       <div className="vehicle-profile-header">
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
-          {canManage && vehicle.status !== 'Decommissioned' && !editing && (
-            <button className="btn-sm primary-button" type="button" onClick={() => setEditing(true)}>
-              <Icon name="edit" size={13} /> Edit Vehicle
-            </button>
-          )}
-          {canRequestInspection && !['Decommissioned', 'Inactive'].includes(vehicle.status) && !editing && (
-            <button className="btn-sm ghost-button" type="button" onClick={requestInspection}>
-              <Icon name="search" size={13} /> Request Custodian Inspection
-            </button>
-          )}
-          {canCheckReadiness && !['Decommissioned', 'Inactive'].includes(vehicle.status) && !editing && (
-            <button className="btn-sm success-button" type="button" onClick={() => setCheckingReadiness(true)}>
-              <Icon name="checkCircle" size={13} /> Readiness Check
-            </button>
+        <div className="p23-action-groups">
+          {canRequestInspection && operational && !editing && (
+            <div className="p23-action-group" role="group" aria-label="Routine actions">
+              <button className="btn-sm ghost-button" type="button" onClick={requestInspection}>
+                <Icon name="search" size={13} /> Request Custodian Inspection
+              </button>
+            </div>
           )}
           {canManage && vehicle.status !== 'Decommissioned' && !editing && (
-            <button className="btn-sm danger-button" type="button" onClick={() => setDecommissioning(true)}>
-              <Icon name="alert" size={13} /> Decommission
-            </button>
+            <div className="p23-action-group" role="group" aria-label="Record maintenance">
+              <button className="btn-sm primary-button" type="button" onClick={() => setEditing(true)}>
+                <Icon name="edit" size={13} /> Edit Vehicle
+              </button>
+            </div>
           )}
-          {canManage && vehicle.status === 'Decommissioned' && (
-            <button className="btn-sm primary-button" type="button" onClick={() => onRequestConfirmation?.({
-              title: 'Recommission Vehicle',
-              message: `Bring ${vehicle.vehicle_name} back into active service? This reverses the decommission.`,
-              confirmLabel: 'Recommission',
-              onConfirm: handleRecommission,
-            })}>
-              <Icon name="undo" size={13} /> Recommission
-            </button>
+          {canManage && !editing && (
+            <div className="p23-action-group is-lifecycle" role="group" aria-label="Lifecycle actions">
+              {vehicle.status !== 'Decommissioned' ? (
+                <button className="btn-sm danger-button" type="button" onClick={() => setDecommissioning(true)}>
+                  <Icon name="alert" size={13} /> Decommission
+                </button>
+              ) : (
+                <button className="btn-sm primary-button" type="button" onClick={() => onRequestConfirmation?.({
+                  title: 'Recommission Vehicle',
+                  message: `Bring ${vehicle.vehicle_name} back into active service? This reverses the decommission.`,
+                  confirmLabel: 'Recommission',
+                  onConfirm: handleRecommission,
+                })}>
+                  <Icon name="undo" size={13} /> Recommission
+                </button>
+              )}
+            </div>
           )}
         </div>
+        {!operational && !editing && (canCheckReadiness || canRequestInspection || canManage) && (
+          <p className="p23-unavailable" role="note">
+            <Icon name="info" size={14} />
+            {vehicle.status === 'Decommissioned'
+              ? `Readiness checks, inspections and editing are unavailable while this vehicle is decommissioned${canManage ? ' — recommission it first' : ''}.`
+              : 'Readiness checks and inspection requests are unavailable while this vehicle is Inactive.'}
+          </p>
+        )}
       </div>
 
       {vehicle.status === 'Decommissioned' && (
-        <div style={{ margin: '0 0 16px', padding: '14px 18px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, marginBottom: 4 }}>
+        <div className="p23-retired-banner" role="status">
+          <div className="p23-retired-banner-head">
             <Icon name="alert" size={18} /> Decommissioned — retired from the fleet
           </div>
-          {vehicle.decommission_reason && <p style={{ margin: '4px 0 0' }}>Reason: {vehicle.decommission_reason}</p>}
-          {vehicle.decommissioned_at && <p style={{ margin: '4px 0 0', fontSize: '0.82rem', opacity: 0.85 }}>Retired {formatDate(vehicle.decommissioned_at)}. Its history is preserved; it no longer counts toward readiness.</p>}
+          {vehicle.decommission_reason && <p>Reason: {vehicle.decommission_reason}</p>}
+          {vehicle.decommissioned_at && <p className="p23-retired-banner-meta">Retired {formatDate(vehicle.decommissioned_at)}. Its history is preserved; it no longer counts toward readiness.</p>}
         </div>
       )}
+
+      <VehicleOperationalSummary
+        vehicle={vehicle}
+        readiness={readiness}
+        readinessError={readinessError}
+        onRetryReadiness={loadReadiness}
+        openIssueCount={openIssueCount}
+        canCheck={canCheckReadiness}
+        onCheck={() => setCheckingReadiness(true)}
+        onOpenTicket={() => navigate(`${basePath}/tickets/${readiness.active_ticket_id}`)}
+        showActions={!editing}
+      />
 
       <FormModal open={checkingReadiness} title={`Readiness Check — ${vehicle.vehicle_name}`} onClose={() => setCheckingReadiness(false)}>
         <ReadinessCheckForm
@@ -672,12 +860,14 @@ export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canM
               <dl className="veh-kv">
                 <div><dt>Availability</dt><dd><StatusBadge value={vehicle.status} /></dd></div>
                 <div><dt>Condition</dt><dd><StatusBadge value={vehicle.condition} /></dd></div>
-                {readiness && READINESS_BADGE[readiness.state] && (
+                {readiness && READINESS_VIEW[readiness.state] && (
                   <div><dt>Response Readiness</dt><dd>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.76rem', fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: READINESS_BADGE[readiness.state].bg, color: READINESS_BADGE[readiness.state].color, border: `1px solid ${READINESS_BADGE[readiness.state].border}` }}>
-                      <Icon name={READINESS_BADGE[readiness.state].icon} size={11} /> {READINESS_BADGE[readiness.state].label}
-                    </span>
-                    {readiness.last_checked && <div className="muted" style={{ fontSize: '0.72rem', marginTop: 3 }}>Last checked {formatDate(readiness.last_checked)}</div>}
+                    <ReadinessPill state={readiness.state} />
+                    <div className="p23-dd-meta">
+                      {readiness.last_checked
+                        ? <>Last checked {formatDate(readiness.last_checked)} · {readiness.state === 'stale' ? 'expired' : 'valid until'} {formatDate(readinessExpiry(readiness))}</>
+                        : 'No readiness check recorded yet'}
+                    </div>
                   </dd></div>
                 )}
                 {/* Confirmed via live review: a vehicle marked Under
@@ -687,8 +877,7 @@ export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canM
                   <div><dt>Active Ticket</dt><dd>
                     <button
                       type="button"
-                      className="btn-view-action"
-                      style={{ fontSize: '0.78rem', padding: '3px 10px' }}
+                      className="btn-view-action p23-ticket-link"
                       onClick={() => navigate(`${basePath}/tickets/${readiness.active_ticket_id}`)}
                     >
                       {readiness.active_ticket_title ?? `Ticket #${readiness.active_ticket_id}`} →
@@ -703,7 +892,7 @@ export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canM
                   <span className={`risk-watch-tag${(vehicle.criticality ?? defaultCriticalityFor(vehicle, lookups)) === 'Critical' ? ' is-critical' : ''}`}>
                     {(vehicle.criticality ?? defaultCriticalityFor(vehicle, lookups)).toUpperCase()}
                   </span>
-                  <div className="muted" style={{ fontSize: '0.72rem', marginTop: 3 }}>{vehicle.criticality ? 'Set for this vehicle' : 'From vehicle type'}</div>
+                  <div className="p23-dd-meta">{vehicle.criticality ? 'Set for this vehicle' : 'From vehicle type'}</div>
                 </dd></div>
                 <div><dt>Current Location</dt><dd>{vehicle.current_location ?? '-'}</dd></div>
                 {vehicle.estimated_return_date && (
@@ -718,7 +907,7 @@ export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canM
               <section className="veh-card veh-reports">
                 <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Reports</h4></div>
                 <div className="veh-reports-body">
-                  <select className="veh-reports-select" defaultValue="summary">
+                  <select className="veh-reports-select" defaultValue="summary" aria-label="Report to print">
                     <option value="summary">Vehicle Summary Report</option>
                   </select>
                   <button type="button" className="veh-reports-print-btn" onClick={() => window.print()} title="Print report" aria-label="Print report">
@@ -739,6 +928,7 @@ export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canM
 
           <section className="veh-card veh-map">
             <div className="veh-card-head"><Icon name="pin" size={16} /><h4>Current Location — {vehicle.current_location ?? 'Unknown'}</h4></div>
+            <p className="p23-map-note"><Icon name="info" size={13} /> Shows the hub this vehicle is assigned to — not a live GPS position.</p>
             <div className="veh-map-wrap">
               <VehicleLocationMap lat={hub?.lat} lng={hub?.lng} label={vehicle.current_location} scrollWheelZoom />
             </div>
