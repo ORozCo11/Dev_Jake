@@ -347,9 +347,9 @@ html[data-theme="light"] .superadmin-pending-tab .approval-card-actions { margin
   display: block;
   font-size: 0.68rem;
   font-weight: 800;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap instead of clipping ("Availab…") when the card is narrow. */
+  line-height: 1.2;
+  overflow-wrap: normal;
 }
 
 .dashboard-status-strip strong {

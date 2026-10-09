@@ -1351,3 +1351,36 @@ html:not([data-theme="light"]) .action-queue-row-severity {
   border: 1px solid var(--border-subtle);
   border-radius: 7px;
 }
+
+/* Donut hover: the centre shows the hovered slice (see DonutChart). Long
+   labels ("Needs Inspection") wrap inside the ring instead of spilling. */
+.donut-center span {
+  display: block;
+  max-width: 100%;
+  padding: 0 6px;
+  line-height: 1.15;
+  text-align: center;
+  /* Break only between words ("Needs / Inspection"), never mid-word. */
+  overflow-wrap: normal;
+  word-break: normal;
+}
+/* Scale the hovered label to the ring's hole so small donuts (dashboard
+   side cards, ~150px) keep "Inspection" inside the circle. */
+.donut-center {
+  container-type: inline-size;
+}
+.donut-center.is-active span {
+  font-size: min(0.72rem, 14cqw);
+}
+.donut-center-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 999px;
+  vertical-align: 1px;
+}
+.donut-chart .recharts-sector {
+  cursor: pointer;
+  transition: fill-opacity 0.12s;
+}

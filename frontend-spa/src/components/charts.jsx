@@ -3,6 +3,7 @@
 // gridlines, and tooltips — the "business report" look — while keeping the
 // same prop shapes the call sites in Workspace.jsx already pass in
 // (segments: [{label, value, color}], rows: [{label, value, color}]).
+import { useState } from 'react';
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, LabelList,
@@ -14,6 +15,9 @@ const AXIS_TICK_STYLE = { fill: 'var(--text-muted, #8f929a)', fontSize: 12, font
 const AXIS_LINE_STYLE = { stroke: 'var(--border, #25272d)' };
 const GRID_STROKE = 'var(--border-subtle, #1b1d22)';
 const EMPTY_SLICE_COLOR = 'var(--border-subtle, #1b1d22)';
+// Every hover tooltip: drawn above sibling overlays (e.g. a donut's centre
+// label) and never catches the pointer itself, so it can't flicker or block.
+const TOOLTIP_PROPS = { wrapperStyle: { zIndex: 20, pointerEvents: 'none' }, isAnimationActive: false };
 
 function ChartTooltipCard({ rows }) {
   return (
@@ -41,9 +45,14 @@ function barTooltip({ active, payload }) {
   return <ChartTooltipCard rows={[{ label: point.payload.label, value: point.value, color: point.payload.color }]} />;
 }
 
+// No floating tooltip here — on a ring this small it always lands on the
+// centre label or the legend. Hovering a slice swaps the centre text to that
+// slice instead ("6 · Good"), and it falls back to the total on leave.
 export function DonutChart({ segments, centerLabel, centerSubLabel }) {
   const data = segments.filter((s) => s.value > 0);
   const pieData = data.length ? data : [{ label: 'None', value: 1, color: EMPTY_SLICE_COLOR }];
+  const [activeIndex, setActiveIndex] = useState(null);
+  const active = data.length && activeIndex != null ? data[activeIndex] : null;
 
   return (
     <div className="donut-chart">
@@ -58,15 +67,21 @@ export function DonutChart({ segments, centerLabel, centerSubLabel }) {
             paddingAngle={data.length > 1 ? 2 : 0}
             stroke="none"
             isAnimationActive={false}
+            onMouseEnter={(_, index) => setActiveIndex(index)}
+            onMouseLeave={() => setActiveIndex(null)}
           >
-            {pieData.map((seg) => <Cell key={seg.label} fill={seg.color} />)}
+            {pieData.map((seg, i) => (
+              <Cell key={seg.label} fill={seg.color} fillOpacity={active && i !== activeIndex ? 0.45 : 1} />
+            ))}
           </Pie>
-          {data.length > 0 && <Tooltip content={pieTooltip} />}
         </PieChart>
       </ResponsiveContainer>
-      <div className="donut-center">
-        <strong>{centerLabel}</strong>
-        <span>{centerSubLabel}</span>
+      <div className={`donut-center${active ? ' is-active' : ''}`}>
+        <strong style={active ? { color: 'var(--text-strong)' } : undefined}>{active ? active.value : centerLabel}</strong>
+        <span>
+          {active && <i className="donut-center-dot" style={{ background: active.color }} aria-hidden="true" />}
+          {active ? active.label : centerSubLabel}
+        </span>
       </div>
     </div>
   );
@@ -91,7 +106,7 @@ export function SolidPieChart({ segments, size = 170 }) {
           >
             {pieData.map((seg) => <Cell key={seg.label} fill={seg.color} />)}
           </Pie>
-          {data.length > 0 && <Tooltip content={pieTooltip} />}
+          {data.length > 0 && <Tooltip {...TOOLTIP_PROPS} content={pieTooltip} />}
         </PieChart>
       </ResponsiveContainer>
     </div>
@@ -117,7 +132,7 @@ export function HorizontalBarChart({ rows = [] }) {
           <CartesianGrid horizontal={false} stroke={GRID_STROKE} />
           <XAxis type="number" tick={AXIS_TICK_STYLE} axisLine={AXIS_LINE_STYLE} tickLine={false} allowDecimals={false} />
           <YAxis type="category" dataKey="label" width={112} tick={AXIS_TICK_STYLE} axisLine={false} tickLine={false} />
-          <Tooltip cursor={{ fill: 'var(--surface-hover, #202126)' }} content={barTooltip} />
+          <Tooltip {...TOOLTIP_PROPS} cursor={{ fill: 'var(--surface-hover, #202126)' }} content={barTooltip} />
           <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive={false}>
             {data.map((d) => <Cell key={d.label} fill={d.color} />)}
             <LabelList dataKey="value" position="right" style={{ fill: 'var(--text-strong, #fff8ef)', fontSize: 12, fontWeight: 700 }} />
@@ -150,7 +165,7 @@ export function ColumnChart({ rows = [] }) {
           <CartesianGrid vertical={false} stroke={GRID_STROKE} />
           <XAxis dataKey="label" tick={AXIS_TICK_STYLE} axisLine={AXIS_LINE_STYLE} tickLine={false} interval={0} />
           <YAxis tick={AXIS_TICK_STYLE} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
-          <Tooltip cursor={{ fill: 'var(--surface-hover, #202126)' }} content={barTooltip} />
+          <Tooltip {...TOOLTIP_PROPS} cursor={{ fill: 'var(--surface-hover, #202126)' }} content={barTooltip} />
           <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={46} isAnimationActive={false}>
             {data.map((d) => <Cell key={d.label} fill={d.color} />)}
           </Bar>
@@ -173,6 +188,7 @@ export function StackedBarChart({ title, segments }) {
             <XAxis type="number" hide domain={[0, 'dataMax']} />
             <YAxis type="category" dataKey="name" hide />
             <Tooltip
+              {...TOOLTIP_PROPS}
               cursor={false}
               content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
