@@ -742,3 +742,24 @@ html[data-theme="light"] .p23-next-step { color: var(--text-strong); }
   .p23-quiet-action { margin-left: 0; }
   .maintenance-record-hero.p23-record-hero .vehicle-cell { border-color: var(--border); }
 }
+
+/* Schedule card: the vehicle name is the keyboard/screen-reader way to open
+   the vehicle (the card body itself only has a mouse shortcut). */
+.p23-card-vehicle-link {
+  min-height: var(--touch-target, 44px);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--status-info-fg, #0369a1);
+  font: inherit;
+  font-weight: var(--font-weight-semibold, 600);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.p23-card-vehicle-link:focus-visible {
+  outline: 3px solid var(--focus-ring-color, #2563eb);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 4px);
+}

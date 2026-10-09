@@ -586,7 +586,11 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(220, 38, 38, 0.12);
-  color: #dc2626;
+  color: #b91c1c;
+}
+/* Dark surfaces need the lighter red to stay above 4.5:1. */
+html:not([data-theme="light"]) .action-queue-row-severity {
+  color: #fca5a5;
 }
 .action-queue-row-chevron {
   flex-shrink: 0;

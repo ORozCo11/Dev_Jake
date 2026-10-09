@@ -625,8 +625,10 @@ export function MaintenanceScheduleCard({ row, currentUser, allSchedules, onComp
   const canCancel = canDo(currentUser, 'schedule.delete') && !isCompleted && row.status !== 'Cancelled';
   const canRestore = row.status === 'Cancelled' && canDo(currentUser, 'schedule.restore') && onRestore;
 
-  // Clicking the card body opens the vehicle's profile; the action row below
-  // stops propagation so its buttons never double-fire this.
+  // Clicking the card body opens the vehicle's profile (a mouse shortcut);
+  // the action row below stops propagation so its buttons never double-fire
+  // this. The card itself isn't a button — it holds other buttons — so the
+  // keyboard/screen-reader path is the vehicle name button instead.
   const canView = Boolean(onViewVehicle && row.vehicle);
 
   return (
@@ -634,13 +636,7 @@ export function MaintenanceScheduleCard({ row, currentUser, allSchedules, onComp
       className={`ticket-card maintenance-schedule-card p23-schedule-card schedule-${String(row.status ?? '').toLowerCase().replaceAll(' ', '-')} urgency-${String(urgency ?? 'none').toLowerCase()}`}
       style={canView ? { cursor: 'pointer' } : undefined}
       onClick={canView ? () => onViewVehicle(row.vehicle) : undefined}
-      role={canView ? 'button' : undefined}
-      tabIndex={canView ? 0 : undefined}
-      aria-label={canView ? `Schedule #${row.schedule_id}, ${row.maintenance_type}, ${row.status}${overdue ? ', overdue' : ''} — open ${row.vehicle?.vehicle_name ?? 'vehicle'} profile` : undefined}
-      onKeyDown={canView ? (e) => {
-        if (e.target !== e.currentTarget) return;
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewVehicle(row.vehicle); }
-      } : undefined}
+      aria-label={`Schedule #${row.schedule_id}, ${row.maintenance_type}, ${row.status}${overdue ? ', overdue' : ''}`}
     >
       <div className="ticket-card-content-wrapper">
         <div className="ticket-card-info">
@@ -657,7 +653,17 @@ export function MaintenanceScheduleCard({ row, currentUser, allSchedules, onComp
           </div>
           <p className="ticket-card-title">{row.maintenance_type}</p>
           <p className="ticket-card-vehicle" style={{ marginBottom: 8 }}>
-            {row.vehicle?.vehicle_name}{row.vehicle?.plate_number ? ` · ${row.vehicle.plate_number}` : ''}
+            {canView ? (
+              <button
+                type="button"
+                className="p23-card-vehicle-link"
+                onClick={(e) => { e.stopPropagation(); onViewVehicle(row.vehicle); }}
+                aria-label={`Open ${row.vehicle.vehicle_name} profile`}
+              >
+                {row.vehicle.vehicle_name}
+              </button>
+            ) : row.vehicle?.vehicle_name}
+            {row.vehicle?.plate_number ? ` · ${row.vehicle.plate_number}` : ''}
           </p>
         </div>
         {row.vehicle?.photo_url && (

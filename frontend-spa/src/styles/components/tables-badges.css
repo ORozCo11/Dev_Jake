@@ -320,3 +320,9 @@ table a:hover {
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
 }
+
+/* Scrollable tables are focusable (keyboard scrolling) — show where focus is. */
+.table-shell:focus-visible {
+  outline: 3px solid var(--focus-ring-color, #2563eb);
+  outline-offset: 2px;
+}

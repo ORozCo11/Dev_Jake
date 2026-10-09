@@ -725,15 +725,16 @@ html[data-theme="light"] .table-shell button.btn-archive-action:hover {
 html[data-theme="light"] table button.btn-confirm-action,
 html[data-theme="light"] .table-shell button.btn-confirm-action,
 html[data-theme="light"] button.btn-confirm-action {
-  background: #16a34a;
-  border-color: #16a34a;
+  /* #15803d, not #16a34a: white text needs 4.5:1 (was 3.3:1). */
+  background: #15803d;
+  border-color: #15803d;
   color: #ffffff !important;
 }
 html[data-theme="light"] table button.btn-confirm-action:hover,
 html[data-theme="light"] .table-shell button.btn-confirm-action:hover,
 html[data-theme="light"] button.btn-confirm-action:hover {
-  background: #15803d;
-  border-color: #15803d;
+  background: #166534;
+  border-color: #166534;
   color: #ffffff !important;
 }
 

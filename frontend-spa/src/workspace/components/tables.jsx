@@ -37,7 +37,8 @@ export function DataTable({ columns, rows, compact = false, onRowClick, onReorde
   return (
     // Below 640px the table restacks into one card per row (CSS); explicit
     // ARIA roles keep the table semantics once display: table is gone.
-    <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}`}>
+    // Focusable so keyboard users can scroll it sideways when it overflows.
+    <div className={`table-shell${compact ? ' is-compact' : ''}${hasWidths ? ' is-fixed' : ''}`} tabIndex={0} role="region" aria-label="Table">
       <table role="table">
         {hasWidths && (
           <colgroup>
