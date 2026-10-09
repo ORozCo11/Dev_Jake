@@ -448,7 +448,11 @@ export function QuietDate({ value }) {
 // the form "[YYYY-MM-DD HH:MM] message", separated by a blank line. Parse
 // that back out so each entry can show a proper DateBadge instead of a raw
 // bracketed timestamp buried in a wall of text.
-export function RepairLogEntries({ text, compact = false }) {
+export // `limit` (compact mode only, optional): show just the latest N entries
+// with a toggle to reveal the rest, so a long history stays one line tall.
+function RepairLogEntries({ text, compact = false, limit = null }) {
+  const [showAll, setShowAll] = useState(false);
+
   if (!text) {
     return <p className="empty-state">No logs yet.</p>;
   }
@@ -462,14 +466,21 @@ export function RepairLogEntries({ text, compact = false }) {
   }).filter((entry) => entry.message || entry.iso);
 
   if (compact) {
+    const collapsed = limit != null && !showAll && entries.length > limit;
+    const shown = collapsed ? entries.slice(-limit) : entries;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {entries.map((entry, i) => (
-          <p key={i} style={{ margin: 0, fontSize: '0.82rem', color: '#334155' }}>
+        {shown.map((entry, i) => (
+          <p key={i} style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text, #334155)' }}>
             {entry.iso && <span className="muted" style={{ fontSize: '0.7rem', marginRight: 6 }}>{formatDate(entry.iso)}</span>}
             {entry.message}
           </p>
         ))}
+        {limit != null && entries.length > limit && (
+          <button type="button" className="lr-link-btn" style={{ alignSelf: 'flex-start' }} onClick={() => setShowAll((v) => !v)}>
+            {showAll ? 'Show latest only' : `View full repair history (${entries.length})`}
+          </button>
+        )}
       </div>
     );
   }
@@ -500,6 +511,8 @@ export function TicketStatusBadge({ value, size = 'normal' }) {
     'For Maintenance': 'ticket-formaint',
     'Under Repair': 'ticket-repair',
     'Pending Approval': 'ticket-formaint',
+    'Declined': 'ticket-cancelled',
+    'For Verification': 'ticket-forinspect',
     'For Inspection': 'ticket-forinspect',
     'For Confirmation': 'ticket-forconfirm',
     'Done': 'ticket-done',

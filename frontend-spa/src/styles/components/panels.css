@@ -61,9 +61,16 @@
   grid-column: 1;
   grid-row: 2;
   min-width: 0;
+  /* start, not stretch — the chart card sizes to its own (short) content
+     instead of being pulled down to match Latest Reports' height, which
+     used to leave a slab of dead space under the bar/legend. */
+  align-self: start;
 }
 .issue-summary-filters {
-  grid-column: 1 / -1;
+  /* Column 1 only, not full width — Latest Reports (col 2) now spans both
+     this row and the chart's row above (see below), so col 2 is already
+     spoken for here. */
+  grid-column: 1;
   grid-row: 3;
   min-width: 0;
 }
@@ -75,20 +82,17 @@
   }
 }
 .latest-issue-card {
+  /* Spans the chart's row AND the filter row beneath it — its height
+     naturally matches however tall that compact chart + filter panel
+     stack turns out to be (default grid stretch), instead of a fixed
+     px guess that either left dead space below a short chart or a gap
+     before the filter row starts beneath a shorter Latest Reports. */
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 2 / span 2;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 20px 24px;
-  /* A max-height still lets this item's content size grow toward that
-     cap, and CSS Grid inflates the "auto" rows it spans to match — so
-     the stat-card/filter area kept getting taller with every new report
-     even with a cap in place. Only a fixed height fully decouples this
-     item's grid contribution from its content, so the section's
-     footprint truly never changes; see .latest-issue-timeline-list
-     below for the part that actually scrolls. */
-  height: 320px;
   box-sizing: border-box;
   overflow: hidden;
 }

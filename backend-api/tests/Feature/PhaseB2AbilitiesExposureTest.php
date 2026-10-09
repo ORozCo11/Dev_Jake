@@ -45,7 +45,9 @@ class PhaseB2AbilitiesExposureTest extends TestCase
 
         $abilities = $response->json('abilities');
         $this->assertIsArray($abilities);
-        $this->assertContains('ticket.inspect', $abilities);
+        // ticket.inspect has no role any more (streamlined workflow,
+        // 2026-10-12) — the inspection phase is gone entirely.
+        $this->assertNotContains('ticket.inspect', $abilities);
         // A Custodian may register a vehicle when delegated to (role
         // realignment decision 6), but still can't edit one afterward.
         $this->assertContains('vehicle.create', $abilities);

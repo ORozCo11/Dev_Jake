@@ -252,7 +252,7 @@ export function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromC
     { key: 'time', label: 'Time', className: 'cell-center', render: (row) => formatTime(row.created_at) },
   ];
 
-  if (hasRole(user, 'Custodian') || hasRole(user, 'Admin')) {
+  if (hasRole(user, 'Custodian')) {
     columns.push({
       key: 'action',
       label: 'Action',
@@ -260,9 +260,11 @@ export function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromC
       className: 'cell-center',
       render: (row) => {
         // condition.edit is Custodian-only, and only for the check THEY
-        // performed (backend 403s otherwise); condition.delete is Admin only.
+        // performed (backend 403s otherwise). Admin no longer gets this
+        // column at all — Condition Monitoring is the Custodian's own data
+        // to manage, not something Admin takes row-level action on.
         const canEdit = canDo(user, 'condition.edit') && String(row.checked_by?.id) === String(user.id);
-        const canDelete = hasRole(user, 'Admin');
+        const canDelete = false;
         return (
         // A synthesized "Not Checked" row has no condition_check_id — there's
         // no record yet to create a ticket from, suggest a schedule against,
@@ -270,7 +272,7 @@ export function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromC
         !row.condition_check_id ? (
           <div className="row-actions">
             {onAddCondition && (
-              <button className="btn-confirm-action icon-btn" onClick={onAddCondition} type="button" title="Record Condition" aria-label="Record Condition"><Icon name="plus" size={14} /></button>
+              <button className="btn-confirm-action icon-btn" onClick={() => onAddCondition(row)} type="button" title="Record Condition" aria-label="Record Condition"><Icon name="plus" size={14} /></button>
             )}
           </div>
         ) : (
@@ -502,6 +504,17 @@ export function maintenanceColumns(role, setEditTarget, updateRecord, onViewReco
               <button className="btn-reopen-action icon-btn" onClick={() => updateRecord(`/maintenance-records/${row.maintenance_id}/confirm`, { confirmed: false }, 'Maintenance reopened.')} type="button" title="Reopen" aria-label="Reopen"><Icon name="undo" size={14} /></button>
             </>
           ) : null}
+          {/* Unified into the one ledger every role sees — no more separate
+              "Needs Verification" tab/page. Same self-verification guard the
+              old maintenanceStatusColumns had: a Custodian who performed this
+              repair themselves can't be the one who verifies it. */}
+          {canDo(user, 'record.verify') && row.progress_status === 'For Verification' && (
+            String(row.maintenance_personnel_id) === String(user?.id) ? (
+              <span className="muted" title="You performed this repair — another Custodian needs to verify it.">Awaiting another Custodian</span>
+            ) : (
+              <button className="btn-edit-action icon-btn" onClick={() => setEditTarget({ ...row, __verify: true })} type="button" title="Verify" aria-label="Verify"><Icon name="checkCircle" size={14} /></button>
+            )
+          )}
         </div>
       ),
     },
@@ -537,8 +550,7 @@ export function maintenanceStatusColumns(setEditTarget, currentUserId) {
   ];
 }
 
-export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord, onReassign, onViewTicket) {
-  const isAdmin = hasRole(currentUser, 'Admin');
+export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRecord, restoreRecord, onReassign, onViewTicket, onApprove, onDecline) {
   const currentUserId = currentUser?.id;
   return [
     { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.schedule_id },
@@ -577,7 +589,11 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
       className: 'cell-center',
       render: (row) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <StatusBadge value={row.status} />
+          {/* TicketStatusBadge, not the plain StatusBadge — its colorMap
+              already covers Pending Approval/Declined (shared with tickets);
+              Scheduled/Completed/Cancelled fall back to the same plain
+              style StatusBadge gave them, so this is a strict addition. */}
+          <TicketStatusBadge value={row.status} />
           {/* #11 — a scheduled PM whose date has passed is overdue: flag it
               loudly instead of leaving it to sit silently on the calendar. */}
           {isScheduleOverdue(row) && (
@@ -606,6 +622,14 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
               </span>
             )
           )}
+          {row.status === 'Declined' && row.decline_reason && (
+            <span
+              style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', cursor: 'help' }}
+              title={`Reason: ${row.decline_reason}`}
+            >
+              Why? <Icon name="info" size={11} />
+            </span>
+          )}
         </span>
       ),
     },
@@ -625,33 +649,43 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
           {row.status === 'Completed' && row.resulting_maintenance_id && onViewRecord && (
             <button className="schedule-menu-item" onClick={() => onViewRecord(row)} type="button"><Icon name="wrench" size={15} /><span>View Maintenance Record</span></button>
           )}
-          {/* Admin edits any schedule; a Custodian may only edit the one they
-              themselves created (matches the backend's ownership check on
-              schedule.edit). A Maintenance Personnel assigned to it only ever
-              gets to act on it via Mark as Done above. */}
-          {isAdmin && (
+          {/* Admin reviews a Custodian's booked schedule before it goes live
+              — same propose/approve/decline shape as a ticket proposal. A
+              Declined row can still be approved directly (no undecline
+              needed first), same as tickets. */}
+          {canDo(currentUser, 'schedule.approve') && ['Pending Approval', 'Declined'].includes(row.status) && onApprove && (
+            <button className="schedule-menu-item" onClick={() => onApprove(row)} type="button"><Icon name="checkCircle" size={15} /><span>Approve Schedule</span></button>
+          )}
+          {canDo(currentUser, 'schedule.decline') && row.status === 'Pending Approval' && onDecline && (
+            <button className="schedule-menu-item is-danger" onClick={() => onDecline(row)} type="button"><Icon name="close" size={15} /><span>Decline Schedule</span></button>
+          )}
+          {/* Edit/Delete/Restore are Custodian-only abilities (config/
+              permissions.php: schedule.edit/.delete/.restore => ['Custodian']
+              — Admin doesn't hold them), gated by canDo rather than role so
+              this actually matches what the backend will accept. Any
+              Custodian may edit or cancel any schedule in their barangay,
+              not only the ones they booked. A Maintenance Personnel assigned
+              to it only ever gets to act on it via Mark as Done above. */}
+          {canDo(currentUser, 'schedule.edit') && (
             <button className="schedule-menu-item" onClick={() => onEdit(row)} type="button"><Icon name="edit" size={15} /><span>Edit Schedule</span></button>
           )}
-          {/* Reassigning/cancelling a schedule stays an Admin-only planning
-              decision, unaffected by the ownership change above. */}
-          {isAdmin && (
-            <>
-              {/* schedule.reassign ability (Admin only): hand a still-open
-                  Scheduled row to a different Maintenance Personnel without
-                  cancelling and re-booking it. */}
-              {row.status === 'Scheduled' && onReassign && (
-                <button className="schedule-menu-item" onClick={() => onReassign(row)} type="button"><Icon name="undo" size={15} /><span>Reassign</span></button>
-              )}
-              {/* Cancelling a schedule is a soft cancel — the row survives — so a
-                  cancelled one gets Restore instead of a Delete that would do
-                  nothing. Same swap vehicleColumns makes for archived vehicles. */}
-              {row.status === 'Cancelled' && restoreRecord ? (
-                <button className="schedule-menu-item" onClick={() => restoreRecord(`/maintenance-schedules/${row.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?', { title: 'Restore schedule' })} type="button"><Icon name="undo" size={15} /><span>Restore Schedule</span></button>
-              ) : (
-                <button className="schedule-menu-item is-danger" onClick={() => deleteRecord(`/maintenance-schedules/${row.schedule_id}`, 'Schedule cancelled.', `Cancel the ${row.maintenance_type} schedule for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`, { title: 'Cancel schedule', confirmLabel: 'Cancel schedule' })} type="button"><Icon name="trash" size={15} /><span>Cancel Schedule</span></button>
-              )}
-            </>
+          {/* schedule.reassign (Admin only, config/permissions.php) — Admin's
+              one remaining lever over an already-booked schedule: hand a
+              still-open Scheduled row to a different Maintenance Personnel
+              without cancelling and re-booking it. */}
+          {canDo(currentUser, 'schedule.reassign') && row.status === 'Scheduled' && onReassign && (
+            <button className="schedule-menu-item" onClick={() => onReassign(row)} type="button"><Icon name="undo" size={15} /><span>Reassign</span></button>
           )}
+          {/* Cancelling a schedule is a soft cancel — the row survives — so a
+              cancelled one gets Restore instead of a Delete that would do
+              nothing. Same swap vehicleColumns makes for archived vehicles. */}
+          {row.status === 'Cancelled'
+            ? canDo(currentUser, 'schedule.restore') && restoreRecord && (
+              <button className="schedule-menu-item" onClick={() => restoreRecord(`/maintenance-schedules/${row.schedule_id}/restore`, 'Schedule restored.', 'Restore this cancelled schedule back to Scheduled?', { title: 'Restore schedule' })} type="button"><Icon name="undo" size={15} /><span>Restore Schedule</span></button>
+            )
+            : canDo(currentUser, 'schedule.delete') && (
+              <button className="schedule-menu-item is-danger" onClick={() => deleteRecord(`/maintenance-schedules/${row.schedule_id}`, 'Schedule cancelled.', `Cancel the ${row.maintenance_type} schedule for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`, { title: 'Cancel schedule', confirmLabel: 'Cancel schedule' })} type="button"><Icon name="trash" size={15} /><span>Cancel Schedule</span></button>
+            )}
         </ScheduleActionMenu>
       ),
     },

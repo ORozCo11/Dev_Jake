@@ -14,18 +14,22 @@ import { hasRole } from '../lib/permissions';
 // e.g. Service Location: pick a known hub, or specify an outside repair shop.
 // Tracks "other mode" locally (not in the form's values), seeded from whether
 // the incoming value already fails to match any preset.
-// Same look/interaction as CreatableSelect's combobox (single bordered
-// input that opens a dropdown panel with a pinned "add new" row) — but for
-// a small fixed set of preset numeric options (e.g. recurrence intervals)
-// with an inline custom-number row instead of a full catalog: there's
-// nothing to persist/rename/delete here, just a value on this one record.
+// Same look/interaction as CreatableSelect's combobox — a single bordered
+// input opening a dropdown with a pinned "+ Add …" row — but for a small
+// fixed set of numeric presets (e.g. recurrence intervals). The custom value
+// is entered in a small popup form, like CreatableSelect's add-new modal;
+// nothing is persisted to a catalog, it's just a value on this one record.
 export function SelectOrAddNumberField({ field, value, onChange }) {
   const options = field.options ?? [];
   const matchesPreset = options.some((o) => String(o?.value ?? o) === String(value ?? ''));
   const isCustomActive = Boolean(value) && !matchesPreset;
   const [open, setOpen] = useState(false);
-  const [customDraft, setCustomDraft] = useState('');
+  // Non-null while the custom-value popup is open.
+  const [customDraft, setCustomDraft] = useState(null);
+  const [customError, setCustomError] = useState(null);
   const containerRef = useRef(null);
+  const suffix = field.otherSuffix ?? '';
+  const addLabel = field.otherLabel ?? 'Add Custom Value';
 
   useEffect(() => {
     if (!open) return undefined;
@@ -36,22 +40,35 @@ export function SelectOrAddNumberField({ field, value, onChange }) {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [open]);
 
+  const customText = (v) => `Every ${v}${suffix ? ` ${suffix}` : ''}`;
   const selectedLabel = matchesPreset
     ? (options.find((o) => String(o?.value ?? o) === String(value ?? ''))?.label ?? '')
-    : (isCustomActive ? `${value}${field.otherSuffix ? ` ${field.otherSuffix}` : ''}` : '');
+    : (isCustomActive ? customText(value) : '');
 
-  const openPanel = () => {
-    setCustomDraft(isCustomActive ? String(value) : '');
-    setOpen(true);
-  };
   const pick = (option) => {
     onChange(String(option?.value ?? option ?? ''));
     setOpen(false);
   };
-  const applyCustom = () => {
-    if (!customDraft) return;
-    onChange(customDraft);
+  const openCustom = () => {
+    setCustomDraft(isCustomActive ? String(value) : '');
+    setCustomError(null);
     setOpen(false);
+  };
+  const closeCustom = () => { setCustomDraft(null); setCustomError(null); };
+  const saveCustom = (e) => {
+    e.preventDefault();
+    // The popup is portaled, but React still bubbles its submit to the
+    // page's own form — stop it there.
+    e.stopPropagation();
+    const n = Number(customDraft);
+    const min = field.otherMin ?? 1;
+    const max = field.otherMax ?? Infinity;
+    if (!customDraft || !Number.isInteger(n) || n < min || n > max) {
+      setCustomError(`Enter a whole number from ${min} to ${max}.`);
+      return;
+    }
+    onChange(String(n));
+    closeCustom();
   };
 
   return (
@@ -60,30 +77,16 @@ export function SelectOrAddNumberField({ field, value, onChange }) {
         type="text"
         readOnly
         value={selectedLabel}
-        placeholder={field.placeholder ?? 'Select or add a custom interval'}
+        placeholder={field.placeholder ?? 'Select'}
         required={field.required}
-        onFocus={openPanel}
-        onClick={openPanel}
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
       />
       {open && (
         <div className="creatable-select-panel">
-          <div className="creatable-select-add creatable-select-add-pinned" onMouseDown={(e) => e.preventDefault()}>
-            <Icon name="plus" size={13} />
-            <input
-              type={field.otherType ?? 'number'}
-              className="creatable-select-custom-input"
-              min={field.otherMin}
-              max={field.otherMax}
-              placeholder={field.otherPlaceholder ?? 'Specify'}
-              value={customDraft}
-              onChange={(e) => setCustomDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyCustom(); } }}
-            />
-            {field.otherSuffix && <span className="muted">{field.otherSuffix}</span>}
-            <button type="button" className="ghost-button" disabled={!customDraft} onClick={applyCustom}>
-              {field.otherLabel ?? 'Add'}
-            </button>
-          </div>
+          <button type="button" className="creatable-select-option creatable-select-add creatable-select-add-pinned" onClick={openCustom}>
+            <Icon name="plus" size={13} /> {addLabel}
+          </button>
           <div className="creatable-select-option-list">
             {options.map((option, i) => (
               <div key={option?.value != null ? option.value : `opt-${i}`} className="creatable-select-option-row">
@@ -92,9 +95,39 @@ export function SelectOrAddNumberField({ field, value, onChange }) {
                 </button>
               </div>
             ))}
+            {isCustomActive && (
+              <div className="creatable-select-option-row">
+                <button type="button" className="creatable-select-option" onClick={() => setOpen(false)}>
+                  {customText(value)} (custom)
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
+      <FormModal open={customDraft !== null} title={addLabel} onClose={closeCustom}>
+        <form className="smart-form" onSubmit={saveCustom} noValidate>
+          <label>
+            <span>{field.otherInputLabel ?? `Number of ${suffix || 'units'}`} <span className="required-asterisk">*</span></span>
+            <input
+              type="number"
+              autoFocus
+              min={field.otherMin}
+              max={field.otherMax}
+              step="1"
+              placeholder={field.otherPlaceholder ?? ''}
+              value={customDraft ?? ''}
+              aria-invalid={customError ? 'true' : undefined}
+              onChange={(e) => { setCustomDraft(e.target.value); setCustomError(null); }}
+            />
+          </label>
+          {customError && <p className="readiness-field-error" role="alert">{customError}</p>}
+          <div className="form-actions">
+            <button className="ghost-button" type="button" onClick={closeCustom}>Cancel</button>
+            <button className="primary-button" type="submit">Save</button>
+          </div>
+        </form>
+      </FormModal>
     </div>
   );
 }
@@ -187,7 +220,9 @@ export function CatalogOrOtherField({ value, onChange, note, onNoteChange, optio
 // calendar picker, launched via showPicker()) behind a visible text field
 // that is always typed and displayed as MM/DD/YYYY, so the format is
 // guaranteed regardless of the browser/OS locale.
-export function DateFilterInput({ value, onChange, placeholder = 'mm/dd/yyyy' }) {
+export // `id` lets a standalone <label htmlFor> point at the visible text input;
+// both are optional and unused by every existing caller.
+function DateFilterInput({ value, onChange, placeholder = 'mm/dd/yyyy', id, ariaLabel }) {
   const hiddenRef = useRef(null);
   const [text, setText] = useState(() => isoDateToDisplay(value));
 
@@ -208,6 +243,8 @@ export function DateFilterInput({ value, onChange, placeholder = 'mm/dd/yyyy' })
     <div className="date-filter-input">
       <input
         type="text"
+        id={id}
+        aria-label={ariaLabel}
         className="filter-select"
         placeholder={placeholder}
         value={text}

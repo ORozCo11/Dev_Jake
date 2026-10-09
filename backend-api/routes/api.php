@@ -206,6 +206,9 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/maintenance-schedules', [FleetController::class, 'storeSchedule']);
     Route::post('/maintenance-schedules/suggest', [FleetController::class, 'suggestSchedule']);
     Route::put('/maintenance-schedules/{schedule}', [FleetController::class, 'updateSchedule']);
+    Route::put('/maintenance-schedules/{schedule}/approve', [FleetController::class, 'approveSchedule']);
+    Route::put('/maintenance-schedules/{schedule}/decline', [FleetController::class, 'declineSchedule']);
+    Route::put('/maintenance-schedules/{schedule}/undecline', [FleetController::class, 'undeclineSchedule']);
     Route::put('/maintenance-schedules/{schedule}/reassign', [FleetController::class, 'reassignSchedule']);
     Route::put('/maintenance-schedules/{schedule}/complete', [FleetController::class, 'completeSchedule']);
     Route::post('/maintenance-schedules/{schedule}/restore', [FleetController::class, 'restoreSchedule']);
@@ -231,6 +234,13 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, RestrictSuperAdmin
     Route::post('/tickets/propose', [TicketController::class, 'proposeTicket']);
     Route::put('/tickets/{ticket}/approve', [TicketController::class, 'approveTicket']);
     Route::put('/tickets/{ticket}/decline', [TicketController::class, 'declineTicket']);
+    Route::put('/tickets/{ticket}/undecline', [TicketController::class, 'undeclineTicket']);
+
+    // Ticket-level workflow. Sub-issues remain work-line details and audit
+    // evidence, never separate user-facing work orders.
+    Route::put('/tickets/{ticket}/assign-mechanic', [TicketController::class, 'assignTicketMechanic']);
+    Route::put('/tickets/{ticket}/submit-for-verification', [TicketController::class, 'submitForVerification']);
+    Route::put('/tickets/{ticket}/verify', [TicketController::class, 'verifyTicket']);
 
     // Phase 2 — Custodian: Submit inspection, populate the sub-issue list
     Route::put('/tickets/{ticket}/inspect', [TicketController::class, 'submitInspection']);

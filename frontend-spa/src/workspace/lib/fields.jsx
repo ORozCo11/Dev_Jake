@@ -462,6 +462,7 @@ export function scheduleFields(lookups, allHubs = [], isEdit = false, suggestOnl
         { value: 12, label: 'Year' },
       ],
       otherLabel: 'Add Custom Month',
+      otherInputLabel: 'Repeat every how many months? (1–60)',
       otherPlaceholder: 'e.g. 4',
       otherSuffix: 'months',
       otherType: 'number',

@@ -17,6 +17,14 @@ export function issueNeedsTicket(row) {
   return ['Pending', 'Under Review'].includes(row.status) && !row.maintenance_ticket;
 }
 
+// A "pre-ticket" report — either no ticket yet, or one still awaiting Admin
+// review. Once a proposal is approved it graduates into a trackable ticket
+// (see the Custodian's "My Tickets" tab) and drops out of this list, so the
+// Issue Reports table only ever shows what's still a plain report.
+export function issueIsPreTicket(row) {
+  return !row.maintenance_ticket || ['Pending Approval', 'Declined'].includes(row.maintenance_ticket.status);
+}
+
 export const MAINTENANCE_PROGRESS_STAGES = ['Assigned', 'Under Repair', 'For Verification', 'Completed'];
 
 // Where a record sits on the stage trail. Shared by the detail page's stepper
@@ -269,29 +277,27 @@ export const READINESS_BADGE = {
 // from the ticket + its sub-issues, so that's visible at a glance instead of
 // hiding behind a generic unread-notification counter.
 export function ticketWorkflowStage(ticket) {
+  // 'Open' only ever appears on historical tickets created before the
+  // one-mechanic-per-ticket redesign (new tickets go straight from
+  // proposal to Pending Approval to Active) — kept so old data still
+  // reads sensibly.
   if (ticket.status === 'Open') {
     return { label: 'Awaiting Custodian Inspection', tone: 'waiting' };
   }
-  if (ticket.status !== 'Active') {
-    return null; // Closed/Cancelled — the status badge alone already says enough.
-  }
-  const subIssues = ticket.sub_issues ?? [];
-  if (subIssues.some((s) => s.status === 'For Confirmation')) {
-    return { label: 'Awaiting Your Confirmation', tone: 'action' };
-  }
-  if (subIssues.some((s) => s.status === 'Open')) {
-    return { label: 'Diagnosed — Assign a Mechanic', tone: 'action' };
-  }
-  // The mechanic already submitted repair logs (logRepairs sets this) — the
-  // ball is in the Custodian's court now, not stuck/idle like the generic
-  // "In Repair" fallback below implies.
-  if (subIssues.some((s) => s.status === 'For Inspection')) {
+  if (ticket.status === 'For Verification') {
     return { label: 'Awaiting Custodian Verification', tone: 'waiting' };
   }
-  const total = ticket.progress?.total ?? subIssues.length;
-  const done = ticket.progress?.done ?? subIssues.filter((s) => s.status === 'Done').length;
-  if (total > 0 && done === total) {
-    return { label: 'Ready to Close', tone: 'action' };
+  if (ticket.status !== 'Active') {
+    return null; // Pending Approval/Closed/Cancelled — the status badge alone already says enough.
+  }
+  const subIssues = ticket.sub_issues ?? [];
+  if (subIssues.some((s) => s.status === 'Pending Approval')) {
+    return { label: 'Cannibalized Repair — Awaiting Approval', tone: 'action' };
+  }
+  // Every sub-issue has its repair logged (For Inspection) — the mechanic
+  // just needs to submit the ticket for the Custodian to verify.
+  if (subIssues.length > 0 && subIssues.every((s) => s.status === 'For Inspection')) {
+    return { label: 'Ready to Submit for Verification', tone: 'action' };
   }
   return { label: 'In Repair', tone: 'info' };
 }
@@ -312,28 +318,32 @@ export const TICKET_STAGE_STYLE = {
 // TICKET PHASE HELPERS
 // =========================================================================
 
-// A ticket now only moves through 3 stages at the ticket level — the real
-// work happens per sub-issue (see TicketDetailPanel's sub-issue checklist,
-// which uses this same TicketStatusBadge for each line's own status).
-export const phaseOrder = ['Open', 'Active', 'Closed'];
+// The ticket-level flow: a proposal awaits Admin approval, becomes Active
+// while the assigned mechanic works every sub-issue, goes For Verification
+// once all repairs are logged, and the Custodian's verification closes it.
+export const phaseOrder = ['Pending Approval', 'Active', 'For Verification', 'Closed'];
 
 export const PHASE_STEP_ICONS = {
-  'Open': 'clipboard',
+  'Pending Approval': 'clipboard',
   'Active': 'wrench',
+  'For Verification': 'search',
   'Closed': 'checkCircle',
 };
 
 export const PHASE_STEP_COLORS = {
-  'Open': '#2563eb',
+  'Pending Approval': '#a16207',
   'Active': '#d97706',
+  'For Verification': '#7c3aed',
   'Closed': '#16a34a',
 };
 
-// Toast after a Custodian's repair verification — names who was notified
-// (TicketController::verifyRepair: Admins on approval, the mechanic on
-// rejection) so the next step is clear.
-export function verifySuccessMessage(payload) {
+// Toast after the Custodian's whole-ticket verification
+// (TicketController::verifyTicket): approval closes the ticket; a failed
+// check returns it to the mechanic, who is notified.
+export function verifyOutcomeMessage(payload) {
   return payload?.verification_verdict === 'Rejected'
-    ? 'Repair rejected and sent back. The mechanic has been notified to redo it.'
-    : 'Repair approved. The Admin has been notified to confirm it.';
+    ? 'Returned for repair — the mechanic has been notified.'
+    : 'Repair verified — ticket closed.';
 }
+// Older name, kept for existing call sites.
+export const verifySuccessMessage = verifyOutcomeMessage;

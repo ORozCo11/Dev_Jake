@@ -178,19 +178,49 @@ class PhaseB3DataScopingTest extends TestCase
     }
 
     #[Test]
-    public function custodian_sees_every_issue_report_in_the_barangay_not_just_their_own(): void
+    public function custodian_cannot_edit_cancel_or_restore_another_barangays_schedule(): void
     {
-        $vehicle = $this->vehicle();
-        VehicleIssueReport::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'issue_type' => 'Flat tire',
-            'issue_description' => 'Front-left tire flat.',
-            'reported_by' => $this->admin->id,
+        $otherBarangayId = Barangay::create(['name' => 'Other Barangay', 'city_id' => $this->cityId])->id;
+        $foreignVehicle = $this->vehicle();
+        $foreignVehicle->update(['barangay_id' => $otherBarangayId]);
+        $schedule = VehicleMaintenanceSchedule::create([
+            'vehicle_id' => $foreignVehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+            'scheduled_date' => now()->addWeek()->toDateString(),
+            'status' => 'Cancelled',
+            'created_by' => $this->admin->id,
         ]);
 
         Sanctum::actingAs($this->custodian, ['*']);
-        $response = $this->getJson('/api/issues')->assertOk();
-        $this->assertCount(1, $response->json());
+        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", ['notes' => 'Not ours.'])->assertNotFound();
+        $this->deleteJson("/api/maintenance-schedules/{$schedule->schedule_id}")->assertNotFound();
+        $this->postJson("/api/maintenance-schedules/{$schedule->schedule_id}/restore")->assertNotFound();
+        $this->assertNull($schedule->fresh()->notes);
+    }
+
+    #[Test]
+    public function custodian_sees_own_and_mechanic_reports_but_not_another_custodians(): void
+    {
+        $vehicle = $this->vehicle();
+        $otherCustodian = $this->user('Custodian');
+        $report = fn (User $by) => VehicleIssueReport::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'issue_type' => 'Flat tire',
+            'issue_description' => 'Front-left tire flat.',
+            'reported_by' => $by->id,
+        ])->issue_report_id;
+
+        $own = $report($this->custodian);
+        $fromMechanic = $report($this->mechanic);
+        $report($otherCustodian);
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $ids = collect($this->getJson('/api/issues')->assertOk()->json())->pluck('issue_report_id')->sort()->values()->all();
+        $this->assertSame([$own, $fromMechanic], $ids);
+
+        // Admin still sees the whole barangay's queue.
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->assertCount(3, $this->getJson('/api/issues')->assertOk()->json());
     }
 
     #[Test]

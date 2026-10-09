@@ -19,15 +19,18 @@ class VehicleMaintenanceSchedule extends Model
         'service_location',
         'notes',
         'status',
+        'decline_reason',
         'created_by',
         'assigned_to',
         'recurrence_months',
         'resulting_maintenance_id',
         'resulting_ticket_id',
+        'due_notified_at',
     ];
 
     protected $casts = [
         'recurrence_months' => 'integer',
+        'due_notified_at' => 'datetime',
     ];
 
     public function vehicle()

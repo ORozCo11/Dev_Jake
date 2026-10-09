@@ -7,8 +7,10 @@ import { functionalTestChecklist } from '../lib/fields';
 const peso = (n) => `₱${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
 // Custodian's check of a mechanic's repair. Shows what was reported and what
-// was done BEFORE asking for a verdict; any failed test rejects it back to
-// the mechanic (with a required reason), otherwise it goes to the Admin.
+// was done BEFORE asking for a verdict; any failed test returns it to the
+// mechanic for repair (with a required reason), otherwise approving closes
+// the ticket and returns the vehicle to service (TicketController::verifyTicket
+// re-checks all of this server-side).
 export function VerificationForm({ target, onCancel, onSubmit }) {
   const id = useId();
   const checklist = useMemo(() => functionalTestChecklist(target?.vehicle), [target?.vehicle]);
@@ -64,7 +66,7 @@ export function VerificationForm({ target, onCancel, onSubmit }) {
       </section>
 
       <p className="readiness-form-intro">
-        Operate the vehicle and mark each test. A repair is accepted only once it actually works — any failed test sends it back to the mechanic.
+        Operate the vehicle and mark each test. A repair is accepted only once it actually works — any failed test returns it to the mechanic for repair.
       </p>
 
       <PassFailChecklist
@@ -80,7 +82,7 @@ export function VerificationForm({ target, onCancel, onSubmit }) {
         <div className={`readiness-outcome${failed.length ? ' is-failed' : ' is-ok'}`} role="status">
           <Icon name={failed.length ? 'alert' : 'checkCircle'} size={18} />
           <div>
-            <strong>{failed.length ? 'This repair will be REJECTED and sent back to the mechanic' : 'This repair will be APPROVED and sent to the Admin to confirm'}</strong>
+            <strong>{failed.length ? 'A test failed — this will be RETURNED to the mechanic for repair' : 'All tests passed — approving CLOSES this ticket and returns the vehicle to service'}</strong>
             {failed.length > 0 && <ul>{failed.map((r) => <li key={r.item}>Failed: {r.item}</li>)}</ul>}
           </div>
         </div>
@@ -108,9 +110,37 @@ export function VerificationForm({ target, onCancel, onSubmit }) {
         {hint && <p className="readiness-hint">{hint}</p>}
         <button type="button" className="ghost-button" onClick={onCancel} disabled={submitting}>Cancel</button>
         <button type="button" className={failed.length ? 'danger-button' : 'primary-button'} onClick={submit} disabled={!canSubmit} aria-disabled={!canSubmit}>
-          {submitting ? 'Submitting…' : failed.length ? 'Reject & send back' : 'Approve repair'}
+          {submitting ? 'Submitting…' : failed.length ? 'Return for repair' : 'Approve repair'}
         </button>
       </div>
     </div>
   );
+}
+
+// The Custodian's whole-ticket verification — the vehicle-type functional
+// test above, not a bare checkbox: operate the vehicle, mark each check, then
+// either Approve (all pass + attestation; closes the ticket) or Return for
+// Repair (any failed check + reason; ticket goes back to the mechanic). POSTs
+// to /tickets/{id}/verify, which re-checks all of it and enforces who may
+// verify (TicketController::verifyTicket).
+//
+// Pass `ticket` to fill the verify-context panel from the whole ticket (its
+// sub-issues' parts/cost/logs rolled up); `vehicle` alone still works.
+export function TicketVerificationForm({ ticket, vehicle, onCancel, onSubmit }) {
+  const target = useMemo(() => {
+    if (!ticket) return { vehicle };
+    const subs = ticket.sub_issues ?? [];
+    const parts = subs.map((si) => si.parts_used).filter(Boolean).join(', ');
+    const cost = subs.reduce((sum, si) => sum + (Number(si.maintenance_cost) || 0), 0);
+    const logs = ticket.repair_logs || subs.map((si) => si.repair_logs).filter(Boolean).join('\n\n');
+    return {
+      vehicle: vehicle ?? ticket.vehicle,
+      title: ticket.ticket_title ?? ticket.title,
+      assigned_mechanic: ticket.assigned_mechanic,
+      parts_used: parts || null,
+      maintenance_cost: cost,
+      repair_logs: logs || null,
+    };
+  }, [ticket, vehicle]);
+  return <VerificationForm target={target} onCancel={onCancel} onSubmit={onSubmit} />;
 }

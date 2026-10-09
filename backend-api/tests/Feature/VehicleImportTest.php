@@ -172,11 +172,15 @@ class VehicleImportTest extends TestCase
     }
 
     #[Test]
-    public function a_custodian_without_delegation_cannot_import(): void
+    public function a_custodian_can_import_even_without_the_legacy_delegation_flag(): void
     {
+        // User::canRegisterVehicles() no longer requires the extra
+        // can_register_vehicles flag on top of the role — vehicle
+        // registration (including bulk import) is now a standard Custodian
+        // duty for ANY Custodian account.
         $this->custodian->update(['can_register_vehicles' => false]);
         Sanctum::actingAs($this->custodian, ['*']);
-        $this->preview($this->xlsx([$this->row()]))->assertForbidden();
+        $this->preview($this->xlsx([$this->row()]))->assertCreated();
     }
 
     #[Test]

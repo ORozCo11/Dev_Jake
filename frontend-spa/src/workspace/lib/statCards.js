@@ -26,13 +26,19 @@ export const ISSUE_STAT_CARDS = [
   { key: 'Resolved', label: 'Resolved', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
 ];
 
-// "Scheduled" used to be one bucket — now split into 4 urgency buckets (how
-// soon each row is due) so an Admin/Mechanic can spot what needs attention
-// today vs what's still days out, instead of one undifferentiated count.
+// Severity filter chips — same colors as the Issue Reports bar chart's own
+// High/Medium/Low segments (see the StackedBarChart segments).
+export const ISSUE_SEVERITY_CHIP_BG = { High: '#fee2e2', Medium: '#fef3c7', Low: '#e0f2fe' };
+export const ISSUE_SEVERITY_CHIP_COLOR = { High: '#b91c1c', Medium: '#b45309', Low: '#0369a1' };
+
+// Simplified per product direction: the urgency breakdown (Overdue/1-3
+// Days/4-7 Days) was its own set of cards here — removed in favor of a
+// plain upcoming list elsewhere on the dashboard. Row-level "Overdue"
+// badges (isScheduleOverdue) still show urgency per-row; this stat row now
+// only tracks status.
 export const SCHEDULE_STAT_CARDS = [
-  { key: 'Overdue', label: 'Due Today / Overdue', icon: 'alert', bg: '#fee2e2', color: '#b91c1c' },
-  { key: 'Due1to3', label: '1 - 3 Days', icon: 'calendar', bg: '#ffedd5', color: '#c2410c' },
-  { key: 'Due4to7', label: '4 - 7 Days', icon: 'calendar', bg: '#fef3c7', color: '#b45309' },
+  { key: 'Pending Approval', label: 'Pending Approval', icon: 'alert', bg: '#fef3c7', color: '#b45309' },
+  { key: 'Declined', label: 'Declined', icon: 'close', bg: '#fee2e2', color: '#b91c1c' },
   { key: 'Completed', label: 'Completed', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
   // A schedule marked "Completed" only means the calendar task is done —
   // its record might still be sitting unverified. Its own filter so those
@@ -59,14 +65,18 @@ export const MAINTENANCE_RECORD_STAT_CARDS = [
   { key: 'Completed', label: 'Completed', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
 ];
 
+// 'Open' removed — no new ticket ever reaches that status (propose goes
+// straight to Pending Approval); it only ever existed on tickets created
+// before the one-mechanic-per-ticket redesign.
 export const TICKET_STAT_CARDS = [
-  { key: 'Open', label: 'Open', icon: 'alert', bg: '#e0f2fe', color: '#0369a1' },
-  // Custodian-proposed tickets awaiting Admin approve/decline — a distinct
-  // bucket from 'Open' (Admin-created, already dispatched for inspection).
   { key: 'Pending Approval', label: 'Proposals', icon: 'clipboard', bg: '#fef9c3', color: '#a16207' },
+  // "For Verification" was here, but that's a Custodian action, not
+  // something Admin does anything with — Declined is the one Admin needs a
+  // quick count of, since those proposals are waiting on a reconsider.
+  { key: 'Declined', label: 'Declined', icon: 'close', bg: '#fee2e2', color: '#b91c1c' },
   { key: 'Active', label: 'Active', icon: 'wrench', bg: '#fef3c7', color: '#b45309' },
   { key: 'Closed', label: 'Closed', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
-  { key: 'Cancelled', label: 'Cancelled', icon: 'close', bg: '#fee2e2', color: '#b91c1c' },
+  { key: 'Cancelled', label: 'Cancelled', icon: 'close', bg: '#f1f5f9', color: '#475569' },
 ];
 
 export const TICKET_INSPECTION_STAT_CARDS = [
@@ -83,15 +93,22 @@ export const TICKET_WORK_ORDER_STAT_CARDS = [
   { key: 'Submitted', label: 'Submitted', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
 ];
 
+// 'Pending' relabeled 'To Verify' — this is the Custodian's verification
+// queue (For Verification tickets), same term the Dashboard's own stat uses
+// for it; the old label read as just another ticket-status bucket instead
+// of the one that needs this Custodian's action.
 export const TICKET_VERIFICATION_STAT_CARDS = [
-  { key: 'Pending', label: 'Pending', icon: 'checkCircle', bg: '#fef3c7', color: '#b45309' },
+  { key: 'Active', label: 'Active', icon: 'wrench', bg: '#fef9c3', color: '#a16207' },
+  { key: 'Pending', label: 'To Verify', icon: 'checkCircle', bg: '#fef3c7', color: '#b45309' },
   { key: 'Verified', label: 'Verified', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
 ];
 
+// My Tasks -> History: a closed book, not a live board — every bucket here
+// is already finished, so the cards break down HOW it finished rather than
+// repeating "needs action"/"in progress" counts that would always read 0.
 export const WORK_TRACKER_STAT_CARDS = [
-  { key: 'attention', label: 'Needs Your Action', icon: 'alert', bg: '#fef3c7', color: '#b45309' },
-  { key: 'progress', label: 'In Progress', icon: 'wrench', bg: '#e0f2fe', color: '#0369a1' },
-  { key: 'completed', label: 'Completed', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
+  { key: 'Done', label: 'Done', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
+  { key: 'Deferred', label: 'Deferred', icon: 'alert', bg: '#fef3c7', color: '#b45309' },
 ];
 
 // One consistent pill color per module string, picked deterministically (a

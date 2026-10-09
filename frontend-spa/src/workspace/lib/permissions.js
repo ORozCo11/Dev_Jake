@@ -15,7 +15,12 @@ export const modulesByRole = {
   Admin: [
     { section: null, items: [['dashboard', 'Dashboard']] },
     { section: 'Operations', icon: 'clipboard', items: [
-      ['issues', 'Issue Reports'],
+      // Issue Reports was its own sidebar page — removed as redundant (no
+      // ticket linked, Admin's only action was Dismiss). The one thing worth
+      // keeping, a glance at the latest reports, now lives on Maintenance
+      // Tickets instead (see LatestIssueCard there). The underlying feature
+      // and data aren't gone — Custodian/Maintenance Personnel still report
+      // issues, and a ticket's "From Issue Report #N" link still opens one.
       ['tickets', 'Maintenance Tickets'],
       ['schedules', 'Maintenance Schedule'],
       ['maintenance', 'Maintenance Records'],
@@ -50,8 +55,9 @@ export const modulesByRole = {
     // 'reportOrPropose' ('issues' module under the hood) is the Issue
     // Reports list, with a "Report Vehicle Issue" action and a "Propose
     // Ticket" action both inline in its header — not a separate chooser
-    // screen. 'myTasks' stays a tabbed container (Assigned Inspections /
-    // Repair Verification / Work Tracker — see renderModule's tab bar).
+    // screen. 'myTasks' stays a tabbed container (Repair Verification / Work
+    // Tracker — see renderModule's tab bar; the old Assigned Inspections tab
+    // was removed since inspection is no longer part of the live workflow).
     // Neither key has its own moduleEndpoints entry — both are pure
     // navigation/presentation wrappers around shared components/data.
     { section: 'Vehicle Operations', icon: 'checkCircle', items: [
@@ -61,33 +67,40 @@ export const modulesByRole = {
     ] },
     { section: 'Maintenance', icon: 'calendar', items: [
       ['schedules', 'Maintenance Schedule'],
-      // Merged "Maintenance Status" + "Maintenance Records" — same
-      // underlying data (see maintenanceLedgerLastTab above), tabbed.
-      ['maintenanceLedger', 'Maintenance Records'],
+      // Same single ledger Admin sees now — the separate "Needs
+      // Verification" tab/page was removed; a Custodian's Verify action is
+      // now a row-level button in this same table (see maintenanceColumns'
+      // record.verify branch), matching Admin's "no tabs" reference design.
+      ['maintenance', 'Maintenance Records'],
     ] },
   ],
   'Maintenance Personnel': [
-    { section: null, items: [['dashboard', 'Dashboard']] },
+    // "View Vehicles" used to sit alone under its own collapsible "Vehicles"
+    // section — a dropdown for exactly one row. With nothing else ever
+    // likely to join it (see the removed-items notes below), it's a plain
+    // top-level item next to Dashboard instead, same as the un-sectioned
+    // group above.
+    { section: null, items: [['dashboard', 'Dashboard'], ['vehicles', 'View Vehicles']] },
     { section: 'Maintenance', icon: 'wrench', items: [
+      // Work Tracker used to be its own sidebar entry/page here — merged
+      // into My Work Orders as an in-page Archive toggle (mirrors Admin's
+      // Maintenance Tickets "Archives" button) so this role has one ticket
+      // page instead of two. Custodian's own My Tasks -> History tab still
+      // uses the WorkTrackerModule component this used to route to — only
+      // this role's standalone entry point was removed.
       ['ticketWorkOrders', 'My Work Orders'],
-      ['workTracker', 'Work Tracker'],
-      ['maintenanceLedger', 'Maintenance Records'],
+      ['maintenance', 'Maintenance Records'],
       ['schedules', 'Maintenance Schedule'],
     ] },
-    // Same Issue Reports list Admin/Custodian use, scoped server-side to
-    // reports this account personally filed — the "Report Technical Issue"
-    // action lives inline in its header (issue.create), gated the same way
-    // for every role that holds it.
-    { section: 'Issues', icon: 'issues', items: [
-      ['issues', 'Vehicle Issues'],
-    ] },
+    // "Vehicle Issues" removed per product direction — redundant for this
+    // role (not necessary; a mechanic's own ticket/work-order flow already
+    // captures what's wrong with a vehicle). issue.create still lists
+    // Maintenance Personnel in config/permissions.php for now, just with no
+    // UI entry point left to reach it from.
     // No standalone "Vehicle Documents" sidebar item for any role — the
     // module lives only on the vehicle profile's own Files card now
     // (document.view/.create abilities). Maintenance Personnel reaches it
-    // the same way: open a vehicle from View Vehicles below.
-    { section: 'Vehicles', icon: 'vehicle', items: [
-      ['vehicles', 'View Vehicles'],
-    ] },
+    // the same way: open a vehicle from View Vehicles above.
   ],
 };
 
@@ -110,13 +123,12 @@ export function canDo(user, ability) {
   return Array.isArray(user.abilities) && user.abilities.includes(ability);
 }
 
-// Production-readiness audit finding #6 — mirrors User::canRegisterVehicles()
-// on the backend. canDo(user, 'vehicle.create') alone can't express this: the
-// ability only says Admin/Custodian are the eligible ROLES, not which
-// specific Custodian accounts an Admin has actually delegated it to.
+// Mirrors User::canRegisterVehicles() on the backend. Vehicle registration
+// is a standard Custodian duty now — the per-account can_register_vehicles
+// delegation flag is no longer required (kept in the data model for history,
+// just not read here anymore).
 export function canRegisterVehicles(user) {
-  if (hasRole(user, 'Admin')) return true;
-  return hasRole(user, 'Custodian') && !!user?.can_register_vehicles;
+  return hasRole(user, 'Admin') || hasRole(user, 'Custodian');
 }
 
 export function userRoles(user) {

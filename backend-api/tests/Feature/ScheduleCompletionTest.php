@@ -21,12 +21,16 @@ class ScheduleCompletionTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+    private User $custodian;
     private User $mechanic;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->admin = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        // schedule.create/edit are Custodian-only now (config/permissions.php,
+        // streamlined-workflow spec 2026-10-12).
+        $this->custodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian']]);
         $this->mechanic = User::factory()->create(['role' => 'Maintenance Personnel', 'roles' => ['Maintenance Personnel']]);
     }
 
@@ -244,14 +248,13 @@ class ScheduleCompletionTest extends TestCase
     }
 
     #[Test]
-    public function a_new_schedule_always_starts_scheduled_even_if_a_different_status_is_submitted(): void
+    public function a_new_schedule_always_starts_pending_approval_even_if_a_different_status_is_submitted(): void
     {
         $vehicle = $this->vehicle();
-        // Admin creates schedules (spec §19); this test only cares about the
-        // status-ignored behavior.
-        $custodian = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin']]);
+        // This test only cares about the status-ignored behavior, not role
+        // gating — schedule.create is Custodian-only now.
 
-        Sanctum::actingAs($custodian, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $response = $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
@@ -259,7 +262,9 @@ class ScheduleCompletionTest extends TestCase
             'status' => 'Completed', // must be silently ignored — not a valid create input
         ])->assertCreated();
 
-        $this->assertSame('Scheduled', $response->json('status'));
+        // Parks at Pending Approval until an Admin reviews it — see
+        // approveSchedule()/declineSchedule() in FleetController.
+        $this->assertSame('Pending Approval', $response->json('status'));
     }
 
     #[Test]
@@ -269,9 +274,9 @@ class ScheduleCompletionTest extends TestCase
         // work record and, if recurring, the next occurrence). The plain edit
         // form must not be able to silently skip both.
         $vehicle = $this->vehicle();
-        $schedule = $this->schedule($vehicle);
+        $schedule = $this->schedule($vehicle, ['created_by' => $this->custodian->id]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
             'status' => 'Completed',
         ])->assertUnprocessable();
@@ -283,9 +288,9 @@ class ScheduleCompletionTest extends TestCase
     public function a_schedule_can_still_be_cancelled_through_the_update_endpoint(): void
     {
         $vehicle = $this->vehicle();
-        $schedule = $this->schedule($vehicle);
+        $schedule = $this->schedule($vehicle, ['created_by' => $this->custodian->id]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
             'status' => 'Cancelled',
         ])->assertOk();

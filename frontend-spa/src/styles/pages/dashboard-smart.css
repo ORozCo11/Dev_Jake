@@ -2,6 +2,14 @@
 /* Smart dashboard redesign */
 .dashboard-grid-smart {
   gap: 18px;
+  /* The Custodian/Maintenance-Personnel lean dashboard mixes col-span-7 and
+     col-span-5 cards whose count and order vary by role combination (a
+     dual-role account sees more cards than either role alone) — spans that
+     don't sum to 12 per row otherwise leave a visible gap next to every
+     unpaired col-span-7 card instead of packing cleanly. `dense` lets the
+     grid backfill those gaps with whichever later card actually fits,
+     regardless of exact DOM order. */
+  grid-auto-flow: row dense;
 }
 
 .dashboard-grid-smart > .dashboard-banner-compact,

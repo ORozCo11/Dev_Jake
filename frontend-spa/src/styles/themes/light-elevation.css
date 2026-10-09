@@ -69,15 +69,20 @@ html .ticket-detail-panel.is-page .ticket-process-stat-grid {
   border-top: 0;
 }
 html .ticket-detail-panel.is-page .ticket-process-stat {
-  align-items: center; text-align: center; gap: 2px;
-  padding: 8px 6px;
+  align-items: center; text-align: center; gap: 5px;
+  padding: 10px 6px;
   background: #fff;
   border: 1px solid #e8edf4;
   border-radius: 10px;
 }
-html .ticket-detail-panel.is-page .ticket-process-stat svg { display: block; color: #64748b; }
-html .ticket-detail-panel.is-page .ticket-process-stat span { font-size: .58rem; letter-spacing: .05em; }
-html .ticket-detail-panel.is-page .ticket-process-stat strong { font-size: .95rem; color: #0f172a; }
+html .ticket-detail-panel.is-page .ticket-process-stat-icon { background: #eff6ff; color: #2563eb; width: 22px; height: 22px; }
+html .ticket-detail-panel.is-page .ticket-process-stat-icon svg { display: block; }
+html .ticket-detail-panel.is-page .ticket-process-stat-label { font-size: .58rem; letter-spacing: .05em; }
+html .ticket-detail-panel.is-page .ticket-process-stat-value { font-size: 1.02rem; color: #0f172a; }
+html .ticket-detail-panel.is-page .ticket-detail-actions {
+  border-radius: 0 0 10px 10px;
+  background: #ffffff;
+}
 @media (max-width: 1100px) {
   html .ticket-detail-panel.is-page .ticket-process-hero { grid-template-columns: auto minmax(0, 1fr); }
   html .ticket-detail-panel.is-page .ticket-process-next-card { grid-column: 1 / -1; }

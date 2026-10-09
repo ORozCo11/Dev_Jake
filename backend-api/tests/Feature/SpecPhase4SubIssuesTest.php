@@ -81,10 +81,21 @@ class SpecPhase4SubIssuesTest extends TestCase
     }
 
     #[Test]
-    public function a_dispatched_sub_issue_cannot_be_edited_or_removed_and_the_last_one_stays(): void
+    public function a_sub_issue_locks_once_its_repair_is_logged_but_the_last_one_can_never_be_removed(): void
     {
+        // Streamlined workflow (2026-10-12) — per-sub-issue mechanic dispatch
+        // is gone (approveTicket() bulk-assigns the whole ticket's one
+        // mechanic), so a merely-dispatched ('Under Repair') sub-issue is
+        // still editable/removable; the edit window only closes once its
+        // repair has actually been LOGGED ('For Inspection'/'Pending
+        // Approval') via logRepairs().
         Sanctum::actingAs($this->admin, ['*']);
         $this->dispatchTo($this->sub);
+        $this->putJson($this->url("/{$this->sub->sub_issue_id}"), ['title' => 'Low coolant (confirmed)'])
+            ->assertOk()
+            ->assertJsonPath('title', 'Low coolant (confirmed)');
+
+        $this->sub->update(['status' => 'For Inspection']);
         $this->putJson($this->url("/{$this->sub->sub_issue_id}"), ['title' => 'x'])->assertUnprocessable();
         $this->deleteJson($this->url("/{$this->sub->sub_issue_id}"))->assertUnprocessable();
 

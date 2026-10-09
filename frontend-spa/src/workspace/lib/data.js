@@ -75,20 +75,22 @@ export async function fetchModuleData(key, user) {
   const response = await api.get(endpoint, { params });
   const records = { [key]: response.data };
 
-  // Phase B4 — Maintenance Personnel's Condition Monitoring and standalone
-  // Maintenance Schedule sidebar entries were removed (issue.edit dropped
-  // them entirely, and Maintenance Personnel never gets schedule.create
-  // either way); their assigned schedules instead surface as a second
-  // section on My Work Orders. This
-  // piggybacks a second fetch onto that same module load rather than
-  // giving Maintenance Personnel back a 'schedules' sidebar entry — the
-  // backend already scopes GET /maintenance-schedules to assigned_to = me
-  // for a pure Maintenance Personnel account.
-  if (key === 'ticketWorkOrders' && hasRole(user, 'Maintenance Personnel')) {
+  // The "My Assigned Maintenance Schedules" card section that used to be
+  // piggybacked onto My Work Orders (for when Maintenance Personnel had no
+  // 'schedules' sidebar entry of their own) was removed — that entry is
+  // back, and GET /maintenance-schedules already scopes to assigned_to =
+  // me for a pure Maintenance Personnel account, so it was a plain
+  // duplicate of that page. No second fetch needed here anymore.
+
+  // Admin no longer has a standalone Issue Reports sidebar entry (removed
+  // as redundant — a report with no ticket just sits there for Admin to
+  // dismiss). The "Latest Reports" card that used to live on that page
+  // moves to Maintenance Tickets instead, piggybacked onto this same fetch.
+  if (key === 'tickets' && hasRole(user, 'Admin')) {
     try {
-      const scheduleResponse = await api.get('/maintenance-schedules');
-      records.mySchedules = scheduleResponse.data;
-    } catch { /* optional secondary fetch — the work orders list still loaded fine */ }
+      const issuesResponse = await api.get('/issues');
+      records.issues = issuesResponse.data;
+    } catch { /* optional secondary fetch — the tickets list still loaded fine */ }
   }
 
   return { records };

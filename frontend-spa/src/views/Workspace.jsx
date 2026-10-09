@@ -32,7 +32,7 @@ import { getNotificationStyle } from '../workspace/lib/notifications';
 import { canDo, canRegisterVehicles, hasRole, resolveModuleGroups, roleRoutes } from '../workspace/lib/permissions';
 import { SCHEDULE_EXPORT_COLUMNS, USER_EXPORT_COLUMNS, VEHICLE_EXPORT_COLUMNS, VEHICLE_HISTORY_EXPORT_COLUMNS, exportRowsToCsv } from '../workspace/lib/reports';
 import { CONDITION_STAT_CARDS, ISSUE_STAT_CARDS, MAINTENANCE_RECORD_STAT_CARDS, MY_ASSIGNED_SCHEDULE_CARD, SCHEDULE_STAT_CARDS, VEHICLE_STAT_CARDS } from '../workspace/lib/statCards';
-import { RECURRENCE_LABEL, SCHEDULE_URGENCY_KEYS, flattenSubIssueRows, issueNeedsTicket, scheduleUrgencyBucket, verifySuccessMessage } from '../workspace/lib/workflow';
+import { RECURRENCE_LABEL, SCHEDULE_URGENCY_KEYS, flattenSubIssueRows, scheduleUrgencyBucket, verifyOutcomeMessage, issueIsPreTicket } from '../workspace/lib/workflow';
 import { moduleIcons } from '../workspace/moduleIcons';
 import { ProfileMenu, ProfilePage, UserCard, UserInfoModal, UserViewPage } from '../workspace/users/users';
 
@@ -144,7 +144,7 @@ function Workspace() {
     || (isNewUserPage && 'Add User')
     || (editUserId && 'Update User')
     || (viewUserId && 'User Profile')
-    || (logRepairsTicketId && 'Log Repairs')
+    || (logRepairsTicketId && 'Record Repair Work')
     || (inspectTicketId && 'Inspect Vehicle')
     || (isProfilePage && 'My Profile')
     || (isNewLocationPage && 'Add Location')
@@ -200,7 +200,13 @@ function Workspace() {
   // right module on the very first render, so the page renders instead of
   // sitting blank until the user happens to click the matching sidebar item.
   const [activeModule, setActiveModule] = useState(() => {
-    if (ticketProfileId || isNewTicketPage) return user.role === 'Admin' ? 'tickets' : 'workTracker';
+    // Maintenance Personnel no longer has a standalone 'workTracker' sidebar
+    // entry (folded into 'ticketWorkOrders' own Archive toggle) — prefer that
+    // key so a direct/bookmarked ticket link never seeds activeModule with a
+    // key this role can't reach from its own sidebar. Mirrors breadcrumbModule's
+    // own fallback below. Custodian still has no 'ticketWorkOrders' entry, so
+    // this keeps falling through to 'workTracker' (its My Tasks -> History tab) for them.
+    if (ticketProfileId || isNewTicketPage) return user.role === 'Admin' ? 'tickets' : (modules.some(([k]) => k === 'ticketWorkOrders') ? 'ticketWorkOrders' : 'workTracker');
     if (maintenanceProfileId || isNewMaintenancePage || editMaintenanceId) return 'maintenance';
     if (isNewVehiclePage || vehicleProfileId) return 'vehicles';
     if (isNewCategoryPage || editCategoryId) return 'categories';
@@ -220,7 +226,7 @@ function Workspace() {
   // existing fetch/filter/stat/render keyed off those strings keeps working
   // completely unchanged), this just remembers which of the three tabs was
   // last open so re-clicking the "My Tasks" sidebar row returns you to it.
-  const [myTasksLastTab, setMyTasksLastTab] = useState('ticketInspections');
+  const [myTasksLastTab, setMyTasksLastTab] = useState('ticketVerifications');
   // 'workTracker' is the one key shared between Custodian's My Tasks
   // ("History" tab) and Maintenance Personnel's own separate, untouched
   // "Work Tracker" sidebar entry — this disambiguates which context set it,
@@ -245,26 +251,6 @@ function Workspace() {
     setMaintenanceLedgerLastTab(key);
     setActiveModule(key);
   }, []);
-  // Which sidebar sections the user has folded away, remembered per browser.
-  // Stored as the collapsed set. Unlike a brand-new section defaulting open,
-  // a first-ever visit (nothing in localStorage yet) starts every section
-  // collapsed — an accordion, matching the reference nav's closed-by-default
-  // look — rather than the old always-expanded list. Whichever group holds
-  // the current module still force-expands below regardless of this set.
-  const [collapsedNavGroups, setCollapsedNavGroups] = useState(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem('vms_nav_collapsed_groups') ?? 'null');
-      if (Array.isArray(raw)) return raw;
-    } catch { /* fall through to default: everything collapsed */ }
-    return moduleGroups.map((g) => g.section).filter(Boolean);
-  });
-  const toggleNavGroup = (section) => {
-    setCollapsedNavGroups((current) => {
-      const next = current.includes(section) ? current.filter((s) => s !== section) : [...current, section];
-      localStorage.setItem('vms_nav_collapsed_groups', JSON.stringify(next));
-      return next;
-    });
-  };
   // Any special page can be reached from places that never touch
   // setActiveModule — a notification click, a shared link opened in a new
   // tab, a direct URL/refresh — so `activeModule` itself can't be trusted
@@ -303,13 +289,15 @@ function Workspace() {
     : isNewLocationPage || editLocationVehicleId ? 'locations'
     : logRepairsTicketId ? 'ticketWorkOrders'
     : inspectTicketId ? (hasMyTasksNav ? 'myTasks' : 'ticketInspections')
-    // Plain module-list view (no special sub-page open) for one of the three
-    // merged "My Tasks" queues — 'ticketInspections'/'ticketVerifications'
-    // are Custodian-only regardless, 'workTracker' also covers Maintenance
-    // Personnel's own separate entry, disambiguated by workTrackerViaMyTasks.
+    // Plain module-list view (no special sub-page open) for one of the merged
+    // "My Tasks" queues — 'ticketVerifications' is Custodian-only regardless,
+    // 'workTracker' also covers Maintenance Personnel's own separate entry,
+    // disambiguated by workTrackerViaMyTasks. Inspection was removed from
+    // this merged container (see showMyTasksContainer above) — no path here
+    // highlights it anymore, though the standalone page is left reachable by
+    // direct link (inspectTicketId above) for any stale/bookmarked URL.
     : (hasMyTasksNav && (
-        activeModule === 'ticketInspections'
-        || activeModule === 'ticketVerifications'
+        activeModule === 'ticketVerifications'
         || (activeModule === 'workTracker' && workTrackerViaMyTasks)
       )) ? 'myTasks'
     : (hasReportOrProposeNav && activeModule === 'issues') ? 'reportOrPropose'
@@ -334,6 +322,16 @@ function Workspace() {
       // saves a click for the common case; still fully editable.
       : { scheduled_date: tomorrowDate, ...(prefilledScheduleData ?? {}) }
   ), [editScheduleId, records.schedules, prefilledScheduleData, tomorrowDate]);
+  // Set right before navigating to /conditions/new from the "+" on a
+  // specific "Not Checked" vehicle row — same pattern as prefilledScheduleData
+  // above, so that vehicle is already selected instead of asking the
+  // Custodian to pick it again from a vehicle they just clicked.
+  const [prefilledConditionVehicleId, setPrefilledConditionVehicleId] = useState(null);
+  const conditionInitialValues = useMemo(() => (
+    editConditionId
+      ? (records.conditions ?? []).find((c) => String(c.condition_check_id) === String(editConditionId))
+      : (prefilledConditionVehicleId ? { vehicle_id: prefilledConditionVehicleId } : EMPTY_OBJ)
+  ), [editConditionId, records.conditions, prefilledConditionVehicleId]);
   // Legacy rows may have no `roles` list yet — seed it from the primary role.
   // Memoized (not an inline IIFE) for the same reason as scheduleInitialValues
   // above — otherwise this object gets a new reference on every render and
@@ -356,6 +354,9 @@ function Workspace() {
   // Admin-only) — hands a still-open schedule to a different Maintenance
   // Personnel without cancelling and re-booking it.
   const [reassignScheduleTarget, setReassignScheduleTarget] = useState(null);
+  // Admin's "Decline" action on a Pending Approval row (schedule.decline
+  // ability, Admin-only) — collects a reason, same modal pattern as Reassign.
+  const [declineScheduleTarget, setDeclineScheduleTarget] = useState(null);
   // After a Custodian passes a verification they're already standing at the
   // vehicle — offer the Readiness Check right then instead of making them
   // come back for a second visit. Holds the vehicle to check, or null.
@@ -371,8 +372,13 @@ function Workspace() {
     setMaintenanceViewMode(mode);
     localStorage.setItem('vms_maintenance_view', mode);
   };
+  // Admin's Maintenance Schedule defaults to the card ("ticket") view rather
+  // than the plain table — a schedule reads more like a ticket now that its
+  // row-level actions are ownership-gated (see scheduleColumns). Everyone
+  // else keeps the table default. Still just a default: the stored
+  // preference (and the view-mode toggle itself) override it either way.
   const [scheduleViewMode, setScheduleViewMode] = useState(
-    () => localStorage.getItem('vms_schedule_view') || 'table'
+    () => localStorage.getItem('vms_schedule_view') || (hasRole(user, 'Admin') ? 'card' : 'table')
   );
   const changeScheduleViewMode = (mode) => {
     setScheduleViewMode(mode);
@@ -470,7 +476,6 @@ function Workspace() {
   // rest so the module-switch reset effect can clear them all in one place.
   const [filterReadiness, setFilterReadiness] = useState([]); // vehicles: Ready to Respond
   const [filterIssueType, setFilterIssueType] = useState([]); // issues
-  const [filterNoTicket, setFilterNoTicket] = useState(false); // issues: still needs a ticket
   const [filterMaintType, setFilterMaintType] = useState([]); // maintenance
   const [filterSource, setFilterSource] = useState([]); // maintenance
   const [filterActive, setFilterActive] = useState([]); // users
@@ -608,6 +613,10 @@ function Workspace() {
   // (or navigates to) a different module first saw stale/zeroed badges until
   // they happened to visit Dashboard. Poll them independently so they reflect
   // live counts no matter what module is currently open.
+  // Also refreshed the moment the tab/window regains focus — otherwise work
+  // another user did while this tab sat in the background (a mechanic
+  // submitting a repair, an Admin approving) only showed up on the next
+  // 15s tick, so coming back to the tab briefly showed stale counts.
   useEffect(() => {
     let cancelled = false;
     const poll = () => {
@@ -617,7 +626,15 @@ function Workspace() {
     };
     poll();
     const interval = setInterval(poll, 15000);
-    return () => { cancelled = true; clearInterval(interval); };
+    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
+    window.addEventListener('focus', poll);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('focus', poll);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [user, applyModuleData]);
 
   useEffect(() => {
@@ -654,7 +671,6 @@ function Workspace() {
      setFilterDomain([]);
      setFilterReadiness([]);
      setFilterIssueType([]);
-     setFilterNoTicket(false);
      setFilterMaintType([]);
      setFilterSource([]);
      setFilterActive([]);
@@ -719,7 +735,7 @@ function Workspace() {
         return;
       }
 
-      if (activeModule === 'maintenanceStatus') {
+      if (editTarget?.__verify) {
         await api.put(`/maintenance-records/${editTarget.maintenance_id}/verify`, cleanPayload(payload));
         // Capture before clearing editTarget — a Pass means the Custodian is
         // physically at the vehicle right now, which is the cheapest possible
@@ -1165,6 +1181,32 @@ function Workspace() {
     }
   };
 
+  // Admin reviews a Custodian's Pending Approval schedule — approve puts it
+  // live (Scheduled); decline collects a reason, same propose/approve/decline
+  // shape as a ticket proposal. Both work from Declined too (approve direct,
+  // or decline again is a no-op since it's already there).
+  const approveSchedule = async (target) => {
+    setNotice(null);
+    try {
+      await api.put(`/maintenance-schedules/${target.schedule_id}/approve`);
+      await refreshCurrent();
+      setNotice({ type: 'success', text: 'Schedule approved.' });
+    } catch (error) {
+      showError(error, setNotice);
+    }
+  };
+  const declineSchedule = async (target, payload) => {
+    setNotice(null);
+    try {
+      await api.put(`/maintenance-schedules/${target.schedule_id}/decline`, { decline_reason: payload.decline_reason });
+      await refreshCurrent();
+      setNotice({ type: 'success', text: 'Schedule declined.' });
+      setDeclineScheduleTarget(null);
+    } catch (error) {
+      showError(error, setNotice);
+    }
+  };
+
   // Shared success tail for submitFormPage, below — pulled out so the
   // confirm-and-resubmit branch (a Maintenance Schedule conflict warning)
   // can reach the exact same "what happens after this actually saves" path
@@ -1271,13 +1313,22 @@ function Workspace() {
     }
   };
 
-  // Work Orders and Verifications now act per sub-issue, not per ticket —
+  // Work Orders still act per sub-issue (a mechanic's own assigned lines) —
   // flatten each ticket's sub_issues into standalone rows so the existing
   // status filters below (which check row.status) keep working unchanged.
+  // Verification is now a ticket-level step (one Custodian attestation
+  // closes the whole job), so its rows are the tickets themselves —
+  // narrowed to this Custodian's own tickets. Once a ticket is approved it
+  // graduates out of "Issue Reports" (still a pre-ticket proposal) and into
+  // this "My Tickets" queue so the Custodian can trace its progress —
+  // Active tickets are included here too, not just the verification stage.
   const rawRows = activeModule === 'ticketWorkOrders'
     ? flattenSubIssueRows(records[activeModule], user.id)
     : activeModule === 'ticketVerifications'
-      ? flattenSubIssueRows(records[activeModule])
+      ? (records[activeModule] ?? []).filter((t) => (
+          String(t.assigned_custodian_id) === String(user.id)
+          && ['Active', 'For Verification', 'Closed'].includes(t.status)
+        ))
       : records[activeModule] ?? [];
   const visibleRows = useMemo(() => {
     let result = rawRows;
@@ -1333,8 +1384,11 @@ function Workspace() {
       // Recurring schedules auto-regenerate every time one is completed
       // (Workflow 15), so Completed rows pile up indefinitely otherwise —
       // default view stays to just what's actually upcoming/actionable.
-      // Click the Completed or Cancelled stat card to see the rest.
-      result = result.filter((row) => row.status === 'Scheduled');
+      // Pending Approval is included so a newly-submitted schedule is
+      // visible immediately, not just after clicking its stat card — it
+      // needs timely action the same way Scheduled rows do. Click the
+      // Declined/Completed/Cancelled stat card to see the rest.
+      result = result.filter((row) => row.status === 'Scheduled' || row.status === 'Pending Approval');
     }
 
     if (activeModule === 'schedules' && filterStatus.includes('MyAssigned')) {
@@ -1354,9 +1408,16 @@ function Workspace() {
         filterStatus.includes('Submitted') ? row.status !== 'Under Repair' : row.status === 'Under Repair'
       ));
     } else if (activeModule === 'ticketVerifications') {
-      result = result.filter((row) => (
-        filterStatus.includes('Verified') ? row.status !== 'For Inspection' : row.status === 'For Inspection'
-      ));
+      // Rows are now tickets, not sub-issues — Active means still being
+      // repaired, Pending means waiting at For Verification, Verified means
+      // already Closed. No filter selected (Total) shows every one.
+      if (filterStatus.includes('Active')) {
+        result = result.filter((row) => row.status === 'Active');
+      } else if (filterStatus.includes('Verified')) {
+        result = result.filter((row) => row.status === 'Closed');
+      } else if (filterStatus.includes('Pending')) {
+        result = result.filter((row) => row.status === 'For Verification');
+      }
     } else if (activeModule === 'vehicles' && (filterStatus.includes('ReadyToRespond') || filterStatus.includes('NotReady'))) {
       // Retired vehicles are excluded from both buckets up in vehicleStats —
       // match that here too, or "Not Ready" would list units the card's own
@@ -1389,7 +1450,7 @@ function Workspace() {
           return filterPriority.includes(row.maintenance_personnel?.name);
         }
         // Verification queue reuses the Priority slot as a Mechanic filter —
-        // the sub-issue's assigned mechanic, not a priority level.
+        // the ticket's one assigned mechanic, not a priority level.
         if (activeModule === 'ticketVerifications') {
           return filterPriority.includes(row.assigned_mechanic?.name);
         }
@@ -1433,8 +1494,10 @@ function Workspace() {
       result = [...result].sort((a, b) => (a.status === 'Resolved') - (b.status === 'Resolved'));
     }
 
-    if (activeModule === 'issues' && filterNoTicket) {
-      result = result.filter((row) => issueNeedsTicket(row));
+    // Issue Reports only ever shows pre-ticket reports — once a proposal is
+    // approved it graduates into "My Tickets" instead (see issueIsPreTicket).
+    if (activeModule === 'issues') {
+      result = result.filter((row) => issueIsPreTicket(row));
     }
 
     if (activeModule === 'maintenance') {
@@ -1451,7 +1514,12 @@ function Workspace() {
     }
 
     if (activeModule === 'ticketVerifications' && filterVerdict.length) {
-      result = result.filter((row) => filterVerdict.includes(row.verification_verdict));
+      // The verdict now lives per sub-issue, not on the ticket row itself —
+      // match a ticket if any of its sub-issues carry the selected verdict.
+      // Going forward verifyTicket() only ever writes 'Approved' (the old
+      // per-sub-issue reject path is dead), but historical tickets verified
+      // under the prior flow may still carry a 'Rejected' verdict.
+      result = result.filter((row) => (row.sub_issues ?? []).some((si) => filterVerdict.includes(si.verification_verdict)));
     }
 
     if (activeModule === 'histories' && filterActivityType.length) {
@@ -1596,7 +1664,7 @@ function Workspace() {
     }
 
     return result;
-  }, [rawRows, searchQuery, filterCategory, filterCapacity, filterLocation, filterDomain, filterStatus, filterPriority, filterReadiness, filterIssueType, filterNoTicket, filterMaintType, filterSource, filterActive, filterAssignedTo, filterVerdict, filterCheckedBy, filterActivityType, filterVehicle, filterMechanic, filterCustodian, filterDateStart, filterDateEnd, activeModule, condFilterStartDate, condFilterEndDate, archiveStart, archiveEnd, archiveStatusFilter, user.id]);
+  }, [rawRows, searchQuery, filterCategory, filterCapacity, filterLocation, filterDomain, filterStatus, filterPriority, filterReadiness, filterIssueType, filterMaintType, filterSource, filterActive, filterAssignedTo, filterVerdict, filterCheckedBy, filterActivityType, filterVehicle, filterMechanic, filterCustodian, filterDateStart, filterDateEnd, activeModule, condFilterStartDate, condFilterEndDate, archiveStart, archiveEnd, archiveStatusFilter, user.id]);
 
   // Status breakdown for the Vehicle Management stat cards — counted from the
   // full unfiltered fetch so the cards stay accurate regardless of the active
@@ -1619,7 +1687,7 @@ function Workspace() {
   );
 
   const scheduleStats = useMemo(() => {
-    const base = countByValues(records.schedules ?? [], (r) => r.status, ['Scheduled', 'Completed', 'Cancelled']);
+    const base = countByValues(records.schedules ?? [], (r) => r.status, ['Pending Approval', 'Declined', 'Scheduled', 'Completed', 'Cancelled']);
     // A schedule marked "Completed" only means the calendar task is done —
     // the record it produced might still be sitting unverified. Surface
     // that as its own count so it's findable instead of buried among
@@ -1686,10 +1754,17 @@ function Workspace() {
   }, [records.ticketWorkOrders, user.id]);
 
   const verificationStats = useMemo(() => {
-    const rows = flattenSubIssueRows(records.ticketVerifications);
-    const pending = rows.filter((r) => r.status === 'For Inspection').length;
-    return { total: rows.length, Pending: pending, Verified: rows.length - pending };
-  }, [records.ticketVerifications]);
+    // Mirrors rawRows' own scoping above — one row per ticket, restricted to
+    // this Custodian's own tickets ("My Tickets": Active through Closed).
+    const rows = (records.ticketVerifications ?? []).filter((t) => (
+      String(t.assigned_custodian_id) === String(user.id)
+      && ['Active', 'For Verification', 'Closed'].includes(t.status)
+    ));
+    const active = rows.filter((r) => r.status === 'Active').length;
+    const pending = rows.filter((r) => r.status === 'For Verification').length;
+    const verified = rows.filter((r) => r.status === 'Closed').length;
+    return { total: rows.length, Active: active, Pending: pending, Verified: verified };
+  }, [records.ticketVerifications, user.id]);
 
   const vehicleStats = useMemo(() => {
     const rows = records.vehicles ?? [];
@@ -1834,7 +1909,10 @@ function Workspace() {
       deleteRecord,
       handleCreateTicketFromCondition,
       handleSuggestScheduleFromCondition,
-      canDo(user, 'condition.create') ? () => navigate(`${roleRoutes[user.role]}/conditions/new`) : undefined,
+      canDo(user, 'condition.create') ? (row) => {
+        setPrefilledConditionVehicleId(row.vehicle_id);
+        navigate(`${roleRoutes[user.role]}/conditions/new`);
+      } : undefined,
     ),
     [user, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition],
   );
@@ -1859,7 +1937,7 @@ function Workspace() {
   const maintenanceStatusColumnChooser = useColumnChooser('vms_maintenance_status_columns', maintenanceStatusColumnDefs);
 
   const scheduleColumnDefs = useMemo(
-    () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile),
+    () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile, approveSchedule, setDeclineScheduleTarget),
     [navigate, user, deleteRecord, restoreRecord, openTicketProfile],
   );
   const scheduleColumnChooser = useColumnChooser('vms_schedule_columns', scheduleColumnDefs);
@@ -2186,7 +2264,7 @@ function Workspace() {
   // collapsed group header's summed badge below.
   const badgeCountFor = (key) => (
     key === 'myTasks'
-      ? (dashboard?.badge_counts?.ticketInspections ?? 0) + (dashboard?.badge_counts?.ticketVerifications ?? 0)
+      ? (dashboard?.badge_counts?.ticketVerifications ?? 0)
       : (dashboard?.badge_counts?.[key] ?? 0)
   );
 
@@ -2245,22 +2323,9 @@ function Workspace() {
           {/* The Return control now lives in the persistent banner below the
               topbar (Phase A5) — a single, more visible home for it instead
               of duplicating the button here too. */}
+          {/* No bell in the top bar — the list opens from the profile
+              menu's "Notifications" item. */}
           <div className="notifications-dropdown-container" ref={notificationsRef}>
-            <button
-              className="icon-btn notification-btn"
-              title="Notifications"
-              type="button"
-              onClick={() => setShowNotifications(!showNotifications)}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-              {unreadCount > 0 && (
-                <span className="notification-indicator">{unreadCount}</span>
-              )}
-            </button>
-
             {showNotifications && (
               <div className="notifications-dropdown">
                 <div className="notifications-header">
@@ -2365,7 +2430,7 @@ function Workspace() {
         <aside {...nav.sidebarProps}>
           <SidebarDrawerHead nav={nav} />
           <nav className="module-nav" aria-label="Workspace modules">
-            {moduleGroups.map(({ section, icon, items }) => {
+            {moduleGroups.map(({ section, items }) => {
               const renderItem = ([key, label]) => {
                 const badgeCount = badgeCountFor(key);
                 // Admin's "Maintenance Tickets" badge (badge_counts.tickets)
@@ -2401,11 +2466,17 @@ function Workspace() {
                       } else if (isMaintenanceLedgerContainer) {
                         setMaintenanceLedgerTab(maintenanceLedgerLastTab);
                       } else {
-                        // 'workTracker' is the one real key both My Tasks'
-                        // own "History" tab and Maintenance Personnel's
-                        // separate, untouched "Work Tracker" row can set —
-                        // landing here via THIS plain entry (not the My
-                        // Tasks tab bar above) means it's the latter.
+                        // 'workTracker' used to also be a plain sidebar row
+                        // (Maintenance Personnel's standalone "Work Tracker"
+                        // entry) reached via this generic click path — that
+                        // row is gone now (folded into 'ticketWorkOrders'
+                        // own Archive toggle), so no sidebar button sets
+                        // activeModule to 'workTracker' through here anymore.
+                        // This branch is kept, harmlessly unreachable, rather
+                        // than special-cased away — My Tasks' own "History"
+                        // tab still sets 'workTracker' exclusively through
+                        // setMyTasksTab (see the tab bar below), which always
+                        // keeps workTrackerViaMyTasks true.
                         if (key === 'workTracker') setWorkTrackerViaMyTasks(false);
                         // 'reportOrPropose' is a relabeled alias for the
                         // Issue Reports list — its "Report Vehicle Issue" and
@@ -2428,39 +2499,8 @@ function Workspace() {
                 );
               };
 
-              // Ungrouped (Dashboard) — no header, always visible.
-              if (!section) return <div key="__top" className="module-nav-group">{items.map(renderItem)}</div>;
-
-              // Collapsing must never hide an alert: the header carries the
-              // sum of its children's badges so a folded group still shows
-              // there's something inside needing attention.
-              const groupBadge = items.reduce((sum, [key]) => sum + badgeCountFor(key), 0);
-              // The icon-only rail forces every group open (no room for
-              // headers there, and hiding icons would leave no way to reach
-              // them). Otherwise this is a plain accordion — a group holding
-              // the active module used to also force itself open, which made
-              // clicking that group's own header look broken (the click
-              // toggled the stored state, but this override kept rendering
-              // it expanded regardless) — the user's explicit collapse now
-              // always wins.
-              const expanded = nav.isRail || !collapsedNavGroups.includes(section);
-
-              return (
-                <div key={section} className="module-nav-group">
-                  <button
-                    type="button"
-                    className="module-nav-section"
-                    onClick={() => toggleNavGroup(section)}
-                    aria-expanded={expanded}
-                  >
-                    {icon && <Icon name={icon} size={16} className="nav-icon" />}
-                    <span className="module-nav-section-label">{section}</span>
-                    {!expanded && groupBadge > 0 && <span className="module-nav-badge">{groupBadge}</span>}
-                    <Icon name="chevronDown" size={14} className={`module-nav-section-chevron${expanded ? ' is-expanded' : ''}`} />
-                  </button>
-                  {expanded && items.map(renderItem)}
-                </div>
-              );
+              // Flat list — no group headings; every item is always visible.
+              return <div key={section ?? '__top'} className="module-nav-group">{items.map(renderItem)}</div>;
             })}
           </nav>
         </aside>
@@ -2734,9 +2774,9 @@ function Workspace() {
           ) : (isNewConditionPage || editConditionId) ? (
             <FormPage
               description="Periodic inspection log — a Custodian's routine check-in on a vehicle's physical condition."
-              onBack={() => returnToModule('conditions')}
+              onBack={() => { setPrefilledConditionVehicleId(null); returnToModule('conditions'); }}
               fields={conditionFields(lookups)}
-              initialValues={editConditionId ? (records.conditions ?? []).find((c) => String(c.condition_check_id) === String(editConditionId)) : EMPTY_OBJ}
+              initialValues={conditionInitialValues}
               onSubmit={(payload) => submitFormPage('conditions', editConditionId ? { condition_check_id: editConditionId } : null, payload)}
               submitLabel={editConditionId ? 'Update Condition' : 'Record Condition'}
               contextVehicles={lookups.vehicles}
@@ -2745,7 +2785,7 @@ function Workspace() {
             />
           ) : (isNewMaintenancePage || editMaintenanceId) ? (
             <FormPage
-              description="Directly log external, historical, or third-party vehicle maintenance records and expenses without running the 5-phase ticket workflow."
+              description="Directly log external, historical, or third-party vehicle maintenance records and expenses without running the full ticket workflow."
               onBack={() => returnToModule('maintenance')}
               fields={(vals) => maintenanceFields(lookups, user.role, vals)}
               initialValues={editMaintenanceId ? withPerformedBy(withRepairType((records.maintenance ?? []).find((m) => String(m.maintenance_id) === String(editMaintenanceId)))) : EMPTY_OBJ}
@@ -2782,7 +2822,7 @@ function Workspace() {
               ticket={flattenSubIssueRows(records.ticketWorkOrders).find((r) => String(r.ticket_id) === String(logRepairsTicketId) && String(r.sub_issue_id) === String(logRepairsSubIssueId))}
               vehicleOptions={lookups.vehicles ?? []}
               onBack={() => returnToModule('ticketWorkOrders')}
-              onSubmit={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/log-repairs`, payload, 'Repair logs submitted. Sent for Custodian verification.').then((ok) => { if (ok) returnToModule('ticketWorkOrders'); return ok; })}
+              onSubmit={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/log-repairs`, payload, 'Repair logged. Once every repair on this ticket is logged, it goes to the Custodian for verification automatically.').then((ok) => { if (ok) returnToModule('ticketWorkOrders'); return ok; })}
               onExternalSend={(row, payload) => ticketAction(`/tickets/${row.ticket_id}/sub-issues/${row.sub_issue_id}/external-sent`, payload, 'Marked as sent to the shop.')}
               onExternalReturn={(row, payload) => ticketAction(`/tickets/${row.ticket_id}/sub-issues/${row.sub_issue_id}/external-returned`, payload, 'Marked as returned from the shop.')}
               onDirty={() => setHasUnsavedChanges(true)}
@@ -2953,6 +2993,26 @@ function Workspace() {
     );
   }
 
+  // Admin's "Decline" action on a Pending Approval row (new schedule.decline
+  // ability) — mirrors the ticket proposal decline form exactly: one
+  // required reason, visible to the Custodian afterward.
+  function renderDeclineScheduleModal() {
+    return (
+      <FormModal open={!!declineScheduleTarget} title={`Decline — ${declineScheduleTarget?.maintenance_type ?? ''}`} onClose={() => setDeclineScheduleTarget(null)}>
+        {declineScheduleTarget && (
+          <SmartForm
+            fields={[{ label: 'Decline Reason', name: 'decline_reason', type: 'textarea', rows: 2, required: true, placeholder: 'Let the Custodian know why this was declined' }]}
+            key={`decline-schedule-${declineScheduleTarget.schedule_id}`}
+            onCancel={() => setDeclineScheduleTarget(null)}
+            onSubmit={(payload) => declineSchedule(declineScheduleTarget, payload)}
+            submitLabel="Decline Schedule"
+            title=""
+          />
+        )}
+      </FormModal>
+    );
+  }
+
   function renderModule() {
     // Task 1 of the sidebar consolidation — Custodian's merged "My Tasks"
     // container. `activeModule` is still the literal real key here
@@ -2961,8 +3021,7 @@ function Workspace() {
     // component, reusing the same segmented tab-bar pattern already used for
     // Vehicle Location's Map/Records toggle (see .locations-tab-bar below).
     const showMyTasksContainer = hasMyTasksNav && (
-      activeModule === 'ticketInspections'
-      || activeModule === 'ticketVerifications'
+      activeModule === 'ticketVerifications'
       || (activeModule === 'workTracker' && workTrackerViaMyTasks)
     );
     const myTasksTabBar = showMyTasksContainer && (
@@ -2970,23 +3029,11 @@ function Workspace() {
         <button
           type="button"
           role="tab"
-          aria-selected={activeModule === 'ticketInspections'}
-          className={`locations-tab-button ${activeModule === 'ticketInspections' ? 'active' : ''}`}
-          onClick={() => setMyTasksTab('ticketInspections')}
-        >
-          To Inspect
-          {(dashboard?.badge_counts?.ticketInspections ?? 0) > 0 && (
-            <span className="count-badge">{dashboard.badge_counts.ticketInspections}</span>
-          )}
-        </button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={activeModule === 'ticketVerifications'}
           className={`locations-tab-button ${activeModule === 'ticketVerifications' ? 'active' : ''}`}
           onClick={() => setMyTasksTab('ticketVerifications')}
         >
-          To Verify
+          My Tickets
           {(dashboard?.badge_counts?.ticketVerifications ?? 0) > 0 && (
             <span className="count-badge">{dashboard.badge_counts.ticketVerifications}</span>
           )}
@@ -3506,7 +3553,7 @@ function Workspace() {
                 onChange={setSearchQuery}
                 placeholder="Search conditions..."
                 columnChooser={conditionColumnChooser}
-                onAdd={canDo(user, 'condition.create') ? () => navigate(`${roleRoutes[user.role]}/conditions/new`) : undefined}
+                onAdd={canDo(user, 'condition.create') ? () => { setPrefilledConditionVehicleId(null); navigate(`${roleRoutes[user.role]}/conditions/new`); } : undefined}
                 addLabel="Add Condition Check"
               />
             </div>
@@ -3594,24 +3641,6 @@ function Workspace() {
           <div className="panel-header-bar">
             <h3>Issue Reports <span className="count-badge">{visibleRows.length}</span></h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            {(hasRole(user, 'Admin') || hasRole(user, 'Custodian')) && (
-              <label
-                title="Reports nobody has started a ticket from yet"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-              >
-                <input type="checkbox" checked={filterNoTicket} onChange={(e) => setFilterNoTicket(e.target.checked)} />
-                Needs a ticket ({(records.issues ?? []).filter(issueNeedsTicket).length})
-              </label>
-            )}
-            {canDo(user, 'issue.create') && (
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => navigate(`${roleRoutes[user.role]}/issues/new`)}
-              >
-                <Icon name="alert" size={14} /> Report {hasRole(user, 'Maintenance Personnel') && !hasRole(user, 'Custodian') ? 'Technical Issue' : 'Vehicle Issue'}
-              </button>
-            )}
             <LocalSearchInput
               value={searchQuery}
               onChange={setSearchQuery}
@@ -3637,9 +3666,10 @@ function Workspace() {
 
     if (activeModule === 'maintenance') {
       return (
+        <>
         <ModulePanel
           tabBar={maintenanceLedgerTabBar}
-          description="Directly log external, historical, or third-party vehicle maintenance records and expenses without running the 5-phase ticket workflow."
+          description="Directly log external, historical, or third-party vehicle maintenance records and expenses without running the full ticket workflow."
           statCards={
             <ModuleStatCards
               totalLabel="Total Records"
@@ -3730,6 +3760,17 @@ function Workspace() {
             />
           )}
         </ModulePanel>
+        <FormModal open={!!editTarget?.__verify} title={`Verify Maintenance #${editTarget?.maintenance_id}`} onClose={() => setEditTarget(null)}>
+          <SmartForm
+            fields={verificationFields}
+            key={editTarget?.maintenance_id}
+            onCancel={() => setEditTarget(null)}
+            onSubmit={submitModuleForm}
+            submitLabel="Submit Verification"
+            title=""
+          />
+        </FormModal>
+        </>
       );
     }
 
@@ -3878,6 +3919,9 @@ function Workspace() {
                   onViewRecord={(r) => navigate(`${roleRoutes[user.role]}/maintenance/${r.resulting_maintenance_id}`)}
                   onReassign={setReassignScheduleTarget}
                   onViewTicket={openTicketProfile}
+                  onViewVehicle={openVehicleProfile}
+                  onApprove={approveSchedule}
+                  onDecline={setDeclineScheduleTarget}
                 />
               )}
             />
@@ -3893,6 +3937,7 @@ function Workspace() {
 
           {renderCompleteScheduleModal()}
           {renderReassignScheduleModal()}
+          {renderDeclineScheduleModal()}
         </ModulePanel>
       );
     }
@@ -4049,6 +4094,8 @@ function Workspace() {
           onViewTicket={openTicketProfile}
           onCreateNew={canDo(user, 'ticket.create') ? () => navigate(`${roleRoutes[user.role]}/tickets/new`) : undefined}
           onViewArchives={canDo(user, 'ticket.view_archives') ? () => setActiveModule('ticketArchives') : undefined}
+          recentIssues={hasRole(user, 'Admin') ? (records.issues ?? []) : undefined}
+          onViewVehicle={openVehicleProfile}
           notice={notice}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
@@ -4140,7 +4187,7 @@ function Workspace() {
 
       return (
         <ModulePanel
-          description="Immutable audit trail of all completed and closed maintenance tickets (Phase 5 — History Logging & Archive Auditing)."
+          description="Immutable audit trail of all completed and closed maintenance tickets."
           filterBar={
             <div className="filter-bar-container" style={{ flexWrap: 'wrap', gap: '8px 12px', alignItems: 'center' }}>
               <div className="filter-label"><span>Vehicle:</span></div>
@@ -4326,7 +4373,7 @@ function Workspace() {
             tickets={visibleRows}
             editTarget={editTarget}
             setEditTarget={setEditTarget}
-            onVerify={(subIssueRow, payload) => ticketAction(`/tickets/${subIssueRow.ticket_id}/sub-issues/${subIssueRow.sub_issue_id}/verify`, payload, verifySuccessMessage(payload))}
+            onVerify={(ticket, payload) => ticketAction(`/tickets/${ticket.ticket_id}/verify`, payload, verifyOutcomeMessage(payload))}
             onCancelEdit={() => setEditTarget(null)}
             categories={lookups.categories}
             vehicles={lookups.vehicles}
@@ -4340,6 +4387,7 @@ function Workspace() {
             filterVerdict={filterVerdict}
             setFilterVerdict={setFilterVerdict}
             onViewVehicle={openVehicleProfile}
+            onViewTicket={openTicketProfile}
             stats={verificationStats}
             activeFilter={filterStatus}
             onFilterChange={setFilterStatus}
@@ -4353,6 +4401,7 @@ function Workspace() {
         <>
           <MechanicWorkOrderModule
             tickets={visibleRows}
+            allTickets={records.ticketWorkOrders ?? []}
             onViewTicket={openTicketProfile}
             categories={lookups.categories}
             vehicles={lookups.vehicles}
@@ -4363,18 +4412,11 @@ function Workspace() {
             filterPriority={filterPriority}
             setFilterPriority={setFilterPriority}
             maintTypeOptions={lookups.maintenance_types}
-            onViewVehicle={openVehicleProfile}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             stats={workOrderStats}
             activeFilter={filterStatus}
             onFilterChange={setFilterStatus}
-            // Phase B4 — Maintenance Personnel's Condition Monitoring and
-            // standalone Maintenance Schedule sidebar entries were removed;
-            // their assigned schedules surface here instead, as a second
-            // section on the same page (see loadModule's mySchedules fetch).
-            mySchedules={hasRole(user, 'Maintenance Personnel') ? (records.mySchedules ?? []) : null}
-            onCompleteSchedule={openCompleteSchedule}
             currentUser={user}
           />
           {renderCompleteScheduleModal()}

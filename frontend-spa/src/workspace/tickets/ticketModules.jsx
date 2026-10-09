@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import Icon from '../../components/Icon';
+import { StackedBarChart } from '../../components/lazy';
 import { readyToCloseColumns, ticketTableColumns } from '../columns';
 import { FilterBar, TicketFilterPanel } from '../components/filters';
 import { ColumnChooserButton, DataTable, ModuleStatCards, PaginatedCardGrid, PaginatedTable, ViewModeDropdown } from '../components/tables';
@@ -10,14 +11,16 @@ import { hasRole } from '../lib/permissions';
 import { exportRowsToCsv } from '../lib/reports';
 import { TICKET_INSPECTION_STAT_CARDS, TICKET_STAT_CARDS, TICKET_VERIFICATION_STAT_CARDS, TICKET_WORK_ORDER_STAT_CARDS, WORK_TRACKER_STAT_CARDS } from '../lib/statCards';
 import { flattenWorkTrackerRows, groupMechanicRowsByTicket, groupWorkTrackerByTicket, ticketWorkflowStage, workTrackerBucket, workTrackerNeedsAction, workTrackerOutcome } from '../lib/workflow';
-import { MaintenanceScheduleCard } from '../maintenance/maintenance';
-import { VerificationForm } from './VerificationForm';
+import { LatestIssueCard } from '../issues/issues';
+import { TicketVerificationForm } from './VerificationForm';
 
-// "Vehicles you've worked on and where they stand now." A read-only feed that
-// unifies every workflow phase so a Custodian/Mechanic sees the OUTCOME of their
-// work (approved, rejected, confirmed, reopened) in one place — no notification
-// chasing. Scope: everything still in progress, plus items completed/deferred
-// within the last 30 days so recent outcomes stay visible without old clutter.
+// My Tasks -> History: a plain record of work that's actually finished — a
+// sub-issue reached Done (confirmed) or Deferred. Anything still Open/Under
+// Repair/For Inspection/etc. belongs in the My Tickets tab, not here; this
+// used to also surface in-progress work ("Work Tracker"'s original scope),
+// but that read as unfinished tickets showing up in a "History" list, so
+// it's completed-only now, with no 30-day cutoff — it's meant to be the
+// full record, not a recent-activity feed.
 export function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onViewTicket, tabBar }) {
   const [activeFilter, setActiveFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -27,37 +30,23 @@ export function WorkTrackerModule({ tickets, user, categories = [], vehicles = [
   const [filterStatus, setFilterStatus] = useState([]);
   const [filterRole, setFilterRole] = useState([]);
   const [filterOutcome, setFilterOutcome] = useState([]);
-  // Captured once at mount (a 30-day window doesn't need per-render precision),
-  // keeping the filter memo below a pure function of its inputs.
-  const [nowTs] = useState(() => Date.now());
 
   const allRows = useMemo(() => {
-    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
     return flattenWorkTrackerRows(tickets, user)
-      .filter((row) => {
-        const isCompleted = row.status === 'Done' || row.status === 'Deferred';
-        if (!isCompleted) return true; // always show active/in-progress work
-        const ref = row.confirmed_at || row.deferred_at || row.lastActivityIso;
-        return ref ? (nowTs - new Date(ref).getTime()) <= THIRTY_DAYS : false;
-      })
-      // Action-needed first, then most-recent activity.
-      .sort((a, b) => {
-        const an = workTrackerNeedsAction(a) ? 1 : 0;
-        const bn = workTrackerNeedsAction(b) ? 1 : 0;
-        if (an !== bn) return bn - an;
-        return b.lastActivityTs - a.lastActivityTs;
-      });
-  }, [tickets, user, nowTs]);
+      .filter((row) => row.status === 'Done' || row.status === 'Deferred')
+      // Most recently finished first.
+      .sort((a, b) => b.lastActivityTs - a.lastActivityTs);
+  }, [tickets, user]);
 
   const counts = useMemo(() => {
-    const c = { attention: 0, progress: 0, completed: 0 };
-    allRows.forEach((row) => { c[workTrackerBucket(row)] += 1; });
+    const c = { Done: 0, Deferred: 0 };
+    allRows.forEach((row) => { c[row.status] += 1; });
     return c;
   }, [allRows]);
 
   const visibleRows = useMemo(() => {
     let result = allRows;
-    if (activeFilter) result = result.filter((row) => workTrackerBucket(row) === activeFilter);
+    if (activeFilter) result = result.filter((row) => row.status === activeFilter);
     if (filterCategory.length) result = result.filter((row) => filterCategory.includes(String(row.vehicle?.category_id)));
     if (filterCapacity.length) result = result.filter((row) => filterCapacity.includes(row.vehicle?.capacity));
     if (filterStatus.length) result = result.filter((row) => filterStatus.includes(row.status));
@@ -80,6 +69,19 @@ export function WorkTrackerModule({ tickets, user, categories = [], vehicles = [
   }, [allRows, activeFilter, filterCategory, filterCapacity, filterStatus, filterRole, filterOutcome, search]);
 
   const groupedTickets = useMemo(() => groupWorkTrackerByTicket(visibleRows), [visibleRows]);
+  // groupWorkTrackerByTicket's return is a synthesized summary row (one per
+  // ticket_id, built from flattened sub-issue rows) — not the real ticket
+  // object TicketCard needs (status/priority/created_at/progress). `tickets`
+  // here is already the full raw ticket list, so just look the real one up.
+  const ticketById = useMemo(() => {
+    const map = new Map();
+    (tickets ?? []).forEach((t) => map.set(t.ticket_id, t));
+    return map;
+  }, [tickets]);
+  const groupedTicketCards = useMemo(
+    () => groupedTickets.map((g) => ticketById.get(g.ticket_id)).filter(Boolean),
+    [groupedTickets, ticketById]
+  );
 
   return (
     <div className="module-grid">
@@ -104,13 +106,13 @@ export function WorkTrackerModule({ tickets, user, categories = [], vehicles = [
           setFilterStatus={setFilterStatus}
           filterPriority={filterRole}
           setFilterPriority={setFilterRole}
-          statusOptions={['Open', 'Under Repair', 'Pending Approval', 'For Inspection', 'For Confirmation', 'Done', 'Deferred']}
+          statusOptions={['Done', 'Deferred']}
           priorityOptions={(hasRole(user, 'Custodian') && hasRole(user, 'Maintenance Personnel')) ? ['Mechanic', 'Custodian'] : []}
           priorityLabel="Role"
           extraFilters={[{
             key: 'outcome',
             label: 'Outcomes',
-            options: ['Confirmed — Done', 'Reopened by Admin', 'Approved — awaiting Admin', 'Rejected — redo repair', 'Awaiting your verification', 'In repair', 'Deferred', 'Awaiting assignment'],
+            options: ['Confirmed — Done', 'Deferred'],
             selected: filterOutcome,
             setSelected: setFilterOutcome,
           }]}
@@ -119,9 +121,9 @@ export function WorkTrackerModule({ tickets, user, categories = [], vehicles = [
       <section className="panel operations-board work-tracker-board">
         <div className="operations-board-head">
           <div>
-            <span className="operations-kicker">Service activity</span>
-            <h3>Work Tracker <span className="count-badge">{visibleRows.length}</span></h3>
-            <p>Follow each assigned repair from active work through verification and completion.</p>
+            <span className="operations-kicker">Service history</span>
+            <h3>History <span className="count-badge">{visibleRows.length}</span></h3>
+            <p>Every ticket you've worked on that's already done or deferred — still-open work stays on My Tickets.</p>
           </div>
           <LocalSearchInput
             value={search}
@@ -139,50 +141,13 @@ export function WorkTrackerModule({ tickets, user, categories = [], vehicles = [
             ], visibleRows)}
           />
         </div>
-        <p className="muted" style={{ margin: '0 0 14px', fontSize: '0.85rem' }}>
-          Every vehicle you've worked on and where it stands now — so you can see the outcome of your work
-          without hunting for the ticket. Items needing your action are pinned to the top.
-        </p>
         <div style={{ height: '16px' }} />
-        <div className="operations-board-note"><Icon name="alert" size={14} /> Items requiring your action are shown first. Select a vehicle to review every related issue.</div>
-        <div className="work-tracker-grid operations-card-grid">
-          {groupedTickets.length === 0 ? (
-            <p className="empty-state" style={{ gridColumn: '1 / -1' }}>
-              Nothing here yet — vehicles you repair or verify will show up here with their current status.
-            </p>
-          ) : (
-            groupedTickets.map((group) => {
-              const photo = group.vehicle?.photo_url ? resolvePhotoUrl(group.vehicle.photo_url) : null;
-              const doneCount = group.subIssues.filter((s) => s.status === 'Done').length;
-              return (
-                <button
-                  key={group.ticket_id}
-                  type="button"
-                  className={`work-tracker-card${group.needsAction ? ' needs-action' : ''}`}
-                  onClick={() => onViewTicket({ ticket_id: group.ticket_id })}
-                >
-                  <span className="work-tracker-thumb">
-                    {photo ? <img src={photo} alt="" /> : <Icon name="vehicle" size={18} />}
-                  </span>
-                  <span className="work-tracker-card-heading">
-                    <span className="work-tracker-card-title-row">
-                      <strong>{group.vehicle?.vehicle_name ?? 'Unknown Vehicle'}</strong>
-                      <span className="muted" style={{ fontSize: '0.78rem' }}>({group.vehicle?.plate_number ?? '-'})</span>
-                      {group.needsAction && <Icon name="alert" size={13} className="work-tracker-item-flag" />}
-                    </span>
-                    <span className="work-tracker-card-sub" title={group.ticket_title}>#{group.ticket_id} · {group.ticket_title}</span>
-                    <span className="work-tracker-card-summary">
-                      {group.subIssues.length} sub-issue{group.subIssues.length !== 1 ? 's' : ''}
-                      {doneCount > 0 ? ` · ${doneCount} done` : ''}
-                      {' · '}{formatDate(group.lastActivityIso)}
-                    </span>
-                  </span>
-                  <span className="work-tracker-card-chevron">▸</span>
-                </button>
-              );
-            })
-          )}
-        </div>
+        <PaginatedCardGrid
+          items={groupedTicketCards}
+          keyOf={(t) => t.ticket_id}
+          emptyMessage="Nothing here yet — tickets you've worked on will show up here once they're done or deferred."
+          renderItem={(t) => <TicketCard ticket={t} onClick={() => onViewTicket(t)} />}
+        />
       </section>
     </div>
   );
@@ -222,6 +187,8 @@ export function TicketModule({
   setFilterDateStart,
   filterDateEnd,
   setFilterDateEnd,
+  recentIssues,
+  onViewVehicle,
 }) {
   const [ticketViewMode, setTicketViewMode] = useState(
     () => localStorage.getItem('vms_ticket_view') || 'card'
@@ -232,16 +199,23 @@ export function TicketModule({
     localStorage.setItem('vms_ticket_view', mode);
   };
 
-  // Count alerts — now derived from sub-issues nested under each ticket,
-  // since assignment/confirmation happen per sub-issue, not per ticket.
-  // Sourced from the unfiltered list: these are "needs attention" banners,
-  // so applying a status filter shouldn't make them under-report or vanish.
+  // Count alerts — sourced from the unfiltered list so applying a status
+  // filter doesn't make them under-report or vanish. A cannibalized repair
+  // is the one thing still awaiting an Admin decision at the sub-issue
+  // level now — every other old per-sub-issue gate (mechanic assignment,
+  // confirmation) was folded into the one-mechanic-per-ticket approval and
+  // the Custodian's single verification step.
   const statSourceTickets = allTickets ?? tickets;
   const allSubIssues = statSourceTickets.flatMap((t) => t.sub_issues ?? []);
-  const openSubIssueCount = allSubIssues.filter((s) => s.status === 'Open').length;
-  const forConfirmSubIssueCount = allSubIssues.filter((s) => s.status === 'For Confirmation').length;
+  const pendingCannibalizationCount = allSubIssues.filter((s) => s.status === 'Pending Approval').length;
+  // "Ready to close" now means what it actually takes to close a ticket:
+  // the mechanic has submitted, and the Custodian's one verification is the
+  // only thing left before it's Closed. (The old definition — every
+  // sub-issue already Done while the ticket is still Active — can't happen
+  // anymore: verifyTicket() marks every sub-issue Done and closes the
+  // ticket in the same transaction.)
   const readyToCloseTickets = useMemo(
-    () => statSourceTickets.filter((t) => t.status === 'Active' && (t.progress?.total ?? 0) > 0 && t.progress.done === t.progress.total),
+    () => statSourceTickets.filter((t) => t.status === 'For Verification'),
     [statSourceTickets]
   );
 
@@ -264,18 +238,23 @@ export function TicketModule({
   // including Total, would collapse to 0 along with it.
   const ticketStats = useMemo(() => {
     const counts = { total: statSourceTickets.length };
-    ['Open', 'Pending Approval', 'Active', 'Closed', 'Cancelled'].forEach((s) => {
+    ['Pending Approval', 'Declined', 'Active', 'For Verification', 'Closed', 'Cancelled'].forEach((s) => {
       counts[s] = statSourceTickets.filter((t) => t.status === s).length;
     });
     return counts;
   }, [statSourceTickets]);
+  const ticketPriorityStats = useMemo(() => {
+    const counts = { High: 0, Medium: 0, Low: 0 };
+    statSourceTickets.forEach((t) => { if (t.priority in counts) counts[t.priority] += 1; });
+    return counts;
+  }, [statSourceTickets]);
 
-  const ticketColumnDefs = useMemo(() => ticketTableColumns(unreadByTicket), [unreadByTicket]);
+  const ticketColumnDefs =useMemo(() => ticketTableColumns(unreadByTicket), [unreadByTicket]);
   const ticketColumnChooser = useColumnChooser('vms_ticket_columns', ticketColumnDefs);
 
   return (
     <div className="module-grid">
-      <DismissibleHint description="Central Ticket Ledger — create tickets, assign custodians for inspection, dispatch mechanics, and confirm closures through the 5-phase workflow." />
+      <DismissibleHint description="Central Ticket Ledger — review Custodian proposals, approve and assign a mechanic, then let the mechanic's submission and the Custodian's verification carry the ticket through to Closed." />
       <ModuleStatCards
         totalLabel="Total Tickets"
         total={ticketStats.total}
@@ -284,46 +263,63 @@ export function TicketModule({
         activeFilter={filterStatus}
         onFilterChange={setFilterStatus}
       />
-      <section className="panel module-filter-panel">
-        <TicketFilterPanel
-          categories={categories}
-          vehicles={vehicles}
-          custodians={ticketLookups.custodians}
-          maintenancePersonnelRoster={ticketLookups.maintenance_personnel}
-          priorityLevels={ticketLookups.priorities}
-          statusOptions={ticketLookups.ticket_statuses}
-          filterCategory={filterCategory}
-          setFilterCategory={setFilterCategory}
-          filterCapacity={filterCapacity}
-          setFilterCapacity={setFilterCapacity}
-          filterVehicle={filterVehicle}
-          setFilterVehicle={setFilterVehicle}
-          filterMechanic={filterMechanic}
-          setFilterMechanic={setFilterMechanic}
-          filterCustodian={filterCustodian}
-          setFilterCustodian={setFilterCustodian}
-          filterStatus={filterStatus}
-          setFilterStatus={setFilterStatus}
-          filterPriority={filterPriority}
-          setFilterPriority={setFilterPriority}
-          filterDateStart={filterDateStart}
-          setFilterDateStart={setFilterDateStart}
-          filterDateEnd={filterDateEnd}
-          setFilterDateEnd={setFilterDateEnd}
-        />
-      </section>
+      {/* Same layout as the Issue Reports page: the priority bar and the
+          filters stack on the left, Latest Reports spans both on the right.
+          The bar counts the same full list as the stat cards above. */}
+      <div className={`ticket-summary-grid${recentIssues && recentIssues.length > 0 ? '' : ' no-side'}`}>
+        <div className="ticket-summary-chart">
+          <StackedBarChart
+            title="Maintenance Tickets"
+            segments={[
+              { label: 'High', value: ticketPriorityStats.High, color: '#dc2626' },
+              { label: 'Medium', value: ticketPriorityStats.Medium, color: '#f59e0b' },
+              { label: 'Low', value: ticketPriorityStats.Low, color: '#0ea5e9' },
+            ]}
+          />
+        </div>
+        <section className="panel module-filter-panel ticket-summary-filters">
+          <TicketFilterPanel
+            categories={categories}
+            vehicles={vehicles}
+            custodians={ticketLookups.custodians}
+            maintenancePersonnelRoster={ticketLookups.maintenance_personnel}
+            priorityLevels={ticketLookups.priorities}
+            statusOptions={ticketLookups.ticket_statuses}
+            filterCategory={filterCategory}
+            setFilterCategory={setFilterCategory}
+            filterCapacity={filterCapacity}
+            setFilterCapacity={setFilterCapacity}
+            filterVehicle={filterVehicle}
+            setFilterVehicle={setFilterVehicle}
+            filterMechanic={filterMechanic}
+            setFilterMechanic={setFilterMechanic}
+            filterCustodian={filterCustodian}
+            setFilterCustodian={setFilterCustodian}
+            filterStatus={filterStatus}
+            setFilterStatus={setFilterStatus}
+            filterPriority={filterPriority}
+            setFilterPriority={setFilterPriority}
+            filterDateStart={filterDateStart}
+            setFilterDateStart={setFilterDateStart}
+            filterDateEnd={filterDateEnd}
+            setFilterDateEnd={setFilterDateEnd}
+          />
+        </section>
+        {/* Admin no longer has a standalone Issue Reports page — this is
+            the one thing worth keeping from it, moved here instead of
+            dropped. */}
+        {recentIssues && recentIssues.length > 0 && (
+          <LatestIssueCard issues={recentIssues} onRowClick={(row) => row.vehicle && onViewVehicle?.(row.vehicle)} />
+        )}
+      </div>
+
       <TicketsReadyToClosePanel tickets={readyToCloseTickets} onViewTicket={onViewTicket} />
 
-      <section className="panel">
+      <section className="panel" style={{ width: '100%' }}>
         {/* Alert banners */}
-        {openSubIssueCount > 0 && (
+        {pendingCannibalizationCount > 0 && (
           <div className="ticket-alert-banner formaint">
-            <Icon name="alert" size={16} /> <strong>{openSubIssueCount}</strong> sub-issue{openSubIssueCount > 1 ? 's' : ''} waiting for mechanic assignment.
-          </div>
-        )}
-        {forConfirmSubIssueCount > 0 && (
-          <div className="ticket-alert-banner forconfirm">
-            <Icon name="checkCircle" size={16} /> <strong>{forConfirmSubIssueCount}</strong> sub-issue{forConfirmSubIssueCount > 1 ? 's' : ''} awaiting your final confirmation.
+            <Icon name="alert" size={16} /> <strong>{pendingCannibalizationCount}</strong> cannibalized repair{pendingCannibalizationCount > 1 ? 's' : ''} waiting for your approval.
           </div>
         )}
 
@@ -555,24 +551,50 @@ export function CustodianVerificationModule({
   filterVerdict,
   setFilterVerdict,
   onViewVehicle,
+  onViewTicket,
   stats,
   activeFilter,
   onFilterChange,
   tabBar
 }) {
   const [viewLogsTarget, setViewLogsTarget] = useState(null);
-  const isPendingView = activeFilter !== 'Verified';
+  const panelTitle = activeFilter.includes('Active')
+    ? 'Active Tickets'
+    : activeFilter.includes('Verified')
+      ? 'Verified Repairs'
+      : activeFilter.includes('Pending')
+        ? 'Pending Verifications'
+        : 'My Tickets';
+  const isMyTicketsView = panelTitle === 'My Tickets';
+  const emptyStateText = activeFilter.includes('Active')
+    ? 'No tickets currently active.'
+    : activeFilter.includes('Verified')
+      ? 'No repairs verified yet.'
+      : activeFilter.includes('Pending')
+        ? 'No repairs pending your verification.'
+        : 'No tickets yet — once the Admin approves a proposal, it will show up here.';
 
   const verificationColumnDefs = useMemo(() => [
     { key: 'ticket_id', label: 'Ticket ID', locked: true, className: 'cell-center', render: (r) => r.ticket_id },
     { key: 'ticket_title', label: 'Ticket Title', render: (r) => r.ticket_title },
     { key: 'vehicle', label: 'Vehicle', locked: true, render: (r) => <VehicleCell vehicle={r.vehicle} /> }, { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (r) => r.vehicle?.plate_number ?? '-' },
-    { key: 'sub_issue', label: 'Sub-Issue', render: (r) => r.title },
+    {
+      key: 'sub_issues',
+      label: 'Sub-Issues',
+      render: (r) => {
+        const subs = r.sub_issues ?? [];
+        if (subs.length === 0) return '—';
+        if (subs.length === 1) return subs[0].title;
+        return `${subs.length} sub-issues: ${subs.map((s) => s.title).join(', ')}`;
+      }
+    },
+    // One mechanic per ticket now — the whole job (every sub-issue) is
+    // assigned, logged and submitted together.
     { key: 'mechanic', label: 'Mechanic', className: 'cell-center', render: (r) => r.assigned_mechanic?.name ?? '—' },
     {
       key: 'repair_log',
       label: 'Repair Log',
-      render: (r) => r.repair_logs ? (
+      render: (r) => (r.sub_issues ?? []).some((si) => si.repair_logs) ? (
         <button
           type="button"
           className="link-button"
@@ -583,20 +605,24 @@ export function CustodianVerificationModule({
         </button>
       ) : '—'
     },
-    { key: 'parts_used', label: 'Parts Used', render: (r) => <PartsTags value={r.parts_used} /> },
+    // parts_used is a comma-separated string per sub-issue (PartsTags splits
+    // it itself) — join every sub-issue's string into one, since a ticket
+    // can now carry several sub-issues, each with its own parts.
+    { key: 'parts_used', label: 'Parts Used', render: (r) => <PartsTags value={(r.sub_issues ?? []).map((si) => si.parts_used).filter(Boolean).join(', ')} /> },
     {
       key: 'status',
       label: 'Status',
       className: 'cell-center',
       render: (r) => {
-        if (r.reopened_at) {
+        const reopenedSub = (r.sub_issues ?? []).find((si) => si.reopened_at && si.status !== 'Done');
+        if (reopenedSub) {
           return (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600 }} title={`Reopened by ${r.reopened_by?.name || 'Admin'}`}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600 }} title={`Reopened by ${reopenedSub.reopened_by?.name || 'Admin'}`}>
               <Icon name="alert" size={12} /> Reopened
             </span>
           );
         }
-        return r.verification_verdict ? <TicketStatusBadge value={r.verification_verdict} /> : <span className="muted">—</span>;
+        return <TicketStatusBadge value={r.status === 'Closed' ? 'Verified' : r.status} />;
       }
     },
     {
@@ -604,28 +630,23 @@ export function CustodianVerificationModule({
       label: 'Action',
       locked: true,
       render: (r) => {
-        if (r.status === 'For Inspection') {
-          const assignedId = typeof r.verification_assigned_to === 'object' ? r.verification_assigned_to?.id : r.verification_assigned_to;
-          const isAssignedToUser = assignedId === user.id || String(assignedId) === String(user.id);
-          // Mirrors TicketController::verifyRepair's own guard — a dual-role
-          // (Custodian + Maintenance Personnel) account assigned to verify
-          // their own repair can't "grade their own homework" here even
-          // though they're the assigned verifier. The button is hidden
-          // proactively; the backend is what actually enforces it. Fixed by
-          // reassigning the ticket to a different Custodian (audit finding
-          // #2 removed the old "an Admin can step in" bypass).
-          const isOwnRepair = r.assigned_mechanic_id != null
-            && (r.assigned_mechanic_id === user.id || String(r.assigned_mechanic_id) === String(user.id));
-          if (isAssignedToUser && isOwnRepair) {
-            return <span className="muted" title="You performed this repair — reassign this ticket to a different Custodian to verify it.">Needs reassignment (you did this repair)</span>;
-          }
-          if (isAssignedToUser) {
-            return <button className="btn-edit-action icon-btn" type="button" onClick={() => setEditTarget(r)} title="Verify Repair" aria-label="Verify Repair"><Icon name="checkCircle" size={14} /></button>;
-          }
-          const assignedName = (typeof r.verification_assigned_to === 'object' ? r.verification_assigned_to?.name : null) || 'another custodian';
-          return <span className="muted" title={`Assigned to ${assignedName}`}>Assigned to {assignedName}</span>;
+        if (r.status !== 'For Verification') {
+          return <span className="muted">{r.status === 'Closed' ? 'Verified' : r.status}</span>;
         }
-        return <span className="muted">Submitted</span>;
+        // Mirrors TicketController::verifyTicket's own guard — a dual-role
+        // (Custodian + Maintenance Personnel) account currently assigned as
+        // this ticket's mechanic can't "grade their own homework" here even
+        // though they're the assigned verifier. The button is hidden
+        // proactively; the backend is what actually enforces it (including
+        // any PRIOR mechanic on the ticket, which this UI hint doesn't check —
+        // see verifyTicket()'s prior_mechanic_ids guard). Fixed by reassigning
+        // the ticket to a different Custodian.
+        const isOwnRepair = r.assigned_mechanic_id != null
+          && (r.assigned_mechanic_id === user.id || String(r.assigned_mechanic_id) === String(user.id));
+        if (isOwnRepair) {
+          return <span className="muted" title="You performed this repair — reassign this ticket to a different Custodian to verify it.">Needs reassignment (you did this repair)</span>;
+        }
+        return <button className="btn-edit-action icon-btn" type="button" onClick={() => setEditTarget(r)} title="Verify Repair" aria-label="Verify Repair"><Icon name="checkCircle" size={14} /></button>;
       }
     },
   ], [user.id, setEditTarget]);
@@ -633,8 +654,10 @@ export function CustodianVerificationModule({
 
   return (
     <div className="module-grid">
-      <DismissibleHint description="Phase 4 Tier 1 — Repair Integrity Verification. Review mechanic work, issue your inspection verdict before Admin confirmation, and check back here to see what you've already verified." />
-      {tabBar}
+      <DismissibleHint description="Review a mechanic's completed work and give the one verification attestation that closes the ticket — check back here to see what you've already verified." />
+      {/* Stat cards swapped above the My Tickets/History tab bar — they read
+          as the page's headline now, with the tabs as a secondary switch
+          underneath instead of sitting above everything. */}
       <ModuleStatCards
         totalLabel="Total Assigned"
         total={stats.total}
@@ -643,6 +666,7 @@ export function CustodianVerificationModule({
         activeFilter={activeFilter}
         onFilterChange={onFilterChange}
       />
+      {tabBar}
       <section className="panel module-filter-panel">
         <FilterBar
           categories={categories}
@@ -666,26 +690,41 @@ export function CustodianVerificationModule({
       </section>
       <section className="panel">
         <div className="panel-header-bar">
-          <h3>{isPendingView ? 'Pending Verifications' : 'Verified Repairs'} <span className="count-badge">{tickets.length}</span></h3>
-          <ColumnChooserButton {...verificationColumnChooser} />
+          <h3>{panelTitle} <span className="count-badge">{tickets.length}</span></h3>
+          {!isMyTicketsView && <ColumnChooserButton {...verificationColumnChooser} />}
         </div>
         <div style={{ height: '16px' }} />
         {tickets.length === 0
-          ? <p className="empty-state">{isPendingView ? 'No repairs pending your verification.' : 'No repairs verified yet.'}</p>
-          : (
+          ? <p className="empty-state">{emptyStateText}</p>
+          : isMyTicketsView ? (
+            // The plain "My Tickets" view (no Active/Pending/Verified filter
+            // picked) reads as tickets, same as the Admin's own ticket list —
+            // the verification-focused table (repair log, parts, verify
+            // action) only makes sense once a specific status is picked.
+            <PaginatedCardGrid
+              items={tickets}
+              keyOf={(t) => t.ticket_id}
+              emptyMessage={emptyStateText}
+              renderItem={(t) => <TicketCard ticket={t} onClick={() => (onViewTicket ? onViewTicket(t) : (t.vehicle && onViewVehicle(t.vehicle)))} />}
+            />
+          ) : (
             <DataTable
               columns={verificationColumnChooser.visibleColumns}
               onReorderColumn={verificationColumnChooser.reorderColumn}
               rows={tickets}
-              onRowClick={(row) => row.vehicle && onViewVehicle(row.vehicle)}
+              onRowClick={(row) => (onViewTicket ? onViewTicket(row) : (row.vehicle && onViewVehicle(row.vehicle)))}
             />
           )
         }
       </section>
-      <FormModal open={!!editTarget} title={`Functional Test — ${editTarget?.ticket_title ? `${editTarget.ticket_title}: ` : ''}${editTarget?.title ?? `Ticket #${editTarget?.ticket_id}`}`} onClose={onCancelEdit}>
-        <VerificationForm
-          key={editTarget?.sub_issue_id ?? editTarget?.ticket_id}
-          target={editTarget}
+      {/* Whole-ticket verification (TicketController::verifyTicket): the
+          vehicle-type functional test, then Approve (closes the ticket) or
+          Return for Repair. Same TicketVerificationForm the ticket detail
+          page's own "Verify Repair" section uses. */}
+      <FormModal open={!!editTarget} title={`Verify Repair — ${editTarget?.ticket_title ?? `Ticket #${editTarget?.ticket_id}`}`} onClose={onCancelEdit}>
+        <TicketVerificationForm
+          key={editTarget?.ticket_id}
+          ticket={editTarget}
           onCancel={onCancelEdit}
           onSubmit={(payload) => onVerify(editTarget, payload)}
         />
@@ -698,49 +737,63 @@ export function CustodianVerificationModule({
             <div style={{ fontWeight: 600 }}>{viewLogsTarget?.vehicle?.vehicle_name} ({viewLogsTarget?.vehicle?.plate_number})</div>
           </div>
           <div style={{ marginBottom: '16px' }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Work Order Title</h4>
+            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Ticket Title</h4>
             <div style={{ fontWeight: 600 }}>{viewLogsTarget?.ticket_title}</div>
           </div>
           <div style={{ marginBottom: '16px' }}>
             <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Mechanic</h4>
             <div>{viewLogsTarget?.assigned_mechanic?.name ?? '—'}</div>
           </div>
-          <div style={{ marginBottom: '16px' }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Log Entry</h4>
-            <pre style={{ 
-              whiteSpace: 'pre-wrap', 
-              fontFamily: 'inherit', 
-              background: '#f8fafc', 
-              border: '1px solid #e2e8f0', 
-              borderRadius: '6px', 
-              padding: '12px', 
-              fontSize: '0.9rem',
-              lineHeight: '1.5',
-              margin: '6px 0 0 0'
-            }}>{viewLogsTarget?.repair_logs ?? 'No logs provided.'}</pre>
-          </div>
-          <div style={{ marginBottom: '16px' }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Parts / Materials Used</h4>
-            <div style={{ marginTop: '6px' }}>
-              <PartsTags value={viewLogsTarget?.parts_used} />
+          {/* One block per sub-issue — a ticket can carry several now, so
+              each gets its own log/parts/dates/cost instead of a single
+              ticket-wide set (the common one-sub-issue ticket just renders
+              one block, same information as before). */}
+          {(viewLogsTarget?.sub_issues ?? []).map((si, idx, arr) => (
+            <div key={si.sub_issue_id} style={{ marginBottom: '20px', paddingBottom: idx < arr.length - 1 ? '16px' : 0, borderBottom: idx < arr.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
+              {arr.length > 1 && (
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem' }}>{si.title}</h4>
+              )}
+              <div style={{ marginBottom: '12px' }}>
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Log Entry</h4>
+                <pre style={{
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'inherit',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  fontSize: '0.9rem',
+                  lineHeight: '1.5',
+                  margin: '6px 0 0 0'
+                }}>{si.repair_logs ?? 'No logs provided.'}</pre>
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Parts / Materials Used</h4>
+                <div style={{ marginTop: '6px' }}>
+                  <PartsTags value={si.parts_used} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '12px' }}>
+                <div>
+                  <h4 style={{ margin: '0 0 4px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Start Date</h4>
+                  <div>{si.repair_started_at ? formatDate(si.repair_started_at) : '—'}</div>
+                </div>
+                <div>
+                  <h4 style={{ margin: '0 0 4px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Completion Date</h4>
+                  <div>{si.repair_completed_at ? formatDate(si.repair_completed_at) : '—'}</div>
+                </div>
+              </div>
+              <div>
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Cost / Expenses</h4>
+                <div style={{ fontWeight: 600, color: 'var(--text-success)', fontSize: '1.1rem' }}>
+                  {si.maintenance_cost ? `₱${Number(si.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00'}
+                </div>
+              </div>
             </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-            <div>
-              <h4 style={{ margin: '0 0 4px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Start Date</h4>
-              <div>{viewLogsTarget?.repair_started_at ? formatDate(viewLogsTarget.repair_started_at) : '—'}</div>
-            </div>
-            <div>
-              <h4 style={{ margin: '0 0 4px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Completion Date</h4>
-              <div>{viewLogsTarget?.repair_completed_at ? formatDate(viewLogsTarget.repair_completed_at) : '—'}</div>
-            </div>
-          </div>
-          <div>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Cost / Expenses</h4>
-            <div style={{ fontWeight: 600, color: 'var(--text-success)', fontSize: '1.1rem' }}>
-              {viewLogsTarget?.maintenance_cost ? `₱${Number(viewLogsTarget.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00'}
-            </div>
-          </div>
+          ))}
+          {!(viewLogsTarget?.sub_issues ?? []).length && (
+            <p className="empty-state">No sub-issues on this ticket.</p>
+          )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
           <button className="primary-button" onClick={() => setViewLogsTarget(null)} type="button">Close</button>
@@ -756,6 +809,14 @@ export function CustodianVerificationModule({
 
 export function MechanicWorkOrderModule({
   tickets,
+  // Full, unfiltered list of every ticket assigned to this mechanic (same
+  // GET /tickets payload `tickets` above was flattened/filtered down from) —
+  // needed so the Archive toggle (the former standalone Work Tracker page)
+  // can compute its own 30-day history scope independent of the active-work
+  // Pending/Submitted filter, and so both views can hand TicketCard the real
+  // ticket object (status/priority/progress/created_at) rather than the
+  // slimmed-down grouping shape.
+  allTickets = [],
   onViewTicket,
   categories,
   vehicles,
@@ -771,123 +832,179 @@ export function MechanicWorkOrderModule({
   stats,
   activeFilter,
   onFilterChange,
-  // Phase B4 — a Maintenance Personnel account's assigned Maintenance
-  // Schedules, shown as a second section on this same page (null for every
-  // other role, which never sees this section at all).
-  mySchedules = null,
-  onCompleteSchedule,
   currentUser,
 }) {
   const isPendingView = activeFilter !== 'Submitted';
-  // One card per ticket/vehicle — a vehicle with several Causes dispatched to
-  // this mechanic (Cause A/B/C) no longer repeats its ticket/vehicle info on
-  // every row; clicking the card opens that ticket's page directly (where the
-  // mechanic logs repairs on each of their work orders).
+  // Merge 2 — "Work Tracker" is no longer its own sidebar entry; it's this
+  // Archive toggle over the same page, mirroring Admin's Maintenance Tickets
+  // "Archives" button (see TicketModule's onViewArchives). Admin's version
+  // swaps `activeModule` to a distinct key with its own fetch; this role's
+  // GET /tickets already returns every ticket ever assigned to them (not
+  // just the active ones — see loadModule), so a plain local boolean over
+  // data already on hand is enough.
+  const [showArchive, setShowArchive] = useState(false);
+
+  // Resolve the real ticket object for a ticket_id — both grouping helpers
+  // below return a synthesized summary row, not what TicketCard needs.
+  const ticketById = useMemo(() => {
+    const map = new Map();
+    (allTickets ?? []).forEach((t) => map.set(t.ticket_id, t));
+    return map;
+  }, [allTickets]);
+
+  // ---- Active work (unchanged scope: Pending vs Submitted, via `tickets`
+  // which the parent already flattened/filtered to this mechanic's own
+  // sub-issue rows) — one card per ticket/vehicle, same as before.
   const groupedTickets = useMemo(() => groupMechanicRowsByTicket(tickets), [tickets]);
+  const activeTicketCards = useMemo(
+    () => groupedTickets.map((g) => ticketById.get(g.ticket_id)).filter(Boolean),
+    [groupedTickets, ticketById]
+  );
+
+  // ---- Archive — the history view the old standalone Work Tracker page
+  // showed this role: everything still in progress, plus anything
+  // completed/deferred within the last 30 days, mirroring WorkTrackerModule's
+  // own scope exactly (just narrowed to this mechanic's own lines, since this
+  // page never shows a Custodian's verification work).
+  const [nowTs] = useState(() => Date.now());
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveBucketFilter, setArchiveBucketFilter] = useState('');
+
+  const archiveAllRows = useMemo(() => {
+    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+    return flattenWorkTrackerRows(allTickets, currentUser)
+      .filter((row) => row.isMechanic)
+      .filter((row) => {
+        const isCompleted = row.status === 'Done' || row.status === 'Deferred';
+        if (!isCompleted) return true; // always show active/in-progress work
+        const ref = row.confirmed_at || row.deferred_at || row.lastActivityIso;
+        return ref ? (nowTs - new Date(ref).getTime()) <= THIRTY_DAYS : false;
+      })
+      .sort((a, b) => {
+        const an = workTrackerNeedsAction(a) ? 1 : 0;
+        const bn = workTrackerNeedsAction(b) ? 1 : 0;
+        if (an !== bn) return bn - an;
+        return b.lastActivityTs - a.lastActivityTs;
+      });
+  }, [allTickets, currentUser, nowTs]);
+
+  const archiveCounts = useMemo(() => {
+    const c = { attention: 0, progress: 0, completed: 0 };
+    archiveAllRows.forEach((row) => { c[workTrackerBucket(row)] += 1; });
+    return c;
+  }, [archiveAllRows]);
+
+  const archiveVisibleRows = useMemo(() => {
+    let result = archiveAllRows;
+    if (archiveBucketFilter) result = result.filter((row) => workTrackerBucket(row) === archiveBucketFilter);
+    const q = archiveSearch.trim().toLowerCase();
+    if (q) {
+      result = result.filter((row) => (
+        (row.vehicle?.vehicle_name ?? '').toLowerCase().includes(q)
+        || (row.vehicle?.plate_number ?? '').toLowerCase().includes(q)
+        || (row.ticket_title ?? '').toLowerCase().includes(q)
+        || (row.title ?? '').toLowerCase().includes(q)
+      ));
+    }
+    return result;
+  }, [archiveAllRows, archiveBucketFilter, archiveSearch]);
+
+  const archiveGroupedTickets = useMemo(() => groupWorkTrackerByTicket(archiveVisibleRows), [archiveVisibleRows]);
+  const archiveTicketCards = useMemo(
+    () => archiveGroupedTickets.map((g) => ticketById.get(g.ticket_id)).filter(Boolean),
+    [archiveGroupedTickets, ticketById]
+  );
 
   return (
     <div className="module-grid">
-      <DismissibleHint description="Phase 3 — Work Orders assigned to you. Execute vehicle repairs, submit your repair logs to send the ticket for Custodian inspection, and check back here to see what you've already logged." />
-      <ModuleStatCards
-        totalLabel="Total Assigned"
-        total={stats.total}
-        cards={TICKET_WORK_ORDER_STAT_CARDS}
-        counts={stats}
-        activeFilter={activeFilter}
-        onFilterChange={onFilterChange}
-      />
-      <section className="panel module-filter-panel">
-        <FilterBar
-          categories={categories}
-          vehicles={vehicles}
-          filterCategory={filterCategory}
-          setFilterCategory={setFilterCategory}
-          filterCapacity={filterCapacity}
-          setFilterCapacity={setFilterCapacity}
-          filterPriority={filterPriority}
-          setFilterPriority={setFilterPriority}
-          priorityOptions={maintTypeOptions}
-          priorityLabel="Maintenance Type"
-        />
-      </section>
-      <section className="panel operations-board work-order-board">
-        <div className="operations-board-head">
-          <div>
-            <span className="operations-kicker">Mechanic queue</span>
-            <h3>{isPendingView ? 'Pending Work Orders' : 'Submitted Work Orders'} <span className="count-badge">{tickets.length}</span></h3>
-            <p>{isPendingView ? 'Open a work order, record the repair, then send it for verification.' : 'Review work already submitted for Custodian verification.'}</p>
-          </div>
-          <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search work orders..." />
-        </div>
-        <div className="operations-board-note"><Icon name={isPendingView ? 'wrench' : 'checkCircle'} size={14} /> {isPendingView ? 'Repair logs are due for the highlighted work orders.' : 'Submitted items remain here until their next workflow update.'}</div>
-        <div className="work-tracker-grid operations-card-grid">
-          {groupedTickets.length === 0 ? (
-            <p className="empty-state" style={{ gridColumn: '1 / -1' }}>
-              {isPendingView ? 'No active work orders assigned to you.' : 'No repair logs submitted yet.'}
-            </p>
-          ) : (
-            groupedTickets.map((group) => {
-              const photo = group.vehicle?.photo_url ? resolvePhotoUrl(group.vehicle.photo_url) : null;
-              return (
-                <button
-                  key={group.ticket_id}
-                  type="button"
-                  className={`work-tracker-card${group.needsAction ? ' needs-action' : ''}`}
-                  onClick={() => onViewTicket({ ticket_id: group.ticket_id })}
-                >
-                  <span className="work-tracker-thumb">
-                    {photo ? <img src={photo} alt="" /> : <Icon name="vehicle" size={18} />}
-                  </span>
-                  <span className="work-tracker-card-heading">
-                    <span className="work-tracker-card-title-row">
-                      <strong>{group.vehicle?.vehicle_name ?? 'Unknown Vehicle'}</strong>
-                      <span className="muted" style={{ fontSize: '0.78rem' }}>({group.vehicle?.plate_number ?? '-'})</span>
-                      {group.needsAction && <Icon name="alert" size={13} className="work-tracker-item-flag" />}
-                    </span>
-                    <span className="work-tracker-card-sub" title={group.ticket_title}>#{group.ticket_id} · {group.ticket_title}</span>
-                    <span className="work-tracker-card-summary">
-                      {group.subIssues.length} work order{group.subIssues.length !== 1 ? 's' : ''}
-                    </span>
-                  </span>
-                  <span className="work-tracker-card-chevron">▸</span>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </section>
+      <DismissibleHint description="Work Orders assigned to you. Execute vehicle repairs, log them, then submit the ticket for Custodian verification once every sub-issue is logged — check the Archive for your full history." />
 
-      {/* Phase B4 — Condition Monitoring and the standalone Maintenance
-          Schedule module were both removed from Maintenance Personnel's
-          sidebar; their assigned schedules (already scoped server-side to
-          assigned_to = me) surface here instead, as a clearly-labeled second
-          section on the same page. */}
-      {mySchedules !== null && (
+      {!showArchive ? (
+        <>
+          <ModuleStatCards
+            totalLabel="Total Assigned"
+            total={stats.total}
+            cards={TICKET_WORK_ORDER_STAT_CARDS}
+            counts={stats}
+            activeFilter={activeFilter}
+            onFilterChange={onFilterChange}
+          />
+          <section className="panel module-filter-panel">
+            <FilterBar
+              categories={categories}
+              vehicles={vehicles}
+              filterCategory={filterCategory}
+              setFilterCategory={setFilterCategory}
+              filterCapacity={filterCapacity}
+              setFilterCapacity={setFilterCapacity}
+              filterPriority={filterPriority}
+              setFilterPriority={setFilterPriority}
+              priorityOptions={maintTypeOptions}
+              priorityLabel="Maintenance Type"
+            />
+          </section>
+          <section className="panel operations-board work-order-board">
+            <div className="operations-board-head">
+              <div>
+                <span className="operations-kicker">Mechanic queue</span>
+                <h3>{isPendingView ? 'Pending Work Orders' : 'Submitted Work Orders'} <span className="count-badge">{tickets.length}</span></h3>
+                <p>{isPendingView ? 'Open a work order, record the repair, then send it for verification.' : 'Review work already submitted for Custodian verification.'}</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button type="button" className="ghost-button" onClick={() => setShowArchive(true)}>
+                  <Icon name="archive" size={14} /> Archive
+                </button>
+                <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search work orders..." />
+              </div>
+            </div>
+            <div className="operations-board-note"><Icon name={isPendingView ? 'wrench' : 'checkCircle'} size={14} /> {isPendingView ? 'Repair logs are due for the highlighted work orders.' : 'Submitted items remain here until their next workflow update.'}</div>
+            <PaginatedCardGrid
+              items={activeTicketCards}
+              keyOf={(t) => t.ticket_id}
+              emptyMessage={isPendingView ? 'No active work orders assigned to you.' : 'No repair logs submitted yet.'}
+              renderItem={(t) => <TicketCard ticket={t} onClick={() => onViewTicket(t)} />}
+            />
+          </section>
+        </>
+      ) : (
         <section className="panel operations-board work-order-board">
           <div className="operations-board-head">
             <div>
-              <span className="operations-kicker">Preventive maintenance</span>
-              <h3>My Assigned Maintenance Schedules <span className="count-badge">{mySchedules.length}</span></h3>
-              <p>Vehicles scheduled for preventive maintenance and assigned to you.</p>
+              <span className="operations-kicker">Service activity</span>
+              <h3>Work Order Archive <span className="count-badge">{archiveVisibleRows.length}</span></h3>
+              <p>Every vehicle you've repaired and where it stands now — completed and deferred work stays here for 30 days.</p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button type="button" className="ghost-button" onClick={() => setShowArchive(false)}>
+                <Icon name="wrench" size={14} /> Back to Work Orders
+              </button>
+              <LocalSearchInput value={archiveSearch} onChange={setArchiveSearch} placeholder="Search vehicle, plate, or ticket..." />
             </div>
           </div>
-          <div className="work-tracker-grid operations-card-grid">
-            {mySchedules.length === 0 ? (
-              <p className="empty-state" style={{ gridColumn: '1 / -1' }}>No maintenance schedules assigned to you.</p>
-            ) : (
-              mySchedules.map((row) => (
-                <MaintenanceScheduleCard
-                  key={row.schedule_id}
-                  row={row}
-                  currentUser={currentUser}
-                  onComplete={onCompleteSchedule}
-                  onViewTicket={onViewTicket}
-                />
-              ))
-            )}
-          </div>
+          <ModuleStatCards
+            totalLabel="Total"
+            total={archiveAllRows.length}
+            cards={WORK_TRACKER_STAT_CARDS}
+            counts={archiveCounts}
+            activeFilter={archiveBucketFilter}
+            onFilterChange={setArchiveBucketFilter}
+          />
+          <div className="operations-board-note"><Icon name="alert" size={14} /> Items requiring your action are shown first.</div>
+          <PaginatedCardGrid
+            items={archiveTicketCards}
+            keyOf={(t) => t.ticket_id}
+            emptyMessage="Nothing here yet — vehicles you repair will show up here with their current status."
+            renderItem={(t) => <TicketCard ticket={t} onClick={() => onViewTicket(t)} />}
+          />
         </section>
       )}
+
+      {/* The old "My Assigned Maintenance Schedules" card section that used
+          to live here (a duplicate of the real Maintenance Schedule sidebar
+          page) was removed — that page is back in this role's sidebar, and
+          GET /maintenance-schedules already scopes to assigned_to = me for
+          a pure Maintenance Personnel account, so this was showing the same
+          data twice. */}
     </div>
   );
 }

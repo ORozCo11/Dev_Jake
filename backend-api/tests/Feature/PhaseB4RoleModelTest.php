@@ -321,15 +321,17 @@ class PhaseB4RoleModelTest extends TestCase
     }
 
     // =======================================================================
-    // Maintenance Schedules — Spec §19 (2026-10-06, current): Admin owns the
-    // calendar (create/edit/cancel/reassign); a Custodian only suggests one
-    // (schedule.suggest notifies Admin, books nothing).
+    // Maintenance Schedules — reversed again by the streamlined-workflow spec
+    // (2026-10-12, config/permissions.php): a Custodian now owns the calendar
+    // (create/edit own/delete/restore); schedule.suggest is a dead ability
+    // (empty grant) now that creation itself is a standard Custodian duty.
+    // schedule.reassign stays Admin-only and schedule.complete stays
+    // Maintenance-Personnel-only — neither of those moved.
     // =======================================================================
 
     #[Test]
-    public function a_custodian_cannot_create_a_maintenance_schedule_only_suggest_one(): void
+    public function a_custodian_creates_maintenance_schedules_directly_now(): void
     {
-        // Spec §19 (2026-10-06): Admin owns the calendar.
         $vehicle = $this->vehicle();
 
         Sanctum::actingAs($this->custodian, ['*']);
@@ -337,13 +339,25 @@ class PhaseB4RoleModelTest extends TestCase
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
             'scheduled_date' => now()->addWeek()->toDateString(),
-        ])->assertForbidden();
-
-        $this->postJson('/api/maintenance-schedules/suggest', [
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
         ])->assertCreated();
-        $this->assertDatabaseHas('notifications', ['user_id' => $this->admin->id, 'type' => 'schedule_suggested', 'vehicle_id' => $vehicle->vehicle_id]);
+    }
+
+    #[Test]
+    public function schedule_suggest_is_now_a_dead_endpoint_for_everyone(): void
+    {
+        // schedule.suggest's ability grant is now [] — creation itself is a
+        // standard Custodian duty, so the old "propose, Admin books it"
+        // detour no longer exists for anyone, including the Admin who used
+        // to receive the suggestion.
+        $vehicle = $this->vehicle();
+
+        foreach ([$this->custodian, $this->admin, $this->mechanic] as $user) {
+            Sanctum::actingAs($user, ['*']);
+            $this->postJson('/api/maintenance-schedules/suggest', [
+                'vehicle_id' => $vehicle->vehicle_id,
+                'maintenance_type' => 'Oil Change',
+            ])->assertForbidden();
+        }
         $this->assertDatabaseCount('vehicle_maintenance_schedules', 0);
     }
 
@@ -361,68 +375,57 @@ class PhaseB4RoleModelTest extends TestCase
     }
 
     #[Test]
-    public function admin_creates_maintenance_schedules(): void
+    public function admin_can_no_longer_create_or_edit_a_schedule(): void
     {
         $vehicle = $this->vehicle();
+        $schedule = VehicleMaintenanceSchedule::create([
+            'vehicle_id' => $vehicle->vehicle_id,
+            'maintenance_type' => 'Oil Change',
+            'scheduled_date' => now()->addWeek()->toDateString(),
+            'created_by' => $this->custodian->id,
+        ]);
 
         Sanctum::actingAs($this->admin, ['*']);
         $this->postJson('/api/maintenance-schedules', [
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
             'scheduled_date' => now()->addWeek()->toDateString(),
-        ])->assertCreated();
+        ])->assertForbidden();
+
+        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
+            'notes' => 'Admin trying to edit.',
+        ])->assertForbidden();
     }
 
     #[Test]
-    public function admin_can_edit_any_schedule(): void
+    public function a_custodian_can_edit_and_cancel_a_schedule_someone_else_created(): void
     {
         $vehicle = $this->vehicle();
-        $schedule = VehicleMaintenanceSchedule::create([
+        $ownSchedule = VehicleMaintenanceSchedule::create([
             'vehicle_id' => $vehicle->vehicle_id,
             'maintenance_type' => 'Oil Change',
             'scheduled_date' => now()->addWeek()->toDateString(),
             'created_by' => $this->custodian->id,
         ]);
-
-        Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
-            'notes' => 'Admin oversight edit.',
-        ])->assertOk();
-    }
-
-    #[Test]
-    public function a_custodian_can_no_longer_edit_a_schedule_even_one_they_created(): void
-    {
-        $vehicle = $this->vehicle();
-        $schedule = VehicleMaintenanceSchedule::create([
+        $othersSchedule = VehicleMaintenanceSchedule::create([
             'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'scheduled_date' => now()->addWeek()->toDateString(),
-            'created_by' => $this->custodian->id,
+            'maintenance_type' => 'Tire Rotation',
+            'scheduled_date' => now()->addWeeks(2)->toDateString(),
+            'created_by' => $this->otherCustodian->id,
         ]);
 
         Sanctum::actingAs($this->custodian, ['*']);
-        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
+        $this->putJson("/api/maintenance-schedules/{$ownSchedule->schedule_id}", [
             'notes' => 'Fixing a typo.',
-        ])->assertForbidden();
-    }
+        ])->assertOk();
 
-    #[Test]
-    public function a_custodian_cannot_edit_a_schedule_created_by_someone_else(): void
-    {
-        $otherCustodian = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian']]);
-        $vehicle = $this->vehicle();
-        $schedule = VehicleMaintenanceSchedule::create([
-            'vehicle_id' => $vehicle->vehicle_id,
-            'maintenance_type' => 'Oil Change',
-            'scheduled_date' => now()->addWeek()->toDateString(),
-            'created_by' => $otherCustodian->id,
-        ]);
+        $this->putJson("/api/maintenance-schedules/{$othersSchedule->schedule_id}", [
+            'notes' => 'Updated by a different Custodian.',
+        ])->assertOk();
+        $this->assertSame('Updated by a different Custodian.', $othersSchedule->fresh()->notes);
 
-        Sanctum::actingAs($this->custodian, ['*']);
-        $this->putJson("/api/maintenance-schedules/{$schedule->schedule_id}", [
-            'notes' => 'Trying to edit someone else\'s schedule.',
-        ])->assertForbidden();
+        $this->deleteJson("/api/maintenance-schedules/{$othersSchedule->schedule_id}")->assertOk();
+        $this->assertSame('Cancelled', $othersSchedule->fresh()->status);
     }
 
     // =======================================================================

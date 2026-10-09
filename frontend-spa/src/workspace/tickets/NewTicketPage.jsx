@@ -122,7 +122,7 @@ export function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCr
     if (!liveValues.vehicle_id) errors.push('Vehicle is required.');
     if (!liveValues.assigned_custodian_id) errors.push('Assign to Custodian is required.');
     if (!(liveValues.ticket_title ?? '').trim()) errors.push('Ticket Title is required.');
-    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Description / Details is required.');
+    if (!(liveValues.ticket_description ?? '').trim()) errors.push('Details is required.');
     if (!liveValues.priority) errors.push('Priority is required.');
     if (preDiagnosed && !subIssueRows.some((row) => row.trim())) {
       errors.push(`At least one ${isSingleIssueMode ? 'issue' : 'sub-issue'} is required.`);
@@ -366,7 +366,7 @@ export function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCr
               </label>
             </div>
             <label>
-              <span>Description / Details <span className="required-asterisk">*</span></span>
+              <span>Details <span className="required-asterisk">*</span></span>
               <textarea required rows={3} value={liveValues.ticket_description ?? ''} onChange={(e) => setField('ticket_description', e.target.value)} />
             </label>
             <label style={{ maxWidth: 260 }}>

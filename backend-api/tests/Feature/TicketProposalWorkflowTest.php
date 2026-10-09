@@ -18,10 +18,11 @@ use Tests\TestCase;
  * Custodian proposes a ticket (own information + a suggested mechanic per
  * sub-issue); Admin reviews, can edit ticket/sub-issue fields, then either
  * approves (dispatches any still-valid suggested mechanic, same effect as
- * assignMechanic()) or declines (hard-deletes the proposal outright — by
- * design, no other trace survives beyond the notification sent to the
- * Custodian). Admin's own createTicket() is unaffected — this is an
- * additional path in, not a replacement.
+ * assignMechanic()) or declines. Declining is a visible, reversible status
+ * (not a delete) — the Custodian sees it was declined and why, and Admin can
+ * undecline() it back to Pending Approval or approve it directly from
+ * Declined without undeclining first. Admin's own createTicket() is
+ * unaffected — this is an additional path in, not a replacement.
  */
 class TicketProposalWorkflowTest extends TestCase
 {
@@ -187,16 +188,24 @@ class TicketProposalWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_approve_a_proposal_which_dispatches_the_suggested_mechanic(): void
+    public function admin_can_approve_a_proposal_which_dispatches_the_chosen_mechanic(): void
     {
+        // Streamlined workflow (2026-10-12) — approval no longer
+        // auto-dispatches a sub-issue's suggested_mechanic_id (that legacy
+        // dispatch is deliberately skipped now); approveTicket() REQUIRES an
+        // explicit assigned_mechanic_id and bulk-dispatches that ONE
+        // mechanic to every sub-issue on the ticket.
         $vehicle = $this->vehicle();
         $ticket = $this->propose($vehicle);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
         $ticket->refresh();
         $this->assertSame('Active', $ticket->status);
+        $this->assertSame($this->mechanic->id, $ticket->assigned_mechanic_id);
         $this->assertSame('Under Maintenance', $vehicle->fresh()->status);
 
         $subIssue = $ticket->subIssues->first();
@@ -206,12 +215,16 @@ class TicketProposalWorkflowTest extends TestCase
         $this->assertSame($this->admin->id, $subIssue->mechanic_assigned_by);
 
         $this->assertDatabaseHas('notifications', ['user_id' => $this->custodian->id, 'type' => 'ticket_approved']);
-        $this->assertDatabaseHas('notifications', ['user_id' => $this->mechanic->id, 'type' => 'work_order_assigned']);
+        $this->assertDatabaseHas('notifications', ['user_id' => $this->mechanic->id, 'type' => 'ticket_assigned']);
     }
 
     #[Test]
-    public function a_sub_issue_with_no_suggested_mechanic_stays_open_after_approval(): void
+    public function every_sub_issue_is_dispatched_to_the_one_chosen_mechanic_regardless_of_any_suggestion(): void
     {
+        // A sub-issue proposed with NO suggested_mechanic_id used to stay
+        // Open after approval. Under the streamlined, one-mechanic-per-ticket
+        // model there's no such thing any more — approveTicket() bulk-
+        // dispatches every sub-issue to the single mechanic the Admin picks.
         $vehicle = $this->vehicle();
         Sanctum::actingAs($this->custodian, ['*']);
         $response = $this->postJson('/api/tickets/propose', [
@@ -224,9 +237,13 @@ class TicketProposalWorkflowTest extends TestCase
         $ticket = MaintenanceTicket::findOrFail($response->json('ticket_id'));
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
-        $this->assertSame('Open', $ticket->subIssues->first()->fresh()->status);
+        $fresh = $ticket->subIssues->first()->fresh();
+        $this->assertSame('Under Repair', $fresh->status);
+        $this->assertSame($this->mechanic->id, $fresh->assigned_mechanic_id);
     }
 
     #[Test]
@@ -236,10 +253,12 @@ class TicketProposalWorkflowTest extends TestCase
         $ticket = $this->propose($vehicle);
         $subIssue = $ticket->subIssues->first();
         $otherMechanic = $this->user('Maintenance Personnel');
+        $assignedMechanic = $this->user('Maintenance Personnel');
 
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
             'priority' => 'Medium',
+            'assigned_mechanic_id' => $assignedMechanic->id,
             'sub_issues' => [
                 ['sub_issue_id' => $subIssue->sub_issue_id, 'suggested_mechanic_id' => $otherMechanic->id],
             ],
@@ -249,7 +268,14 @@ class TicketProposalWorkflowTest extends TestCase
         // Titles are server-composed and not editable at approval (spec §7).
         $this->assertSame(sprintf('MT-%04d — %s — Worn belt', $ticket->ticket_id, $vehicle->vehicle_name), $ticket->ticket_title);
         $this->assertSame('Medium', $ticket->priority);
-        $this->assertSame($otherMechanic->id, $ticket->subIssues->first()->assigned_mechanic_id);
+
+        $fresh = $ticket->subIssues->first()->fresh();
+        // Every sub-issue is dispatched to the ticket-level assigned
+        // mechanic chosen at approval...
+        $this->assertSame($assignedMechanic->id, $fresh->assigned_mechanic_id);
+        // ...independently of the per-sub-issue field edits approveTicket()
+        // still applies (a metadata patch only, no dispatch effect of its own).
+        $this->assertSame($otherMechanic->id, $fresh->suggested_mechanic_id);
     }
 
 
@@ -265,7 +291,10 @@ class TicketProposalWorkflowTest extends TestCase
         $this->assertSame($expected, $ticket->ticket_title);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", ['ticket_title' => 'Admin override attempt'])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'ticket_title' => 'Admin override attempt',
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
         $this->assertSame($expected, $ticket->fresh()->ticket_title);
     }
@@ -283,7 +312,7 @@ class TicketProposalWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_decline_a_proposal_and_it_leaves_no_ticket_row_behind(): void
+    public function admin_can_decline_a_proposal_and_it_stays_visible_as_declined(): void
     {
         $ticket = $this->propose($this->vehicle());
         $subIssueId = $ticket->subIssues->first()->sub_issue_id;
@@ -293,21 +322,103 @@ class TicketProposalWorkflowTest extends TestCase
             'decline_reason' => 'Not urgent enough — defer to next inspection.',
         ])->assertOk();
 
-        $this->assertDatabaseMissing('maintenance_tickets', ['ticket_id' => $ticket->ticket_id]);
-        $this->assertDatabaseMissing('ticket_sub_issues', ['sub_issue_id' => $subIssueId]);
+        $this->assertDatabaseHas('maintenance_tickets', [
+            'ticket_id' => $ticket->ticket_id,
+            'status' => 'Declined',
+            'decline_reason' => 'Not urgent enough — defer to next inspection.',
+        ]);
+        $this->assertDatabaseHas('ticket_sub_issues', ['sub_issue_id' => $subIssueId]);
 
         $notification = \App\Models\Notification::where('user_id', $this->custodian->id)
             ->where('type', 'ticket_declined')
             ->firstOrFail();
         $this->assertStringContainsString('Not urgent enough', $notification->message);
 
-        // The ticket row is gone — this is the only remaining durable trace
-        // of the decline, so it must carry the reason, the vehicle, and who
-        // proposed it even though those rows no longer exist to look up.
         $log = \App\Models\ActivityLog::where('action', 'Decline Ticket')->firstOrFail();
         $this->assertStringContainsString('Not urgent enough', $log->details);
-        $this->assertStringContainsString($this->custodian->name, $log->details);
         $this->assertSame((string) $ticket->ticket_id, $log->affected_record_id);
+
+        // The Custodian can still see their own declined proposal — it's
+        // not gone, just declined.
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->getJson("/api/tickets/{$ticket->ticket_id}")->assertOk()->assertJsonPath('status', 'Declined');
+    }
+
+    #[Test]
+    public function admin_can_undecline_a_proposal_back_to_pending_approval(): void
+    {
+        $ticket = $this->propose($this->vehicle());
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/decline", ['decline_reason' => 'x'])->assertOk();
+
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/undecline")->assertOk();
+
+        $this->assertDatabaseHas('maintenance_tickets', [
+            'ticket_id' => $ticket->ticket_id,
+            'status' => 'Pending Approval',
+            'decline_reason' => null,
+        ]);
+
+        // Can be declined again, approved, the whole cycle — it's a normal
+        // Pending Approval proposal again.
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
+        $this->assertDatabaseHas('maintenance_tickets', ['ticket_id' => $ticket->ticket_id, 'status' => 'Active']);
+    }
+
+    #[Test]
+    public function admin_can_approve_a_declined_proposal_directly_without_undeclining(): void
+    {
+        $ticket = $this->propose($this->vehicle());
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/decline", ['decline_reason' => 'Reconsidering.'])->assertOk();
+
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('maintenance_tickets', [
+            'ticket_id' => $ticket->ticket_id,
+            'status' => 'Active',
+            'decline_reason' => null,
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ]);
+    }
+
+    #[Test]
+    public function only_a_declined_ticket_can_be_undeclined(): void
+    {
+        $ticket = $this->propose($this->vehicle());
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/undecline")->assertStatus(422);
+    }
+
+    #[Test]
+    public function custodian_and_maintenance_personnel_cannot_undecline(): void
+    {
+        $ticket = $this->propose($this->vehicle());
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/decline", ['decline_reason' => 'x'])->assertOk();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/undecline")->assertForbidden();
+
+        Sanctum::actingAs($this->mechanic, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/undecline")->assertForbidden();
+    }
+
+    #[Test]
+    public function a_declined_ticket_cannot_be_cancelled(): void
+    {
+        $ticket = $this->propose($this->vehicle());
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/decline", ['decline_reason' => 'x'])->assertOk();
+
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/cancel")->assertStatus(422);
     }
 
     #[Test]
@@ -337,9 +448,13 @@ class TicketProposalWorkflowTest extends TestCase
     {
         $ticket = $this->propose($this->vehicle());
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
 
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertStatus(422);
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertStatus(422);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/decline", ['decline_reason' => 'x'])->assertStatus(422);
     }
 
@@ -422,7 +537,9 @@ class TicketProposalWorkflowTest extends TestCase
         $this->assertSame('ACME Repair Shop', $sub->external_vendor);
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [])->assertOk();
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertOk();
         $this->assertSame('Active', $ticket->fresh()->status);
     }
 }

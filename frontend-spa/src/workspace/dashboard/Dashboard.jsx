@@ -380,7 +380,6 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
     const quick = [];
     if (isCustodianView) {
       quick.push(
-        { icon: 'search', label: 'To Inspect', value: badges.ticketInspections ?? 0, go: () => onGoToModule('ticketInspections', []) },
         { icon: 'checkCircle', label: 'To Verify', value: badges.ticketVerifications ?? 0, go: () => onGoToModule('ticketVerifications', []) },
         { icon: 'alert', label: 'My Open Reports', value: badges.issues ?? 0, go: () => onGoToModule('issues', []) },
       );
@@ -522,6 +521,16 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
               <ChartLegend rows={vehicleCondition} />
             </div>
           </div>
+        </section>
+
+        {/* Same vehicle-condition data as the donut above, as a bar graph —
+            the donut reads the share (percent in good condition), this
+            reads the actual counts per bucket at a glance. */}
+        <section className="panel col-span-7 dashboard-lean-panel">
+          <div className="panel-header-bar">
+            <h3>Fleet Condition by Count</h3>
+          </div>
+          <ColumnChart rows={vehicleCondition} />
         </section>
       </div>
     );

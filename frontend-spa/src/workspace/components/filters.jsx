@@ -4,7 +4,7 @@ import useDepsChanged from '../../hooks/useDepsChanged';
 import { DateFilterInput, MultiSelectDropdown } from './inputs';
 import { DualRangeSlider } from './ui';
 import { pluralizeLabel, sameSelection } from '../lib/format';
-import { ISSUE_STAT_CARDS, TICKET_STAT_CARDS } from '../lib/statCards';
+import { ISSUE_SEVERITY_CHIP_BG, ISSUE_SEVERITY_CHIP_COLOR, TICKET_STAT_CARDS } from '../lib/statCards';
 import { severityRangeFromSelection } from '../lib/workflow';
 
 // A one-off, richer filter panel built specifically for Issue Reports (a
@@ -20,7 +20,6 @@ export function IssueFilterPanel({
   vehicles = [],
   issueTypes = [],
   severityLevels = [],
-  statusOptions = [],
   filterCategory,
   setFilterCategory,
   filterCapacity,
@@ -42,11 +41,6 @@ export function IssueFilterPanel({
     return Array.from(caps).sort();
   }, [vehicles]);
 
-  const statusKeys = useMemo(
-    () => ISSUE_STAT_CARDS.filter((c) => statusOptions.includes(c.key)).map((c) => c.key),
-    [statusOptions],
-  );
-
   // Same default window every time the applied filter is unset — both on
   // first mount AND after "Clear Filters" resets filterDateStart/End back
   // to '' — instead of only seeding it once and then collapsing to a blank
@@ -56,7 +50,7 @@ export function IssueFilterPanel({
     capacity: filterCapacity ?? [],
     issueType: filterIssueType ?? [],
     status: filterStatus ?? [],
-    severityRange: severityRangeFromSelection(filterPriority, severityLevels),
+    severity: filterPriority ?? [],
     dateStart: filterDateStart || '2026-01-01',
     dateEnd: filterDateEnd || '2026-12-31',
   });
@@ -67,17 +61,14 @@ export function IssueFilterPanel({
     setDraft(draftFromFilters());
   }
 
-  // An empty draft.status means "no filter" — every chip should read as
-  // checked, the same "everything's included" state the Total/All stat
-  // card represents. Unchecking one FROM that implicit-all state has to
-  // expand it into an explicit "every status except this one" list first —
-  // otherwise toggling off a single chip would (wrongly) read as toggling
-  // it on, since d.status.includes(key) is false for all of them.
-  const toggleDraftStatus = (key) => {
+  // An empty draft.severity means "no filter" — every chip reads checked.
+  // Unchecking one FROM that implicit-all state expands it into an explicit
+  // "every level except this one" list first.
+  const toggleDraftSeverity = (level) => {
     setDraft((d) => {
-      const current = d.status.length === 0 ? statusKeys : d.status;
-      const next = current.includes(key) ? current.filter((s) => s !== key) : [...current, key];
-      return { ...d, status: next.length === statusKeys.length ? [] : next };
+      const current = d.severity.length === 0 ? severityLevels : d.severity;
+      const next = current.includes(level) ? current.filter((s) => s !== level) : [...current, level];
+      return { ...d, severity: next.length === severityLevels.length ? [] : next };
     });
   };
 
@@ -86,17 +77,16 @@ export function IssueFilterPanel({
     setFilterCapacity(draft.capacity);
     setFilterIssueType(draft.issueType);
     setFilterStatus(draft.status);
-    setFilterPriority(severityLevels.slice(draft.severityRange[0], draft.severityRange[1] + 1));
+    setFilterPriority(draft.severity);
     setFilterDateStart(draft.dateStart);
     setFilterDateEnd(draft.dateEnd);
   };
 
-  const isFullSeverityRange = draft.severityRange[0] === 0 && draft.severityRange[1] === severityLevels.length - 1;
   const isDirty = !sameSelection(draft.category, filterCategory ?? [])
     || !sameSelection(draft.capacity, filterCapacity ?? [])
     || !sameSelection(draft.issueType, filterIssueType ?? [])
     || !sameSelection(draft.status, filterStatus ?? [])
-    || !isFullSeverityRange && !sameSelection(severityLevels.slice(draft.severityRange[0], draft.severityRange[1] + 1), filterPriority ?? [])
+    || !sameSelection(draft.severity, filterPriority ?? [])
     || draft.dateStart !== (filterDateStart || '2026-01-01')
     || draft.dateEnd !== (filterDateEnd || '2026-12-31');
 
@@ -145,29 +135,29 @@ export function IssueFilterPanel({
         </div>
       </div>
 
-      <div className="issue-filter-severity-card">
-        <span className="issue-filter-severity-label">Severity</span>
-        <DualRangeSlider
-          label="Severity"
-          labels={severityLevels}
-          minIndex={draft.severityRange[0]}
-          maxIndex={draft.severityRange[1]}
-          onChange={(min, max) => setDraft((d) => ({ ...d, severityRange: [min, max] }))}
-        />
-      </div>
-      {/* Second grid column of the BOTTOM row — chips + button grouped into
-          one cell so together they size to the same grid track as the
-          dates above, instead of the button flexing out to fill the whole
-          row on its own. */}
-      <div className="issue-filter-right-cluster">
+      {/* Low/Medium/High used to be a range slider (pick a contiguous span
+          of the scale) — plain checkboxes instead, same chip style as the
+          status group, since severity is really just another multi-select
+          and the slider made picking e.g. "Low + High only" impossible.
+          Colors match the Issue Reports bar chart's own segments. */}
+      <fieldset className="issue-filter-severity-card">
+        <legend className="issue-filter-severity-label">Severity</legend>
         <div className="issue-filter-status-grid">
-          {ISSUE_STAT_CARDS.filter((c) => statusOptions.includes(c.key)).map((c) => (
-            <label key={c.key} className="issue-filter-status-chip" style={{ background: c.bg }}>
-              <input type="checkbox" checked={draft.status.length === 0 || draft.status.includes(c.key)} onChange={() => toggleDraftStatus(c.key)} />
-              <span style={{ color: c.color }}>{c.label}</span>
+          {severityLevels.map((level) => (
+            <label key={level} className="issue-filter-status-chip" style={{ background: ISSUE_SEVERITY_CHIP_BG[level] ?? '#f1f5f9' }}>
+              <input type="checkbox" checked={draft.severity.length === 0 || draft.severity.includes(level)} onChange={() => toggleDraftSeverity(level)} />
+              <span style={{ color: ISSUE_SEVERITY_CHIP_COLOR[level] ?? '#334155' }}>{level}</span>
             </label>
           ))}
         </div>
+      </fieldset>
+      {/* The status chips (Pending/Under Review/In Maintenance/Resolved)
+          that used to live here were a plain duplicate of the stat cards
+          at the top of the page — same four statuses, same counts, just a
+          second way to toggle them. Removed; the Filter button keeps its
+          own row instead of sharing a cell with chips that no longer
+          exist. */}
+      <div className="issue-filter-right-cluster">
         <div className="issue-filter-actions">
           <button type="button" className="filter-apply-btn issue-filter-apply-btn" onClick={applyFilters} disabled={!isDirty}>Filter</button>
         </div>

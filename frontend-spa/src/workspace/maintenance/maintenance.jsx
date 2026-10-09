@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from '../../components/Icon';
 import api from '../../api/axios';
 import useDepsChanged from '../../hooks/useDepsChanged';
-import { DateBadge, ModuleLoader, ModulePanel, StatusBadge, UserAvatarName, VehicleCell } from '../components/ui';
+import { DateBadge, ModuleLoader, ModulePanel, StatusBadge, TicketStatusBadge, UserAvatarName, VehicleCell } from '../components/ui';
 import { SmartForm } from '../forms/SmartForm';
 import { formatDate, formatTime, resolvePhotoUrl } from '../lib/format';
-import { hasRole } from '../lib/permissions';
+import { canDo } from '../lib/permissions';
 import { MAINTENANCE_PROGRESS_STAGES, RECURRENCE_LABEL, isClosedUnverified, isScheduleOverdue, maintenanceStageIndex, scheduleDueLabel, scheduleUrgencyBucket } from '../lib/workflow';
 
 // Card-view counterpart to the Maintenance Records table — mirrors TicketCard
@@ -390,8 +390,7 @@ export function ScheduleActionMenu({ label, children }) {
 // Deliberately NOT one big click target: unlike a Maintenance Record, a
 // schedule has no detail page to open, and a whole-card click would fight
 // with the action buttons it needs to carry.
-export function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign, onViewTicket }) {
-  const isAdmin = hasRole(currentUser, 'Admin');
+export function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign, onViewTicket, onViewVehicle, onApprove, onDecline }) {
   const currentUserId = currentUser?.id;
   const isMine = currentUserId != null && String(row.assigned_to) === String(currentUserId);
   const overdue = isScheduleOverdue(row);
@@ -406,14 +405,31 @@ export function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, 
   const canComplete = row.status === 'Scheduled' && !row.resulting_ticket_id && onComplete && isMine;
   const becameTicket = row.status === 'Scheduled' && row.resulting_ticket_id && onViewTicket;
 
+  // Clicking the card body opens the vehicle's profile; the action row below
+  // stops propagation so its buttons never double-fire this.
+  const canView = Boolean(onViewVehicle && row.vehicle);
+
   return (
-    <article className={`ticket-card maintenance-schedule-card schedule-${String(row.status ?? '').toLowerCase()} urgency-${String(urgency ?? 'none').toLowerCase()}`}>
+    <article
+      className={`ticket-card maintenance-schedule-card schedule-${String(row.status ?? '').toLowerCase()} urgency-${String(urgency ?? 'none').toLowerCase()}`}
+      style={canView ? { cursor: 'pointer' } : undefined}
+      onClick={canView ? () => onViewVehicle(row.vehicle) : undefined}
+      role={canView ? 'button' : undefined}
+      tabIndex={canView ? 0 : undefined}
+      aria-label={canView ? `Schedule #${row.schedule_id} — open ${row.vehicle?.vehicle_name ?? 'vehicle'} profile` : undefined}
+      onKeyDown={canView ? (e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewVehicle(row.vehicle); }
+      } : undefined}
+    >
       <div className="ticket-card-content-wrapper">
         <div className="ticket-card-info">
           <div className="ticket-card-top">
             <span className="ticket-card-id">#{row.schedule_id}</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              <StatusBadge value={row.status} />
+              {/* TicketStatusBadge covers Pending Approval/Declined (shared
+                  with tickets) — same choice as scheduleColumns' Status. */}
+              <TicketStatusBadge value={row.status} />
               {overdue && (
                 <span className="schedule-urgency-badge is-overdue">OVERDUE</span>
               )}
@@ -476,7 +492,17 @@ export function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, 
         </div>
       )}
 
-      <div className="row-actions schedule-card-actions" aria-label={`Actions for schedule ${row.schedule_id}`}>
+      {row.status === 'Declined' && row.decline_reason && (
+        <p className="muted" style={{ fontSize: '0.74rem', margin: '0 0 8px', color: '#991b1b' }}>
+          <strong>Declined:</strong> {row.decline_reason}
+        </p>
+      )}
+
+      {/* margin-top: auto pins the action row to the bottom of the card (same
+          as TicketCard's footer) so buttons line up across a row of cards
+          regardless of how much optional content each card has above it.
+          stopPropagation keeps button clicks from also opening the vehicle. */}
+      <div className="row-actions schedule-card-actions" style={{ marginTop: 'auto' }} role="group" aria-label={`Actions for schedule ${row.schedule_id}`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         {canComplete && (
           <button className="btn-confirm-action schedule-action-button" onClick={() => onComplete(row)} type="button"><Icon name="checkCircle" size={14} /><span>Mark Done</span></button>
         )}
@@ -486,27 +512,37 @@ export function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, 
         {row.status === 'Completed' && row.resulting_maintenance_id && onViewRecord && (
           <button className="btn-view-action schedule-action-button" onClick={() => onViewRecord(row)} type="button"><Icon name="wrench" size={14} /><span>View Record</span></button>
         )}
-        {/* Admin edits any schedule; a Custodian may only edit the one they
-            themselves created — see scheduleColumns' matching Action column. */}
-        {(isAdmin || (currentUserId != null && String(row.createdBy?.id) === String(currentUserId))) && (
+        {/* Admin reviews a Custodian's booked schedule before it goes live —
+            see scheduleColumns' matching Action column for the full
+            reasoning. A Declined row can still be approved directly. */}
+        {canDo(currentUser, 'schedule.approve') && ['Pending Approval', 'Declined'].includes(row.status) && onApprove && (
+          <button className="btn-confirm-action schedule-action-button" onClick={() => onApprove(row)} type="button"><Icon name="checkCircle" size={14} /><span>Approve</span></button>
+        )}
+        {canDo(currentUser, 'schedule.decline') && row.status === 'Pending Approval' && onDecline && (
+          <button className="btn-delete-action schedule-action-button" onClick={() => onDecline(row)} type="button"><Icon name="close" size={14} /><span>Decline</span></button>
+        )}
+        {/* Edit/Delete/Restore are Custodian-only abilities (config/
+            permissions.php — Admin doesn't hold schedule.edit/.delete/
+            .restore), gated by canDo so this matches what the backend
+            actually accepts — see scheduleColumns' matching Action column.
+            Any Custodian may edit any schedule in their barangay. */}
+        {canDo(currentUser, 'schedule.edit') && (
           <button className="btn-edit-action schedule-action-button" onClick={() => onEdit(row)} type="button"><Icon name="edit" size={14} /><span>Edit</span></button>
         )}
-        {/* Reassign/cancel stay Admin-only, unaffected by the ownership edit above. */}
-        {isAdmin && (
-          <>
-            {/* schedule.reassign ability (Admin only). */}
-            {row.status === 'Scheduled' && onReassign && (
-              <button className="btn-view-action schedule-action-button" onClick={() => onReassign(row)} type="button"><Icon name="undo" size={14} /><span>Reassign</span></button>
-            )}
-            {/* Same swap as the table: a cancelled schedule offers Restore, not a
-                Delete that would just re-cancel something already cancelled. */}
-            {row.status === 'Cancelled' && onRestore ? (
-              <button className="btn-confirm-action icon-btn" onClick={() => onRestore(row)} type="button" title="Restore" aria-label="Restore"><Icon name="undo" size={14} /></button>
-            ) : (
-              <button className="btn-delete-action icon-btn" onClick={() => onDelete(row)} type="button" title="Cancel Schedule" aria-label="Cancel Schedule"><Icon name="trash" size={14} /></button>
-            )}
-          </>
+        {/* schedule.reassign (Admin only) — Admin's one remaining lever over
+            an already-booked schedule. */}
+        {canDo(currentUser, 'schedule.reassign') && row.status === 'Scheduled' && onReassign && (
+          <button className="btn-view-action schedule-action-button" onClick={() => onReassign(row)} type="button"><Icon name="undo" size={14} /><span>Reassign</span></button>
         )}
+        {/* Same swap as the table: a cancelled schedule offers Restore, not a
+            Delete that would just re-cancel something already cancelled. */}
+        {row.status === 'Cancelled'
+          ? canDo(currentUser, 'schedule.restore') && onRestore && (
+            <button className="btn-confirm-action icon-btn" onClick={() => onRestore(row)} type="button" title="Restore" aria-label="Restore"><Icon name="undo" size={14} /></button>
+          )
+          : canDo(currentUser, 'schedule.delete') && (
+            <button className="btn-delete-action icon-btn" onClick={() => onDelete(row)} type="button" title="Cancel Schedule" aria-label="Cancel Schedule"><Icon name="trash" size={14} /></button>
+          )}
       </div>
     </article>
   );
