@@ -131,7 +131,17 @@ class TicketController extends Controller
             abort_unless($isAssignedCustodian || $isAssignedMechanic, 403, 'You are not assigned to this ticket.');
         }
 
-        return $ticket->load($this->eagerLoads());
+        $ticket->load($this->eagerLoads());
+
+        // This ticket's own Activity Log entries, for the Ticket Details
+        // page's Activity History — only on this single-ticket endpoint.
+        $ticket->setAttribute('activity', ActivityLog::with('user:id,name')
+            ->where('module', 'Maintenance Tickets')
+            ->where('affected_record_id', (string) $ticket->ticket_id)
+            ->orderBy('log_id')
+            ->get(['log_id', 'user_id', 'role', 'action', 'details', 'created_at']));
+
+        return $ticket;
     }
 
     public function lookups(Request $request)

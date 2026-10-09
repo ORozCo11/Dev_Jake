@@ -1528,6 +1528,16 @@ class FleetController extends Controller
             $query->where('reported_by', $request->user()->id);
         }
 
+        // A Custodian sees their own reports, not another Custodian's. Reports
+        // filed by Maintenance Personnel stay visible: those are routed to
+        // every Custodian (see storeIssue()), who has to propose the ticket.
+        if ($user->hasRole('Custodian') && !$user->hasRole('Admin')) {
+            $query->where(function ($q) use ($user) {
+                $q->where('reported_by', $user->id)
+                    ->orWhereDoesntHave('reportedBy', fn ($r) => $r->havingRole('Custodian'));
+            });
+        }
+
         $query->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('severity_level'), fn ($q) => $q->where('severity_level', $request->severity_level))
             ->when($request->filled('issue_type'), fn ($q) => $q->where('issue_type', $request->issue_type));

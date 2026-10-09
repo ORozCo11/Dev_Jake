@@ -178,19 +178,28 @@ class PhaseB3DataScopingTest extends TestCase
     }
 
     #[Test]
-    public function custodian_sees_every_issue_report_in_the_barangay_not_just_their_own(): void
+    public function custodian_sees_own_and_mechanic_reports_but_not_another_custodians(): void
     {
         $vehicle = $this->vehicle();
-        VehicleIssueReport::create([
+        $otherCustodian = $this->user('Custodian');
+        $report = fn (User $by) => VehicleIssueReport::create([
             'vehicle_id' => $vehicle->vehicle_id,
             'issue_type' => 'Flat tire',
             'issue_description' => 'Front-left tire flat.',
-            'reported_by' => $this->admin->id,
-        ]);
+            'reported_by' => $by->id,
+        ])->issue_report_id;
+
+        $own = $report($this->custodian);
+        $fromMechanic = $report($this->mechanic);
+        $report($otherCustodian);
 
         Sanctum::actingAs($this->custodian, ['*']);
-        $response = $this->getJson('/api/issues')->assertOk();
-        $this->assertCount(1, $response->json());
+        $ids = collect($this->getJson('/api/issues')->assertOk()->json())->pluck('issue_report_id')->sort()->values()->all();
+        $this->assertSame([$own, $fromMechanic], $ids);
+
+        // Admin still sees the whole barangay's queue.
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->assertCount(3, $this->getJson('/api/issues')->assertOk()->json());
     }
 
     #[Test]
