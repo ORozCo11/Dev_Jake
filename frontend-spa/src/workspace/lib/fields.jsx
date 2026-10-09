@@ -1,5 +1,6 @@
 import { VehicleLocationMap } from '../../components/lazy';
 import { NEW_ISSUE_OPTION } from './formHelpers';
+import { SeverityGuide } from '../issues/issueBadges';
 import { EMPTY_OBJ, options, vehicleOptions } from './format';
 
 export function profileFields(existingPhotoUrl) {
@@ -200,7 +201,7 @@ export function vehicleFields(lookups, allHubs = [], domain = 'Land', existingPh
 export function conditionFields(lookups) {
   return [
     { label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select' },
-    { label: 'Condition Result', name: 'condition_result', options: lookups.condition_results, required: true, type: 'select' },
+    { label: 'Condition Result', name: 'condition_result', options: lookups.condition_results, required: true, type: 'select', hint: '“Good” records the vehicle’s physical condition only — it does not mark it ready to respond. Use a Readiness Check for that.' },
     { label: 'Observations', name: 'observations', type: 'textarea' },
   ];
 }
@@ -220,7 +221,7 @@ export function issueFields(lookups, editTarget, role, onAddVehicle) {
       // every distinct problem lands as its own sub-issue instead of the
       // whole description getting dumped into a single sub-issue.
       { label: 'Issues Found', name: 'issue_description', required: true, type: 'list', placeholder: 'e.g. Low coolant level', addLabel: 'Add another issue' },
-      { label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select' },
+      { label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select', extra: (values) => <SeverityGuide levels={lookups.severity_levels} selected={values.severity_level} /> },
       { label: 'Files', name: 'attachments', type: 'multi-file', existingAttachments: editTarget.attachments },
     ];
   }
@@ -246,7 +247,7 @@ export function issueFields(lookups, editTarget, role, onAddVehicle) {
       ? { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'creatable-select', newItemLabel: 'issue type', catalogEndpoint: '/fault-categories' }
       : { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'catalog-or-other', otherNoteField: 'remarks', otherNoteLabel: 'Describe the issue/type' }),
     { label: 'Issue Description', name: 'issue_description', required: true, type: 'textarea' },
-    { label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select' },
+    { label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select', extra: (values) => <SeverityGuide levels={lookups.severity_levels} selected={values.severity_level} /> },
     { label: 'Files', name: 'attachments', type: 'multi-file' },
   ];
 }

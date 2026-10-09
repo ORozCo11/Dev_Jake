@@ -5,6 +5,8 @@ import { canDo, hasRole } from './lib/permissions';
 import { moduleBadgeTone } from './lib/statCards';
 import { READINESS_BADGE, RECURRENCE_LABEL, isScheduleOverdue, issueNeedsTicket } from './lib/workflow';
 import { ScheduleActionMenu } from './maintenance/maintenance';
+import { IssueSeverityBadge, IssueTicketStateBadge } from './issues/issueBadges';
+import { ConditionResultBadge, ConditionTicketCell } from './conditions/conditions';
 
 export function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket, onReadinessCheck) {
   const columns = [
@@ -268,11 +270,12 @@ export function locationColumns(currentUser, onViewOnMap, onEdit) {
   ];
 }
 
-export function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromCondition, onSuggestScheduleFromCondition, onAddCondition) {
+export function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromCondition, onSuggestScheduleFromCondition, onAddCondition, onViewTicket, latestCheckIds) {
   const columns = [
     { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.condition_check_id ?? '-' },
     { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (row) => row.vehicle?.plate_number ?? '-' },
-    { key: 'result', label: 'Result', className: 'cell-center', render: (row) => <StatusBadge value={row.condition_result} /> },
+    { key: 'result', label: 'Result', className: 'cell-center', render: (row) => <ConditionResultBadge value={row.condition_result} isLatest={Boolean(row.condition_check_id && latestCheckIds?.has(row.condition_check_id))} /> },
+    { key: 'ticket', label: 'Resulting Ticket', className: 'cell-center', render: (row) => <ConditionTicketCell row={row} onViewTicket={onViewTicket} /> },
     { key: 'checked_by', label: 'Checked By', className: 'cell-center', render: (row) => <UserAvatarName user={row.checked_by} /> },
     { key: 'date', label: 'Date', className: 'cell-center', render: (row) => <DateBadge value={row.created_at} /> },
     { key: 'time', label: 'Time', className: 'cell-center', render: (row) => formatTime(row.created_at) },
@@ -312,7 +315,7 @@ export function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromC
               Edit/Delete shift left on every row that lacks it, and the
               column stops lining up. */}
           {(canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && onCreateTicketFromCondition && (
-            row.condition_result !== 'Good' ? (
+            row.condition_result !== 'Good' && !row.resulting_ticket ? (
               <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromCondition(row)} type="button" title={canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'} aria-label={canDo(user, 'ticket.propose') ? 'Propose Ticket' : 'Create Ticket'}><Icon name="ticket" size={14} /></button>
             ) : (
               <button
@@ -364,9 +367,10 @@ export function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoT
         </div>
       ),
     },
-    { key: 'vehicle', label: 'Vehicle', width: '28%', render: (row) => <VehicleCell vehicle={row.vehicle} /> },
+    { key: 'vehicle', label: 'Vehicle', width: '20%', render: (row) => <VehicleCell vehicle={row.vehicle} /> },
     { key: 'plate', label: 'Plate Number', width: '7%', className: 'cell-center', render: (row) => row.vehicle?.plate_number ?? '-' },
-    { key: 'severity', label: 'Severity', width: '9%', className: 'cell-center', render: (row) => <TicketStatusBadge value={row.severity_level} /> },
+    { key: 'vehicle_status', label: 'Vehicle Status', width: '9%', className: 'cell-center', render: (row) => (row.vehicle?.status ? <StatusBadge value={row.vehicle.status} /> : '-') },
+    { key: 'severity', label: 'Severity', width: '9%', className: 'cell-center', render: (row) => <IssueSeverityBadge value={row.severity_level} /> },
     { key: 'status', label: 'Status', width: '9%', className: 'cell-center', render: (row) => <StatusBadge value={row.status} /> },
     {
       key: 'reported_by',
@@ -382,30 +386,16 @@ export function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoT
     { key: 'date', label: 'Date', width: '9%', className: 'cell-center', render: (row) => <DateBadge value={row.created_at} /> },
   ];
 
-  // Which ticket (if any) this report became — a link, or a dash when nobody
-  // has started one. Only roles that can open tickets see it.
-  if (['Admin', 'Custodian'].includes(role) && onViewTicket) {
-    columns.splice(columns.length - 1, 0, {
-      key: 'ticket',
-      label: 'Ticket',
-      width: '8%',
-      className: 'cell-center',
-      render: (row) => (row.maintenance_ticket
-        ? (
-          <span className="cell-stack">
-            <button
-              type="button"
-              className="issue-reporter-link"
-              onClick={(e) => { e.stopPropagation(); onViewTicket({ ticket_id: row.maintenance_ticket.ticket_id }); }}
-            >
-              Ticket #{row.maintenance_ticket.ticket_id}
-            </button>
-            {row.maintenance_ticket.status && <small className="cell-subtext">{row.maintenance_ticket.status}</small>}
-          </span>
-        )
-        : <span className="muted" title="No ticket has been started for this report yet">No ticket</span>),
-    });
-  }
+  // Where this report stands against the ticket workflow — No ticket yet /
+  // Ticket proposed / Proposal declined / Ticket active / Resolved — as text
+  // + icon, with the ticket number as a link for roles that can open it.
+  columns.splice(columns.length - 1, 0, {
+    key: 'ticket',
+    label: 'Ticket',
+    width: '11%',
+    className: 'cell-center',
+    render: (row) => <IssueTicketStateBadge issue={row} onViewTicket={['Admin', 'Custodian'].includes(role) ? onViewTicket : undefined} />,
+  });
 
   if (['Admin', 'Maintenance Personnel'].includes(role)) {
     columns.push({
