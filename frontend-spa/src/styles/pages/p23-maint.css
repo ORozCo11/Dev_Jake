@@ -1,0 +1,744 @@
+/* Maintenance Records & Maintenance Schedules — UI audit §11/§12 (+22-27).
+   Token-based so every surface, badge and hover works in both the dark
+   default and html[data-theme="light"]. Loaded last (App.css), so the
+   same-specificity overrides of ui-foundation.css's hard-coded light
+   colours below win without !important. */
+
+.p23-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Tone helpers (chips, notes, banners) ---------------------------- */
+
+.p23-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--status-neutral-border);
+  border-radius: var(--radius-pill);
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-fg);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.p23-chip.tone-success { border-color: var(--status-success-border); background: var(--status-success-bg); color: var(--status-success-fg); }
+.p23-chip.tone-warning { border-color: var(--status-warning-border); background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.p23-chip.tone-danger { border-color: var(--status-danger-border); background: var(--status-danger-bg); color: var(--status-danger-fg); }
+.p23-chip.tone-info { border-color: var(--status-info-border); background: var(--status-info-bg); color: var(--status-info-fg); }
+.p23-chip.tone-accent { border-color: var(--status-accent-border); background: var(--status-accent-bg); color: var(--status-accent-fg); }
+
+.p23-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 4px 0 2px;
+}
+
+.p23-badge-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.p23-help-text {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+.p23-link-button,
+.p23-inline-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--status-info-fg);
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.p23-inline-link { font-size: var(--font-size-2xs); }
+
+.p23-link-button:hover,
+.p23-inline-link:hover { color: var(--text-strong); }
+
+.p23-link-button:focus-visible,
+.p23-inline-link:focus-visible,
+.p23-quiet-action:focus-visible,
+.p23-record-card:focus-visible,
+.p23-schedule-card:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* ---- Stage trail (same four stages everywhere) ------------------------ */
+
+.p23-stage-trail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-width: 640px;
+  margin: 0;
+  padding: 6px 0 2px;
+  list-style: none;
+}
+
+.p23-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-align: center;
+}
+
+/* Connector from the previous step's dot to this one. */
+.p23-stage + .p23-stage::before {
+  content: '';
+  position: absolute;
+  top: 13px;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+}
+
+.p23-stage.is-done::before,
+.p23-stage.is-current::before { background: var(--status-success-fg); }
+
+.p23-stage-dot {
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+}
+
+.p23-stage.is-done .p23-stage-dot {
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+
+.p23-stage.is-current .p23-stage-dot {
+  border-color: var(--status-info-fg);
+  background: var(--status-info-bg);
+  color: var(--status-info-fg);
+}
+
+.p23-stage.is-hold .p23-stage-dot {
+  border-color: var(--status-warning-fg);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+}
+
+.p23-stage.is-rework .p23-stage-dot {
+  border-color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+
+.p23-stage-label {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+  overflow-wrap: anywhere;
+}
+
+.p23-stage.is-done .p23-stage-label { color: var(--text); }
+.p23-stage.is-current .p23-stage-label { color: var(--text-strong); font-weight: var(--font-weight-bold); }
+
+.p23-stage-trail.is-compact { margin: 8px 0 4px; padding: 0; }
+.p23-stage-trail.is-compact .p23-stage { gap: 4px; }
+.p23-stage-trail.is-compact .p23-stage + .p23-stage::before { top: 10px; }
+.p23-stage-trail.is-compact .p23-stage-dot { width: 22px; height: 22px; }
+
+/* ---- Next-step banner (top of a record) ------------------------------- */
+
+.p23-next-step {
+  max-width: 760px;
+  padding: 12px 14px;
+  border: 1px solid var(--status-neutral-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background: var(--status-neutral-bg);
+  color: var(--text);
+}
+
+.p23-next-step-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: var(--status-neutral-fg);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.p23-next-step-reason,
+.p23-next-step-next {
+  margin: 2px 0 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}
+
+.p23-next-step-next { font-weight: var(--font-weight-semibold); }
+
+.p23-next-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.p23-next-step-actions .p23-help-text { flex-basis: 100%; margin-top: 0; }
+
+.p23-next-step-actions button { min-height: var(--touch-target); }
+
+.p23-next-step.tone-success { border-color: var(--status-success-border); background: var(--status-success-bg); }
+.p23-next-step.tone-success .p23-next-step-title { color: var(--status-success-fg); }
+.p23-next-step.tone-warning { border-color: var(--status-warning-border); background: var(--status-warning-bg); }
+.p23-next-step.tone-warning .p23-next-step-title { color: var(--status-warning-fg); }
+.p23-next-step.tone-danger { border-color: var(--status-danger-border); background: var(--status-danger-bg); }
+.p23-next-step.tone-danger .p23-next-step-title { color: var(--status-danger-fg); }
+.p23-next-step.tone-info { border-color: var(--status-info-border); background: var(--status-info-bg); }
+.p23-next-step.tone-info .p23-next-step-title { color: var(--status-info-fg); }
+
+/* Banner text sits on a tinted background — keep it the theme's body
+   colour (both light and dark tints are light-on-dark / dark-on-light
+   enough for >= 4.5:1), and pin the tone colour to the title only. */
+html[data-theme="light"] .p23-next-step { color: var(--text-strong); }
+
+/* ---- Record card ------------------------------------------------------ */
+
+.p23-record-card { border-left: 4px solid transparent; }
+.p23-record-card.is-rework { border-left-color: var(--status-danger-fg); }
+
+.p23-card-next {
+  margin: 6px 0 2px;
+  color: var(--text);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+.p23-card-next strong { color: var(--text-strong); }
+.p23-card-next.tone-danger strong { color: var(--status-danger-fg); }
+.p23-card-next.tone-warning strong { color: var(--status-warning-fg); }
+.p23-card-next.tone-info strong { color: var(--status-info-fg); }
+
+.p23-record-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.p23-record-meta dt,
+.p23-meta-label {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.p23-record-meta dd {
+  margin: 1px 0 0;
+  color: var(--text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Record detail page ---------------------------------------------- */
+
+.p23-record-detail {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.p23-record-detail.is-rework .p23-record-hero { border-left: 4px solid var(--status-danger-fg); }
+
+.maintenance-record-hero.p23-record-hero {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.maintenance-record-hero.p23-record-hero .vehicle-cell { border-color: var(--border); }
+
+.p23-record-type {
+  color: var(--text-strong);
+  font-weight: var(--font-weight-semibold);
+}
+
+.p23-decision-close {
+  max-width: 560px;
+  padding: 14px 16px;
+  border: 1px solid var(--status-warning-border);
+  border-radius: var(--radius-md);
+  background: var(--status-warning-bg);
+  color: var(--text);
+}
+
+.p23-decision-close h4 {
+  margin: 0 0 4px;
+  color: var(--status-warning-fg);
+  font-size: var(--font-size-md);
+}
+
+.p23-origin {
+  max-width: 760px;
+  color: var(--text);
+  font-size: var(--font-size-sm);
+}
+
+.p23-origin-line {
+  margin: 0 0 4px;
+  line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
+}
+
+.p23-origin-line strong { color: var(--text-strong); }
+
+.p23-record-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 1px;
+  max-width: 940px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--border);
+}
+
+.p23-record-summary > div {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.p23-record-summary dt {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.p23-record-summary dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.p23-record-section {
+  max-width: 940px;
+  min-width: 0;
+}
+
+.p23-section-title {
+  margin: 0 0 8px;
+  color: var(--text-strong);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.p23-worklog {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.p23-record-detail .maintenance-detail-label {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+}
+
+/* Long repair logs: keep the author's line breaks and wrap long tokens
+   (part numbers, URLs) instead of stretching the page sideways. */
+.p23-long-text {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.p23-parts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.p23-parts-list li {
+  max-width: 100%;
+  padding: 3px 10px;
+  border: 1px solid var(--status-info-border);
+  border-radius: var(--radius-pill);
+  background: var(--status-info-bg);
+  color: var(--status-info-fg);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.p23-proof-link { display: inline-block; max-width: 100%; }
+
+.p23-proof-image {
+  display: block;
+  max-width: min(360px, 100%);
+  max-height: 280px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.p23-timeline {
+  display: grid;
+  gap: 0;
+  max-width: 760px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.p23-timeline li {
+  position: relative;
+  padding: 0 0 14px 22px;
+  border-left: 2px solid var(--border);
+  margin-left: 6px;
+}
+
+.p23-timeline li:last-child { padding-bottom: 0; border-left-color: transparent; }
+
+.p23-timeline li::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: -7px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--status-neutral-fg);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.p23-timeline li.tone-success::before { border-color: var(--status-success-fg); background: var(--status-success-bg); }
+.p23-timeline li.tone-danger::before { border-color: var(--status-danger-fg); background: var(--status-danger-bg); }
+.p23-timeline li.tone-warning::before { border-color: var(--status-warning-fg); background: var(--status-warning-bg); }
+
+.p23-timeline-title {
+  display: block;
+  color: var(--text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.p23-timeline li.tone-danger .p23-timeline-title { color: var(--status-danger-fg); }
+
+.p23-timeline-meta {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.p23-timeline-notes {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Records table cells --------------------------------------------- */
+
+.p23-progress-cell,
+.p23-date-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.p23-stage-count,
+.p23-due-text {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.p23-due-text.is-overdue { color: var(--status-danger-fg); }
+
+.p23-repeat-text {
+  color: var(--text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.p23-status-note {
+  display: block;
+  max-width: 220px;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  line-height: var(--line-height-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p23-status-note.tone-danger { color: var(--status-danger-fg); }
+
+/* ---- Schedule card --------------------------------------------------- */
+
+.maintenance-schedule-card.schedule-pending-approval { border-left-color: var(--status-warning-fg); }
+.maintenance-schedule-card.schedule-declined { border-left-color: var(--status-danger-fg); }
+
+.p23-schedule-card .schedule-date-row {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--font-size-xs);
+}
+
+.p23-schedule-card .schedule-date-value { color: var(--text-strong); }
+.p23-schedule-card .schedule-date-value.is-overdue { color: var(--status-danger-fg); }
+.p23-schedule-card .schedule-repeat-label { color: var(--text); }
+
+.p23-schedule-card .schedule-urgency-badge,
+.p23-schedule-card .schedule-due-label {
+  gap: 4px;
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+  font-size: var(--font-size-2xs);
+}
+
+.p23-schedule-card .schedule-urgency-badge.is-overdue,
+.p23-schedule-card .schedule-due-label.is-overdue {
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+
+.p23-schedule-note {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-fg);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
+}
+
+.p23-schedule-note.tone-warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.p23-schedule-note.tone-danger { background: var(--status-danger-bg); color: var(--status-danger-fg); }
+
+.p23-schedule-assignee {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: var(--font-size-xs);
+}
+
+.p23-schedule-location {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.p23-schedule-completion {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.p23-schedule-next {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+.p23-schedule-next strong { color: var(--text-strong); }
+.p23-schedule-completion .p23-help-text { margin: 0; }
+
+.p23-schedule-card .schedule-card-actions { border-top-color: var(--border-subtle); }
+
+.p23-schedule-actions .schedule-action-button {
+  min-height: var(--touch-target);
+  font-size: var(--font-size-xs);
+}
+
+/* Cancel / Restore: present but deliberately quieter than Mark Done /
+   Edit, and pushed to the far end of the row. */
+.p23-quiet-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: var(--touch-target);
+  margin-left: auto;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.p23-quiet-action + .p23-quiet-action { margin-left: 0; }
+
+.p23-quiet-action:hover {
+  background: var(--surface-hover);
+  color: var(--text-strong);
+  text-decoration: underline;
+}
+
+.p23-quiet-action.is-danger:hover { color: var(--status-danger-fg); }
+
+/* ---- Schedule table action menu -------------------------------------- */
+
+.schedule-action-menu-trigger {
+  width: var(--touch-target);
+  height: var(--touch-target);
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.schedule-action-menu-trigger:hover,
+.schedule-action-menu-trigger[aria-expanded="true"] {
+  border-color: var(--primary-border);
+  background: var(--surface-hover);
+  color: var(--text-strong);
+}
+
+.schedule-action-menu-trigger:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+.p23-action-menu {
+  max-width: calc(100vw - 16px);
+  border-color: var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+
+.p23-action-menu button,
+.p23-action-menu button.icon-btn {
+  min-height: var(--touch-target);
+  color: var(--text);
+  white-space: normal;
+}
+
+.p23-action-menu button:hover,
+.p23-action-menu button:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text-strong);
+  outline: none;
+}
+
+.p23-action-menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring-color); }
+
+.p23-action-menu .is-danger { color: var(--status-danger-fg); }
+.p23-action-menu .is-danger:hover,
+.p23-action-menu .is-danger:focus-visible { background: var(--status-danger-bg); color: var(--status-danger-fg); }
+
+.p23-action-menu span { overflow: visible; text-overflow: clip; }
+
+.p23-menu-note {
+  margin: 2px 4px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  line-height: var(--line-height-normal);
+  white-space: normal;
+}
+
+.p23-menu-separator {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--border);
+}
+
+/* ---- Mark Done modal ------------------------------------------------- */
+
+.schedule-modal-summary {
+  border-color: var(--status-info-border);
+  background: var(--status-info-bg);
+  color: var(--text);
+}
+
+.schedule-modal-summary strong { color: var(--text-strong); }
+.schedule-modal-guidance { color: var(--text); }
+
+.p23-complete-form .form-group { margin-bottom: 12px; }
+.p23-complete-form .form-group-title { color: var(--text-strong); }
+.p23-complete-form .form-group-body { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+
+/* ---- Small screens --------------------------------------------------- */
+
+@media (max-width: 560px) {
+  .p23-record-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .p23-next-step-actions button { flex: 1 1 100%; }
+  .p23-quiet-action { margin-left: 0; }
+  .maintenance-record-hero.p23-record-hero .vehicle-cell { border-color: var(--border); }
+}

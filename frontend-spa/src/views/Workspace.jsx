@@ -1953,8 +1953,8 @@ function Workspace() {
   const maintenanceStatusColumnChooser = useColumnChooser('vms_maintenance_status_columns', maintenanceStatusColumnDefs);
 
   const scheduleColumnDefs = useMemo(
-    () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile, approveSchedule, setDeclineScheduleTarget),
-    [navigate, user, deleteRecord, restoreRecord, openTicketProfile],
+    () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile, approveSchedule, setDeclineScheduleTarget, records.schedules),
+    [navigate, user, deleteRecord, restoreRecord, openTicketProfile, records.schedules],
   );
   const scheduleColumnChooser = useColumnChooser('vms_schedule_columns', scheduleColumnDefs);
 
@@ -2720,6 +2720,7 @@ function Workspace() {
               onConfirm={(r) => updateRecord(`/maintenance-records/${r.maintenance_id}/confirm`, { confirmed: true }, 'Maintenance confirmed.')}
               onReopen={(r) => updateRecord(`/maintenance-records/${r.maintenance_id}/confirm`, { confirmed: false }, 'Maintenance reopened.')}
               onDecisionClose={(r, payload) => updateRecord(`/maintenance-records/${r.maintenance_id}/decision-close`, payload, 'Record closed without verification.')}
+              onViewIssue={(issueId) => navigate(`${roleRoutes[user.role]}/issues/${issueId}`)}
             />
           ) : (isNewCategoryPage || editCategoryId) ? (
             <>
@@ -2916,36 +2917,42 @@ function Workspace() {
             </div>
             <p className="schedule-modal-guidance">
               This logs a maintenance record for the work and closes the schedule
-              {completeScheduleTarget.recurrence_months ? `, then auto-schedules the next one (${RECURRENCE_LABEL[completeScheduleTarget.recurrence_months] ?? `every ${completeScheduleTarget.recurrence_months} months`}).` : '.'}
+              {completeScheduleTarget.recurrence_months ? `, then automatically schedules the next one (${(RECURRENCE_LABEL[completeScheduleTarget.recurrence_months] ?? `every ${completeScheduleTarget.recurrence_months} months`).toLowerCase()}, counted from the completion date).` : '.'}
               {' '}The resulting maintenance record remains subject to Custodian verification.
             </p>
+            {/* Grouped (audit §12): what was done, who did it — in-house
+                vs an outside service provider, whose own fields appear
+                directly under that choice — then proof. */}
+            <div className="p23-complete-form">
             <SmartForm
               fields={[
-                { label: 'Date Completed', name: 'date_completed', type: 'date' },
-                { label: 'Cost (optional)', name: 'maintenance_cost', type: 'number' },
+                { label: 'Date Completed', name: 'date_completed', type: 'date', group: 'Work done' },
+                { label: 'Cost in PHP (optional)', name: 'maintenance_cost', type: 'number', min: 0, placeholder: 'e.g. 1500', group: 'Work done' },
+                { label: 'Notes — what was done', name: 'notes', type: 'textarea', rows: 2, fullWidth: true, group: 'Work done' },
                 // Sometimes a scheduled job turns out to need a
                 // third-party shop instead of in-house work.
-                { label: 'Sent to External Shop?', name: 'is_external', type: 'select', options: [
-                  { value: 0, label: 'No — done in-house' },
-                  { value: 1, label: 'Yes — external shop repair' },
+                { label: 'Who performed the work?', name: 'is_external', type: 'select', fullWidth: true, group: 'Performed by', options: [
+                  { value: 0, label: 'In-house — our maintenance personnel' },
+                  { value: 1, label: 'External service provider (outside shop)' },
                 ] },
                 // Vendor/warranty only matter when it went external.
                 ...(completeScheduleExternal ? [
-                  { label: 'External Shop', name: 'external_vendor', type: 'text', placeholder: 'e.g. Bautista Auto Shop' },
-                  { label: 'Warranty Until', name: 'warranty_until', type: 'date' },
+                  { label: 'External Shop Name', name: 'external_vendor', type: 'text', placeholder: 'e.g. Bautista Auto Shop', group: 'Performed by' },
+                  { label: 'Warranty Until (optional)', name: 'warranty_until', type: 'date', group: 'Performed by' },
                 ] : []),
                 {
                   label: 'Receipt / Proof of Completion',
                   name: 'receipt',
                   type: 'file',
                   accept: 'image/*,.pdf',
+                  fullWidth: true,
+                  group: 'Proof',
                   // Final senior system review (2026-10-05, §2) — only the
                   // assigned Maintenance Personnel can even open this modal
                   // now, and a receipt/photo is evidence only; it never skips
                   // the Custodian check, for anyone.
                   hint: 'Attach a receipt or a photo of the completed repair so the Custodian verifying this has proof.',
                 },
-                { label: 'Notes (what was done)', name: 'notes', type: 'textarea', rows: 2 },
               ]}
               key={`complete-${completeScheduleTarget.schedule_id}`}
               initialValues={{ date_completed: new Date().toISOString().slice(0, 10) }}
@@ -2955,6 +2962,7 @@ function Workspace() {
               submitLabel="Mark as Done"
               title=""
             />
+            </div>
           </>
         )}
       </FormModal>
@@ -3721,6 +3729,15 @@ function Workspace() {
     }
 
     if (activeModule === 'maintenance') {
+      // Says which situation it is: nothing logged at all, nothing at the
+      // one progress stage picked from the stat cards, or filters/search
+      // hiding everything. (There's no + button here — records come from
+      // closed tickets and completed schedules.)
+      const maintenanceEmptyMessage = (rawRows?.length ?? 0) === 0
+        ? 'No maintenance records yet — they are created when tickets are closed or schedules are marked done.'
+        : filterStatus.length === 1
+          ? `No records are at "${filterStatus[0]}" with the current search and filters.`
+          : 'No maintenance records match the current search or filters — clear them to see every record.';
       return (
         <>
         <ModulePanel
@@ -3796,7 +3813,7 @@ function Workspace() {
             <PaginatedCardGrid
               items={visibleRows}
               keyOf={(row) => row.maintenance_id}
-              emptyMessage="No maintenance records yet — click the + button to log one."
+              emptyMessage={maintenanceEmptyMessage}
               renderItem={(row) => (
                 <MaintenanceRecordCard
                   record={row}
@@ -3808,7 +3825,7 @@ function Workspace() {
             <PaginatedTable
               columns={maintenanceColumnChooser.visibleColumns}
               onReorderColumn={maintenanceColumnChooser.reorderColumn}
-              emptyMessage="No maintenance records yet — click the + button to log one."
+              emptyMessage={maintenanceEmptyMessage}
               rows={visibleRows}
               compact
               onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
@@ -3902,6 +3919,17 @@ function Workspace() {
           })
         : visibleRows;
 
+      // Specific to what's hiding the list: nothing booked yet, nothing in
+      // the one status card picked, or search/filters excluding everything.
+      const scheduleFilterLabel = filterStatus.length === 1
+        ? ([...SCHEDULE_STAT_CARDS, MY_ASSIGNED_SCHEDULE_CARD].find((c) => c.key === filterStatus[0])?.label ?? filterStatus[0])
+        : null;
+      const scheduleEmptyMessage = (rawRows?.length ?? 0) === 0
+        ? (canDo(user, 'schedule.create') ? 'No maintenance scheduled yet — click the + button to plan one.' : 'No maintenance scheduled yet.')
+        : scheduleFilterLabel
+          ? `No "${scheduleFilterLabel}" schedules with the current search and filters.`
+          : 'No schedules match the current search or filters — clear them to see every schedule.';
+
       return (
         <ModulePanel
           description="Plan preventative maintenance and track schedule status."
@@ -3963,11 +3991,12 @@ function Workspace() {
             <PaginatedCardGrid
               items={scheduleRows}
               keyOf={(row) => row.schedule_id}
-              emptyMessage="No maintenance scheduled — click the + button to plan one."
+              emptyMessage={scheduleEmptyMessage}
               renderItem={(row) => (
                 <MaintenanceScheduleCard
                   row={row}
                   currentUser={user}
+                  allSchedules={records.schedules}
                   onComplete={openCompleteSchedule}
                   onEdit={(r) => navigate(`${roleRoutes[user.role]}/schedules/${r.schedule_id}/edit`)}
                   onDelete={(r) => deleteRecord(`/maintenance-schedules/${r.schedule_id}`, 'Schedule cancelled.', `Cancel the ${r.maintenance_type} schedule for ${r.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`, { title: 'Cancel schedule', confirmLabel: 'Cancel schedule' })}
@@ -3985,7 +4014,7 @@ function Workspace() {
             <PaginatedTable
               columns={scheduleColumnChooser.visibleColumns}
               onReorderColumn={scheduleColumnChooser.reorderColumn}
-              emptyMessage="No maintenance scheduled — click the + button to plan one."
+              emptyMessage={scheduleEmptyMessage}
               rows={scheduleRows}
               onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
             />
