@@ -61,8 +61,12 @@ class BarangaySeeder extends Seeder
         $mandaueCityId = City::where('name', 'Mandaue City')->value('id');
 
         foreach (self::BARANGAYS as $name) {
-            $barangay = Barangay::firstOrCreate(['name' => $name]);
-            $barangay->update(['city_id' => $mandaueCityId]);
+            // Scoped to the city, never name alone: once the nationwide
+            // barangay import has run, names like "Basak" or "Looc" exist in
+            // hundreds of cities, and a name-only match would seize one of
+            // those rows and drag it into Mandaue — taking any user already
+            // registered under it along with it.
+            $barangay = Barangay::firstOrCreate(['city_id' => $mandaueCityId, 'name' => $name]);
 
             $code = RegistrationSetting::for($barangay->id)->staff_code;
             $this->command?->info("{$name}: {$code}");

@@ -1,6 +1,7 @@
 import { useContext } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContextObject';
+import { Swirling } from './Swirling';
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, token, loading } = useContext(AuthContext);
@@ -10,12 +11,7 @@ export const ProtectedRoute = ({ children, allowedRoles }) => {
   if (loading) {
     return (
       <div className="fullscreen-loader" role="status" aria-live="polite">
-        <span className="fullscreen-loader-spinner" aria-hidden="true">
-          <svg viewBox="0 0 50 50" width="56" height="56">
-            <circle className="module-loader-track" cx="25" cy="25" r="20" fill="none" strokeWidth="5" />
-            <circle className="module-loader-arc" cx="25" cy="25" r="20" fill="none" strokeWidth="5" strokeLinecap="round" />
-          </svg>
-        </span>
+        <Swirling className="fullscreen-loader-swirling" size={68} />
         <p className="fullscreen-loader-label">Verifying your session<span className="module-loader-dots" /></p>
       </div>
     );

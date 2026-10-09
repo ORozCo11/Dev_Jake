@@ -2,6 +2,7 @@ import { useContext, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import Icon from '../components/Icon';
+import Swirling from '../components/Swirling';
 import Aurora from '../components/Aurora';
 import AuthHeader from '../components/AuthHeader';
 import AuthFooter from '../components/AuthFooter';
@@ -139,7 +140,7 @@ function Login() {
           <button className="primary-button auth-submit-btn" disabled={submitting} type="submit">
             {submitting ? (
               <span className="btn-loading">
-                <span className="btn-spinner" aria-hidden="true" />
+                <Swirling size={16} />
                 Signing in…
               </span>
             ) : 'Sign in'}
