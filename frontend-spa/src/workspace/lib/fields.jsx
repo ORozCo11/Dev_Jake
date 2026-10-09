@@ -53,19 +53,10 @@ export function userFields(isEditing, liveValues = EMPTY_OBJ) {
     // plain single-column item, in strict declared order, means each row
     // fills left-then-right with no gaps for later fields to jump into
     // (which is what previously stranded Confirm Password alone).
-    { label: 'Roles (a person can hold more than one — the first is their primary)', name: 'roles', options: ['Admin', 'Custodian', 'Maintenance Personnel'], required: true, type: 'checkboxes' },
-    // Production-readiness audit finding #6 — vehicle registration is a
-    // per-account delegation an Admin grants a specific Custodian, not a
-    // blanket role grant. Only shown once Custodian is actually selected
-    // above; Admin already always registers regardless of this flag.
-    ...(Array.isArray(liveValues.roles) && liveValues.roles.includes('Custodian')
-      ? [{
-          label: 'Vehicle Registration',
-          name: 'can_register_vehicles',
-          options: ['Allow vehicle registration'],
-          type: 'checkboxes',
-        }]
-      : []),
+    { label: 'Roles (a person can hold more than one — the first is their primary role, which decides the portal they open in)', name: 'roles', options: ['Admin', 'Custodian', 'Maintenance Personnel'], required: true, type: 'checkboxes' },
+    // No per-account "Vehicle Registration" checkbox any more: every
+    // Custodian can register vehicles (see canRegisterVehicles in
+    // permissions.js), so the old delegation toggle was removed.
     { label: 'Profile Photo', name: 'photo', accept: 'image/*', type: 'file' },
     {
       label: isEditing ? 'New Password (leave blank to keep current)' : 'Password',
@@ -236,8 +227,8 @@ export function issueFields(lookups, editTarget, role, onAddVehicle) {
   return [
     {
       label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select',
-      // Only offered to whoever actually holds vehicle.create (Admin, and a
-      // delegated Custodian) — anyone else would just hit a permissions wall.
+      // Only offered to whoever actually holds vehicle.create (Admin and
+      // Custodian) — anyone else would just hit a permissions wall.
       action: onAddVehicle ? { label: '+ Add Vehicle', onClick: onAddVehicle } : undefined,
     },
     // Phase B4 — Admin keeps the original "+ Add New" catalog affordance;

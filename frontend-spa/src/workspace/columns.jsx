@@ -3,6 +3,9 @@ import { DateBadge, PhotoCell, StatusBadge, TicketStageBadge, TicketStatusBadge,
 import { formatDate, formatLogDateTime, formatTime, prettifyKey, resolvePhotoUrl, resolveRelationLabel } from './lib/format';
 import { canDo, hasRole } from './lib/permissions';
 import { moduleBadgeTone } from './lib/statCards';
+import { actionLabel, historyRecordKind } from './lib/activity';
+import { accountStatus, splitRoles } from './lib/userAccounts';
+import { LogRecordCell, RelatedRecordLink } from './history/activity';
 import { READINESS_BADGE, isScheduleOverdue, issueNeedsTicket } from './lib/workflow';
 import { MAINTENANCE_PROGRESS_STAGES, MAINTENANCE_SOURCE_INFO, findNextScheduleOccurrence, formatMaintenanceCost, isClosedUnverified, isRecordReturnedForRework, maintenanceStageIndex, recurrenceLabel, recurrenceSentence, scheduleDueLabel, scheduleStatusNote } from './lib/workflow';
 import { ScheduleActionMenu } from './maintenance/maintenance';
@@ -191,14 +194,25 @@ export function userColumns(onEdit, onToggleActive, currentUserId) {
     { key: 'email', label: 'Email', render: (row) => row.email },
     { key: 'phone', label: 'Phone', className: 'cell-center', render: (row) => row.phone ?? '-' },
     { key: 'role', label: 'Role', className: 'cell-center', render: (row) => {
-      const roles = (Array.isArray(row.roles) && row.roles.length) ? row.roles : [row.role].filter(Boolean);
+      // Primary role (drives which portal they land in) first and labelled;
+      // any additional roles listed after it, so neither hides the other.
+      const { primary, additional } = splitRoles(row);
       return (
-        <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4 }}>
-          {roles.map((r) => <StatusBadge key={r} value={r} />)}
+        <span className="p23-role-cell">
+          {primary ? <span className="p23-role-primary"><StatusBadge value={primary} /><span className="p23-role-tag">Primary</span></span> : '-'}
+          {additional.length > 0 && <span className="p23-role-extra">Also: {additional.join(', ')}</span>}
         </span>
       );
     } },
-    { key: 'status', label: 'Status', className: 'cell-center', render: (row) => <StatusBadge value={row.is_active ? 'Active' : 'Inactive'} /> },
+    { key: 'status', label: 'Status', className: 'cell-center', render: (row) => {
+      const status = accountStatus(row);
+      return (
+        <span className="p23-status-cell">
+          <StatusBadge value={status.label} />
+          <span className="p23-status-detail">{status.detail}</span>
+        </span>
+      );
+    } },
     {
       key: 'action',
       label: 'Action',
@@ -206,12 +220,12 @@ export function userColumns(onEdit, onToggleActive, currentUserId) {
       className: 'cell-center',
       render: (row) => (
         <div className="row-actions">
-          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
+          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title={`Edit ${row.name}`} aria-label={`Edit ${row.name}`}><Icon name="edit" size={14} /></button>
           {row.id !== currentUserId && (
             row.is_active ? (
-              <button className="btn-archive-action icon-btn" onClick={() => onToggleActive(row, false)} type="button" title="Deactivate (reversible)" aria-label="Deactivate"><Icon name="archive" size={14} /></button>
+              <button className="btn-archive-action icon-btn" onClick={() => onToggleActive(row, false)} type="button" title="Deactivate (reversible)" aria-label={`Deactivate ${row.name}`}><Icon name="archive" size={14} /></button>
             ) : (
-              <button className="btn-edit-action icon-btn" onClick={() => onToggleActive(row, true)} type="button" title="Activate" aria-label="Activate"><Icon name="undo" size={14} /></button>
+              <button className="btn-edit-action icon-btn" onClick={() => onToggleActive(row, true)} type="button" title={row.approved_at ? 'Reactivate' : 'Review & approve'} aria-label={row.approved_at ? `Reactivate ${row.name}` : `Review and approve ${row.name}`}><Icon name="undo" size={14} /></button>
             )
           )}
         </div>
@@ -768,49 +782,40 @@ export function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, o
 }
 
 export const historyColumns = [
-  { key: 'id', label: 'ID', locked: true, render: (row) => row.history_id },
+  { key: 'id', label: 'Entry #', locked: true, render: (row) => row.history_id },
   { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { key: 'plate', label: 'Plate Number', render: (row) => row.vehicle?.plate_number ?? '-' },
   { key: 'activity', label: 'Activity', render: (row) => row.activity_type },
-  { key: 'related_record', label: 'Related Record', render: (row) => row.related_record_id ?? '-' },
+  { key: 'related_record', label: 'Related Record', render: (row) => <RelatedRecordLink kind={historyRecordKind(row.related_table)} id={row.related_record_id} /> },
   { key: 'updated_by', label: 'Updated By', render: (row) => <UserAvatarName user={row.updated_by} /> },
   { key: 'date', label: 'Date', render: (row) => <DateBadge value={row.created_at} /> },
   { key: 'time', label: 'Time', render: (row) => formatTime(row.created_at) },
 ];
 
-export function logColumns(vehicles, onViewVehicle, onViewTicket) {
+// Extra args (vehicle/ticket openers) are accepted for older call sites but no
+// longer needed — LogRecordCell navigates by itself.
+export function logColumns(vehicles) {
   return [
     { key: 'datetime', label: 'Date and Time', className: 'cell-center', render: (row) => formatLogDateTime(row.created_at) },
     {
       key: 'item',
-      label: 'Item',
-      render: (row) => {
-        if (row.affected_record_id == null) return <span className="muted">—</span>;
-        // Only these two modules have an affected_record_id guaranteed to be
-        // that record's own id (a vehicle_id / ticket_id) — every other
-        // module logs a mix of ids (issue/maintenance/schedule/category ids)
-        // that would need their own lookup dataset to resolve safely.
-        if (row.module === 'Vehicle Management') {
-          const vehicle = vehicles.find((v) => String(v.vehicle_id) === String(row.affected_record_id));
-          return vehicle
-            ? <button type="button" className="issue-reporter-link" onClick={() => onViewVehicle(vehicle)}>{vehicle.vehicle_name}</button>
-            : `Vehicle #${row.affected_record_id}`;
-        }
-        if (row.module === 'Maintenance Tickets') {
-          return <button type="button" className="issue-reporter-link" onClick={() => onViewTicket({ ticket_id: row.affected_record_id })}>Ticket #{row.affected_record_id}</button>;
-        }
-        return `#${row.affected_record_id}`;
-      },
+      label: 'Affected Record',
+      // Vehicle rows show the vehicle's own name; every other module reads
+      // as "<Kind> #id" (linked when the app has a page for it) instead of a
+      // bare number — see LogRecordCell / lib/activity.js.
+      render: (row) => <LogRecordCell row={row} vehicles={vehicles} />,
     },
     {
       key: 'module',
-      label: 'Category',
+      label: 'Module',
       className: 'cell-center',
       render: (row) => {
         const tone = moduleBadgeTone(row.module ?? '');
         return <span className="log-category-tag" style={{ background: tone.bg, color: tone.color }}>{row.module ?? '-'}</span>;
       },
     },
-    { key: 'action', label: 'Action', className: 'cell-text', render: (row) => row.details || row.action },
+    { key: 'action', label: 'What Happened', className: 'cell-text', render: (row) => (
+      <span className="p23-log-action"><strong>{actionLabel(row.action)}</strong>{row.details ? <span>{row.details}</span> : null}</span>
+    ) },
     {
       key: 'user',
       label: 'User',

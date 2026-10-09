@@ -1,79 +1,119 @@
 import { reportColumns } from '../columns';
-import { options } from './format';
+import { describeDateRange, historyRecordKind, relatedRecordText } from './activity';
+import { formatLogDateTime, options } from './format';
 import { READINESS_BADGE } from './workflow';
 
+// Report templates grouped by the question they answer. `type` is the exact
+// report_type the backend switches on (FleetController::reports) — never
+// rename it. `required` lists the filters Generate waits for; `includes` is
+// a short sample of what the report contains; `wide` reports default to
+// landscape when printed.
 export const REPORT_CATALOG = [
   {
-    category: 'Fleet Reports',
+    category: 'Fleet Readiness',
+    purpose: 'What vehicles you have, where they are, and whether they can respond.',
     icon: 'vehicle',
+    tone: 'blue',
     reports: [
-      { type: 'Vehicle Inventory Report', icon: 'grid', description: 'Full list of every registered vehicle.', fields: [] },
-      { type: 'Vehicle Type Report', icon: 'list', description: 'Vehicles filtered by vehicle type.', fields: ['category_id'] },
-      { type: 'Vehicle Location Report', icon: 'pin', description: 'Vehicles filtered by current location.', fields: ['location'] },
+      { type: 'Vehicle Inventory Report', icon: 'grid', description: 'Every registered vehicle with its current status and condition.', includes: 'Vehicle, plate, type, brand/model, status, condition, location', fields: [], wide: true },
+      { type: 'Vehicle Type Report', icon: 'list', description: 'All vehicles of one type — e.g. every ambulance — and their status.', includes: 'Vehicle, plate, type, status, condition, location', fields: ['category_id'], required: ['category_id'], wide: true },
+      { type: 'Vehicle Location Report', icon: 'pin', description: 'Vehicles currently stationed at one location.', includes: 'Vehicle, plate, type, status, location', fields: ['location'], required: ['location'], wide: true },
     ],
   },
   {
-    category: 'Issue Reports',
-    icon: 'alert',
-    reports: [
-      { type: 'Vehicle Issue Report', icon: 'alert', description: 'Reported issues filtered by type, severity, and date.', fields: ['issue_type', 'severity_level', 'dates'] },
-    ],
-  },
-  {
-    category: 'Maintenance Reports',
+    category: 'Maintenance',
+    purpose: 'Repair work done and preventive maintenance coming up.',
     icon: 'wrench',
+    tone: 'green',
     reports: [
-      { type: 'Vehicle Maintenance Report', icon: 'wrench', description: 'Repair records filtered by maintenance type and date.', fields: ['maintenance_type', 'dates'] },
-      { type: 'Vehicle Maintenance Schedule Report', icon: 'calendar', description: 'Scheduled maintenance within a date range.', fields: ['dates'] },
+      { type: 'Vehicle Maintenance Report', icon: 'wrench', description: 'Repair and service records, optionally for one maintenance type or period.', includes: 'Vehicle, maintenance type, personnel, start/completion dates, status', fields: ['maintenance_type', 'dates'], wide: true },
+      { type: 'Vehicle Maintenance Schedule Report', icon: 'calendar', description: 'Planned maintenance within a date range.', includes: 'Vehicle, maintenance type, scheduled date/time, assignee, status', fields: ['dates'], wide: true },
     ],
   },
   {
-    category: 'History Reports',
-    icon: 'clipboard',
+    category: 'Issues',
+    purpose: 'Problems reported on vehicles and how severe they are.',
+    icon: 'alert',
+    tone: 'amber',
     reports: [
-      { type: 'Vehicle History Report', icon: 'archive', description: 'Full activity timeline across every vehicle.', fields: [] },
+      { type: 'Vehicle Issue Report', icon: 'alert', description: 'Reported issues, optionally by type, severity, and period.', includes: 'Vehicle, issue type, severity, status, reporter, date reported', fields: ['issue_type', 'severity_level', 'dates'], wide: true },
+    ],
+  },
+  {
+    category: 'Accountability',
+    purpose: 'What happened to each vehicle, who did it, and when.',
+    icon: 'clipboard',
+    tone: 'purple',
+    reports: [
+      { type: 'Vehicle History Report', icon: 'archive', description: 'The full activity timeline across every vehicle.', includes: 'Vehicle, activity, description, updated by, date', fields: [], wide: true },
     ],
   },
 ];
 
+// Filter inputs for one report template. Each def: { label, name, type,
+// options?, required?, hint? } — rendered by ReportGeneratorForm.
 export function reportFieldDefs(lookups, reportDef) {
   if (!reportDef) return [];
+  const required = new Set(reportDef.required ?? []);
   const defs = [];
+  if (reportDef.fields.includes('category_id')) {
+    defs.push({ label: 'Vehicle Type', name: 'category_id', options: options(lookups.categories ?? [], 'category_id', 'category_name'), type: 'select', required: required.has('category_id') });
+  }
+  if (reportDef.fields.includes('location')) {
+    const locations = [...new Set((lookups.vehicles ?? []).map((v) => v.current_location).filter(Boolean))].sort();
+    defs.push(locations.length
+      ? { label: 'Location', name: 'location', options: locations.map((l) => ({ value: l, label: l })), type: 'select', required: required.has('location') }
+      : { label: 'Location', name: 'location', type: 'text', required: required.has('location'), hint: 'Exact location name, as recorded on the vehicle.' });
+  }
+  if (reportDef.fields.includes('maintenance_type')) {
+    defs.push({ label: 'Maintenance Type', name: 'maintenance_type', options: (lookups.maintenance_types ?? []).map((t) => ({ value: t, label: t })), type: 'select', required: required.has('maintenance_type') });
+  }
+  if (reportDef.fields.includes('issue_type')) {
+    defs.push({ label: 'Issue Type', name: 'issue_type', options: (lookups.issue_types ?? []).map((t) => ({ value: t, label: t })), type: 'select', required: required.has('issue_type') });
+  }
+  if (reportDef.fields.includes('severity_level')) {
+    defs.push({ label: 'Severity Level', name: 'severity_level', options: (lookups.severity_levels ?? []).map((t) => ({ value: t, label: t })), type: 'select', required: required.has('severity_level') });
+  }
   if (reportDef.fields.includes('dates')) {
     defs.push({ label: 'Date From', name: 'from', type: 'date' });
     defs.push({ label: 'Date To', name: 'to', type: 'date' });
   }
-  if (reportDef.fields.includes('category_id')) {
-    defs.push({ label: 'Vehicle Type', name: 'category_id', options: options(lookups.categories, 'category_id', 'category_name'), type: 'select' });
-  }
-  if (reportDef.fields.includes('location')) {
-    defs.push({ label: 'Location', name: 'location', type: 'text' });
-  }
-  if (reportDef.fields.includes('maintenance_type')) {
-    defs.push({ label: 'Maintenance Type', name: 'maintenance_type', options: lookups.maintenance_types, type: 'select' });
-  }
-  if (reportDef.fields.includes('issue_type')) {
-    defs.push({ label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, type: 'select' });
-  }
-  if (reportDef.fields.includes('severity_level')) {
-    defs.push({ label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, type: 'select' });
-  }
   return defs;
 }
 
-// Cycled per category (not stored on REPORT_CATALOG itself) so adding a
-// fifth category just wraps back to blue rather than needing a color picked
-// for it — same reasoning as the chart palettes elsewhere in this file.
-export const REPORT_CATEGORY_TONES = ['blue', 'green', 'purple', 'amber'];
+// Human-readable list of the filters a report was generated with, for the
+// preview and the printed header. Lookup ids are resolved to their names.
+export function describeReportFilters(filters = {}, lookups = {}) {
+  const parts = [];
+  if (filters.category_id) {
+    const category = (lookups.categories ?? []).find((c) => String(c.category_id) === String(filters.category_id));
+    parts.push({ label: 'Vehicle type', value: category?.category_name ?? `Type #${filters.category_id}` });
+  }
+  if (filters.location) parts.push({ label: 'Location', value: filters.location });
+  if (filters.maintenance_type) parts.push({ label: 'Maintenance type', value: filters.maintenance_type });
+  if (filters.issue_type) parts.push({ label: 'Issue type', value: filters.issue_type });
+  if (filters.severity_level) parts.push({ label: 'Severity', value: filters.severity_level });
+  if (filters.from || filters.to) parts.push({ label: 'Period', value: describeDateRange(filters.from, filters.to) });
+  return parts;
+}
+
+export function findReportDef(type) {
+  for (const group of REPORT_CATALOG) {
+    const found = group.reports.find((r) => r.type === type);
+    if (found) return found;
+  }
+  return null;
+}
 
 export const VEHICLE_HISTORY_EXPORT_COLUMNS = [
-  { label: 'ID', value: (r) => r.history_id },
+  { label: 'Entry #', value: (r) => r.history_id },
+  { label: 'Date and Time', value: (r) => formatLogDateTime(r.created_at) },
   { label: 'Vehicle', value: (r) => (r.vehicle ? `${r.vehicle.vehicle_name} (${r.vehicle.plate_number})` : '') },
   { label: 'Activity', value: (r) => r.activity_type },
-  { label: 'Related Record', value: (r) => r.related_record_id ?? '' },
-  { label: 'Updated By', value: (r) => r.updated_by?.name ?? '' },
   { label: 'Description', value: (r) => r.description ?? '' },
-  { label: 'Date', value: (r) => r.created_at },
+  { label: 'Related Record', value: (r) => relatedRecordText(historyRecordKind(r.related_table), r.related_record_id) },
+  { label: 'Updated By', value: (r) => r.updated_by?.name ?? 'System' },
+  { label: 'Role', value: (r) => r.updated_by?.role ?? '' },
 ];
 
 // Flat, CSV-exportable version of the same columns `reportColumns` renders

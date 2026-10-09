@@ -1,6 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { AuthContext } from '../context/AuthContextObject';
 import useDepsChanged from '../hooks/useDepsChanged';
 import useResponsiveNav from '../hooks/useResponsiveNav';
@@ -18,7 +17,7 @@ import { categoryColumns, conditionColumns, historyColumns, issueColumns, locati
 import { FilterBar, IssueFilterPanel } from '../workspace/components/filters';
 import { DateFilterInput, MultiSelectDropdown } from '../workspace/components/inputs';
 import { DataTable, ModuleStatCards, PaginatedCardGrid, PaginatedTable, ViewModeDropdown } from '../workspace/components/tables';
-import { ActivityTimeline, ChartLegend, FormModal, LocalSearchInput, ModuleLoader, ModulePanel, SegmentedBar } from '../workspace/components/ui';
+import { ChartLegend, FormModal, LocalSearchInput, ModuleLoader, ModulePanel, SegmentedBar } from '../workspace/components/ui';
 import { ExpandableText } from '../workspace/components/ui';
 import { IssueFilteredEmpty, IssueReportsIntro } from '../workspace/issues/issueBadges';
 import { ConditionFilteredEmpty, ConditionMonitoringIntro } from '../workspace/conditions/conditions';
@@ -37,7 +36,11 @@ import { SCHEDULE_EXPORT_COLUMNS, USER_EXPORT_COLUMNS, VEHICLE_EXPORT_COLUMNS, V
 import { CONDITION_STAT_CARDS, ISSUE_STAT_CARDS, MAINTENANCE_RECORD_STAT_CARDS, MY_ASSIGNED_SCHEDULE_CARD, SCHEDULE_STAT_CARDS, VEHICLE_STAT_CARDS } from '../workspace/lib/statCards';
 import { RECURRENCE_LABEL, SCHEDULE_URGENCY_KEYS, flattenSubIssueRows, scheduleUrgencyBucket, verifyOutcomeMessage, issueIsPreTicket } from '../workspace/lib/workflow';
 import { moduleIcons } from '../workspace/moduleIcons';
-import { ProfileMenu, ProfilePage, UserCard, UserInfoModal, UserViewPage } from '../workspace/users/users';
+import { PendingRegistrations, ProfileMenu, ProfilePage, UserCard, UserFilterChips, UserInfoModal, UserViewPage } from '../workspace/users/users';
+import { isPendingRegistration } from '../workspace/lib/userAccounts';
+import { HistoryDayTimeline, LogDayTimeline, ResultScope, ScopedEmptyState } from '../workspace/history/activity';
+import { describeDateRange, hasActiveScope } from '../workspace/lib/activity';
+import { PrintSheet } from '../workspace/reports/PrintSheet';
 
 // Pages and module views load on first use (see the Suspense boundary around
 // .content-body), so a role only downloads the screens it actually opens.
@@ -51,7 +54,6 @@ const loadLocations = () => import('../workspace/locations/locations');
 const EditLocationPage = lazyNamed(loadLocations, 'EditLocationPage');
 const NewLocationPage = lazyNamed(loadLocations, 'NewLocationPage');
 const loadMaintenance = () => import('../workspace/maintenance/maintenance');
-const HistoryCard = lazyNamed(loadMaintenance, 'HistoryCard');
 const MaintenanceRecordCard = lazyNamed(loadMaintenance, 'MaintenanceRecordCard');
 const MaintenanceRecordProfilePage = lazyNamed(loadMaintenance, 'MaintenanceRecordProfilePage');
 const MaintenanceScheduleCard = lazyNamed(loadMaintenance, 'MaintenanceScheduleCard');
@@ -399,6 +401,8 @@ function Workspace() {
   // to the full list on your next visit rather than staying sticky.
   const [logsView, setLogsView] = useState('list');
   const [usersViewMode, setUsersViewMode] = useState('list');
+  // Users module: working accounts vs self-registrations awaiting approval.
+  const [usersTab, setUsersTab] = useState('accounts');
   // Drives the conditional External Shop / Vendor / Receipt fields in the
   // Mark Done form below — reset wherever the modal is opened (see
   // openCompleteSchedule) rather than in an effect.
@@ -732,8 +736,12 @@ function Workspace() {
 
     try {
       if (activeModule === 'reports') {
+        const reportFilters = { ...cleanPayload(payload) };
+        delete reportFilters.report_type;
         const response = await api.get('/reports', { params: cleanPayload(payload) });
-        setReport(response.data);
+        // The API doesn't echo the filters back — keep them for the preview
+        // and printed header ("Filters applied").
+        setReport({ ...response.data, filters: reportFilters });
         setNotice({ type: 'success', text: `${payload.report_type} generated.` });
         return;
       }
@@ -994,11 +1002,17 @@ function Workspace() {
       return;
     }
     setConfirmDialog({
-      title: 'Confirm Action',
+      title: activate ? `Reactivate ${row.name}?` : `Deactivate ${row.name}?`,
       message: activate
-        ? `Reactivate ${row.name}'s account? They will be able to log in again.`
-        : `Deactivate ${row.name}'s account? They won't be able to log in until reactivated.`,
-      confirmLabel: activate ? 'Activate' : 'Deactivate',
+        ? `${row.name} will be able to sign in again with their existing roles.`
+        : (
+          <>
+            <span className="p23-confirm-line">{row.name} won't be able to sign in until an Admin reactivates the account.</span>
+            <span className="p23-confirm-line">Nothing is deleted: their past actions, vehicle history entries, tickets, and logs stay attributed to them by name.</span>
+            <span className="p23-confirm-line">Work still assigned to them (open tickets, schedules) stays assigned — reassign it if needed.</span>
+          </>
+        ),
+      confirmLabel: activate ? 'Reactivate' : 'Deactivate account',
       variant: activate ? 'primary' : 'danger',
       onConfirm: async () => {
         try {
@@ -1429,7 +1443,8 @@ function Workspace() {
         filterStatus.includes('ReadyToRespond') ? row.readiness_state === 'ready' : row.readiness_state !== 'ready'
       ));
     } else if (filterStatus.length && activeModule === 'users') {
-      result = result.filter((row) => filterStatus.includes(row.role));
+      // Any role the account holds, not only the primary one.
+      result = result.filter((row) => ((Array.isArray(row.roles) && row.roles.length) ? row.roles : [row.role]).some((r) => filterStatus.includes(r)));
     } else if (filterStatus.length && activeModule === 'locations') {
       // Location records nest the vehicle status under `.vehicle`, not on
       // the row itself (the row IS a location snapshot, not a vehicle).
@@ -1529,6 +1544,11 @@ function Workspace() {
       result = result.filter((row) => filterActivityType.includes(row.activity_type));
     }
 
+    // Activity Log reuses the same slot as a Module filter.
+    if (activeModule === 'logs' && filterActivityType.length) {
+      result = result.filter((row) => filterActivityType.includes(row.module));
+    }
+
     // Date range — same two fields, applied to whichever date column is
     // meaningful for the active module.
     if (filterDateStart || filterDateEnd) {
@@ -1536,6 +1556,7 @@ function Workspace() {
         : activeModule === 'tickets' ? 'created_at'
         : activeModule === 'issues' ? 'created_at'
         : activeModule === 'histories' ? 'created_at'
+        : activeModule === 'logs' ? 'created_at'
         : null;
       if (dateField) {
         result = result.filter((row) => {
@@ -2817,7 +2838,7 @@ function Workspace() {
             />
           ) : (isNewUserPage || editUserId) ? (
             <FormPage
-              description="Create and manage user accounts — Admin, Custodian, and Maintenance Personnel."
+              description="Create and manage user accounts — Admin, Custodian, and Maintenance Personnel. New staff sign-ups wait under Pending Registrations until you approve them; deactivating an account blocks sign-in but keeps everything they did attributed to them."
               onBack={() => returnToModule('users')}
               fields={(vals) => userFields(Boolean(editUserId), vals)}
               initialValues={editUserInitialValues}
@@ -3243,6 +3264,18 @@ function Workspace() {
     }
 
     if (activeModule === 'users') {
+      const pendingRegistrations = (records.users ?? []).filter(isPendingRegistration);
+      const accountRows = visibleRows.filter((row) => !isPendingRegistration(row));
+      const usersFiltered = hasActiveScope({ search: searchQuery, filters: [{ values: filterStatus }, { values: filterActive }] });
+      const usersEmpty = (inline) => (
+        <ScopedEmptyState
+          inline={inline}
+          filtered={usersFiltered}
+          emptyText="No user accounts yet — use Add User to create one."
+          filteredText="No user accounts match these filters."
+          onClear={() => { setFilterStatus([]); setFilterActive([]); setSearchQuery(''); }}
+        />
+      );
       const userRoleSegments = [
         { label: 'Admin', value: userStats.Admin, color: '#7c3aed' },
         { label: 'Custodian', value: userStats.Custodian, color: '#0284c7' },
@@ -3254,7 +3287,7 @@ function Workspace() {
       ];
       return (
         <ModulePanel
-          description="Create and manage user accounts — Admin, Custodian, and Maintenance Personnel."
+          description="Create and manage user accounts — Admin, Custodian, and Maintenance Personnel. New staff sign-ups wait under Pending Registrations until you approve them; deactivating an account blocks sign-in but keeps everything they did attributed to them."
           statCards={
             <div className="user-analytics-grid">
               <div className="panel user-analytics-card">
@@ -3274,27 +3307,14 @@ function Workspace() {
             </div>
           }
           filterBar={
-            <div className="filter-bar-container">
-              <div className="filter-label"><span>Filters:</span></div>
-              <div className="filter-date-group">
-                <span>Role</span>
-                <MultiSelectDropdown
-                  placeholder="All Roles"
-                  options={['Admin', 'Custodian', 'Maintenance Personnel']}
-                  selected={filterStatus}
-                  onChange={setFilterStatus}
-                />
-              </div>
-              <div className="filter-date-group">
-                <span>Status</span>
-                <MultiSelectDropdown
-                  placeholder="All Statuses"
-                  options={['Active', 'Inactive']}
-                  selected={filterActive}
-                  onChange={setFilterActive}
-                />
-              </div>
-            </div>
+            <UserFilterChips
+              statusOptions={['Active', 'Inactive']}
+              selectedStatus={filterActive}
+              onStatusChange={setFilterActive}
+              roleOptions={['Admin', 'Custodian', 'Maintenance Personnel']}
+              selectedRoles={filterStatus}
+              onRolesChange={setFilterStatus}
+            />
           }
         >
           {hasRole(user, 'Admin') && (
@@ -3313,8 +3333,20 @@ function Workspace() {
               </div>
             </div>
           )}
+          <div className="view-tabs p23-tabs p23-users-tabs" role="group" aria-label="User accounts">
+            <button type="button" aria-pressed={usersTab === 'accounts'} className={usersTab === 'accounts' ? 'active' : ''} onClick={() => setUsersTab('accounts')}>
+              User Accounts <span className="count-badge">{(records.users ?? []).filter((u) => !isPendingRegistration(u)).length}</span>
+            </button>
+            <button type="button" aria-pressed={usersTab === 'pending'} className={`${usersTab === 'pending' ? 'active' : ''}${pendingRegistrations.length ? ' p23-has-pending' : ''}`} onClick={() => setUsersTab('pending')}>
+              Pending Registrations <span className="count-badge">{pendingRegistrations.length}</span>
+            </button>
+          </div>
+          {usersTab === 'pending' ? (
+            <PendingRegistrations rows={pendingRegistrations} onReview={(row) => toggleUserActive(row, true)} />
+          ) : (
+          <>
           <div className="panel-header-bar">
-            <h3>Users <span className="count-badge">{visibleRows.length}</span></h3>
+            <h3>User Accounts <span className="count-badge">{accountRows.length}</span></h3>
             <LocalSearchInput
               value={searchQuery}
               onChange={setSearchQuery}
@@ -3322,18 +3354,18 @@ function Workspace() {
               columnChooser={usersViewMode === 'card' ? undefined : userColumnChooser}
               onAdd={() => navigate(`${roleRoutes[user.role]}/users/new`)}
               addLabel="Add User"
-              onExport={() => exportRowsToCsv('users.csv', USER_EXPORT_COLUMNS, visibleRows)}
+              onExport={() => exportRowsToCsv('users.csv', USER_EXPORT_COLUMNS, accountRows)}
             />
           </div>
-          <div className="view-tabs">
-            <button type="button" className={usersViewMode === 'list' ? 'active' : ''} onClick={() => setUsersViewMode('list')}>List View</button>
-            <button type="button" className={usersViewMode === 'card' ? 'active' : ''} onClick={() => setUsersViewMode('card')}>Card View</button>
+          <div className="view-tabs p23-tabs" role="group" aria-label="Layout">
+            <button type="button" aria-pressed={usersViewMode === 'list'} className={usersViewMode === 'list' ? 'active' : ''} onClick={() => setUsersViewMode('list')}>List View</button>
+            <button type="button" aria-pressed={usersViewMode === 'card'} className={usersViewMode === 'card' ? 'active' : ''} onClick={() => setUsersViewMode('card')}>Card View</button>
           </div>
           {usersViewMode === 'card' ? (
             <PaginatedCardGrid
-              items={visibleRows}
+              items={accountRows}
               keyOf={(row) => row.id}
-              emptyMessage="No user accounts yet — click the + button to create one."
+              emptyMessage={usersEmpty(true)}
               renderItem={(row) => (
                 <UserCard user={row} onClick={() => navigate(`${roleRoutes[user.role]}/users/${row.id}/edit`)} />
               )}
@@ -3342,9 +3374,11 @@ function Workspace() {
             <PaginatedTable
               columns={userColumnChooser.visibleColumns}
               onReorderColumn={userColumnChooser.reorderColumn}
-              emptyMessage="No user accounts yet — click the + button to create one."
-              rows={visibleRows}
+              emptyMessage={usersEmpty(true)}
+              rows={accountRows}
             />
+          )}
+          </>
           )}
         </ModulePanel>
       );
@@ -4029,9 +4063,21 @@ function Workspace() {
 
     if (activeModule === 'histories') {
       const historyActivityTypeOptions = [...new Set((records.histories ?? []).map((h) => h.activity_type).filter(Boolean))].sort();
+      const historyScope = { dateStart: filterDateStart, dateEnd: filterDateEnd, search: searchQuery, filters: [{ label: 'Activity', values: filterActivityType }] };
+      const historyFiltered = hasActiveScope(historyScope);
+      const clearHistoryFilters = () => { setFilterActivityType([]); setFilterDateStart(''); setFilterDateEnd(''); setSearchQuery(''); };
+      const historyEmpty = (inline) => (
+        <ScopedEmptyState
+          inline={inline}
+          filtered={historyFiltered}
+          emptyText="No vehicle activity recorded yet — entries appear automatically as vehicles are updated, checked, and repaired."
+          filteredText="No vehicle activity matches these filters."
+          onClear={clearHistoryFilters}
+        />
+      );
       return (
         <ModulePanel
-          description="Automatic vehicle activity timeline across location, issue, condition, and maintenance events."
+          description="Vehicle History — what happened to each vehicle (location changes, issues, condition checks, maintenance), recorded automatically. For who did what across the whole system, see the Activity Log."
           filterBar={
             <div className="filter-bar-container">
               <div className="filter-label"><span>Filters:</span></div>
@@ -4062,33 +4108,39 @@ function Workspace() {
           }
         >
           <div className="panel-header-bar">
-            <h3>Activity History <span className="count-badge">{visibleRows.length}</span></h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h3>Vehicle History <span className="count-badge">{visibleRows.length}</span></h3>
+            <div className="p23-header-actions">
               <ViewModeDropdown value={historyViewMode} onChange={changeHistoryViewMode} />
               <LocalSearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search history..."
-                onExport={() => exportRowsToCsv('vehicle-history.csv', VEHICLE_HISTORY_EXPORT_COLUMNS, visibleRows)}
+                onExport={() => exportRowsToCsv(`vehicle-history-${new Date().toISOString().slice(0, 10)}.csv`, VEHICLE_HISTORY_EXPORT_COLUMNS, visibleRows)}
                 columnChooser={historyViewMode === 'card' ? undefined : vehicleHistoryColumnChooser}
               />
-              <button className="ghost-button" onClick={() => window.print()} type="button">Print</button>
+              <button className="ghost-button" onClick={() => window.print()} type="button" disabled={!visibleRows.length}>Print</button>
             </div>
           </div>
+          <p className="p23-module-intro">
+            <strong>Vehicle History</strong> is each vehicle's own timeline — location changes, issues, condition checks, and maintenance — recorded automatically.
+            {modules.some(([key]) => key === 'logs') && (
+              <> For who did what across every module, see the <button type="button" className="link-button p23-inline-link" onClick={() => setActiveModule('logs')}>Activity Log</button>.</>
+            )}
+          </p>
+          <ResultScope
+            shown={visibleRows.length}
+            total={(records.histories ?? []).length}
+            {...historyScope}
+            onClear={clearHistoryFilters}
+            exportNote="Export (CSV spreadsheet) and Print include every entry listed here across all pages — not just the page on screen."
+          />
           {historyViewMode === 'card' ? (
-            <PaginatedCardGrid
-              items={visibleRows}
-              keyOf={(row) => row.history_id}
-              emptyMessage="No vehicle activity recorded yet."
-              renderItem={(row) => (
-                <HistoryCard row={row} onClick={() => row.vehicle && openVehicleProfile(row.vehicle)} />
-              )}
-            />
+            <HistoryDayTimeline rows={visibleRows} emptyState={historyEmpty(false)} />
           ) : (
             <PaginatedTable
               columns={vehicleHistoryColumnChooser.visibleColumns}
               onReorderColumn={vehicleHistoryColumnChooser.reorderColumn}
-              emptyMessage="No vehicle activity recorded yet."
+              emptyMessage={historyEmpty(true)}
               rows={visibleRows}
               onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
               pageSizeOptions={[10, 20, 40, 50]}
@@ -4097,70 +4149,118 @@ function Workspace() {
             />
           )}
 
-          {/* Print-only — same convention as ReportPreview's print view:
-              portaled to <body> since the app's @media print rule hides
-              #root entirely, so this has to live outside it. */}
-          {createPortal(
-            <div className="report-print-view">
-              <div className="veh-print-header">
-                <div className="veh-print-header-left">
-                  <h2>Vehicle Activity History</h2>
-                  <p>Printed on {formatDate(new Date().toISOString())}</p>
-                </div>
-                <div className="veh-print-header-right">
-                  <Icon name="gear" size={48} className="topbar-gear-icon" filled />
-                  <span className="vms-wordmark">vms</span>
-                </div>
-              </div>
-              <table className="report-print-table">
-                <thead>
-                  <tr>{historyColumns.map((col) => <th key={col.label}>{col.label}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {visibleRows.length ? visibleRows.map((row, i) => (
-                    <tr key={row.history_id ?? i}>{historyColumns.map((col) => <td key={col.label}>{col.render(row)}</td>)}</tr>
-                  )) : (
-                    <tr><td colSpan={historyColumns.length}>No records</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>,
-            document.body,
-          )}
+          <PrintSheet
+            title="Vehicle Activity History"
+            landscape
+            meta={[
+              { label: 'Printed on', value: formatDate(new Date().toISOString()) },
+              { label: 'Printed by', value: user.name },
+              { label: 'Date range', value: describeDateRange(filterDateStart, filterDateEnd) },
+              { label: 'Activity types', value: filterActivityType.length ? filterActivityType.join(', ') : 'All' },
+              { label: 'Search', value: searchQuery.trim() ? `“${searchQuery.trim()}”` : null },
+              { label: 'Entries', value: String(visibleRows.length) },
+            ]}
+            columns={VEHICLE_HISTORY_EXPORT_COLUMNS.map((col) => ({ label: col.label, render: col.value }))}
+            rows={visibleRows}
+            rowKey={(row) => row.history_id}
+          />
         </ModulePanel>
       );
     }
 
     if (activeModule === 'reports') {
       return (
-        <ModulePanel description="Pick a report below, then narrow it down with the filters that apply to it.">
+        <ModulePanel description="Reports are grouped by the question they answer. Open one, set its filters, and Generate — the preview below can then be downloaded as CSV data or printed as a formatted report.">
           <div className="panel-header-bar">
             <h3>Reports</h3>
           </div>
+          <p className="p23-module-intro">Reports are grouped by the question they answer. Open one, set its filters, then Generate. The preview can be downloaded as <strong>CSV</strong> (raw data for a spreadsheet) or <strong>printed / saved as PDF</strong> (a formatted report with title, barangay, preparer, and filters).</p>
           <ReportsModule lookups={lookups} onGenerate={submitModuleForm} />
-          {report && <ReportPreview report={report} />}
+          {report && (
+            <ReportPreview
+              key={`${report.report_type}-${report.generated_at}`}
+              report={report}
+              lookups={lookups}
+              barangay={user.barangay?.name ?? user.barangay_name ?? null}
+            />
+          )}
         </ModulePanel>
       );
     }
 
     if (activeModule === 'logs') {
+      const logModuleOptions = [...new Set((records.logs ?? []).map((l) => l.module).filter(Boolean))].sort();
+      const logScope = { dateStart: filterDateStart, dateEnd: filterDateEnd, search: searchQuery, filters: [{ label: 'Module', values: filterActivityType }] };
+      const logFiltered = hasActiveScope(logScope);
+      const clearLogFilters = () => { setFilterActivityType([]); setFilterDateStart(''); setFilterDateEnd(''); setSearchQuery(''); };
+      const logEmpty = (inline) => (
+        <ScopedEmptyState
+          inline={inline}
+          filtered={logFiltered}
+          emptyText="No activity logged yet — every create, update, approval, and deletion made by a user is recorded here."
+          filteredText="No logged activity matches these filters."
+          onClear={clearLogFilters}
+        />
+      );
       return (
-        <ModulePanel description="Read-only accountability log of user actions.">
+        <ModulePanel
+          description="Activity Log — a read-only accountability record of who did what, in which module, and when, across the whole system. For a single vehicle's timeline, see Vehicle History."
+          filterBar={
+            <div className="filter-bar-container">
+              <div className="filter-label"><span>Filters:</span></div>
+              <div className="filter-date-group">
+                <span>Module</span>
+                <MultiSelectDropdown
+                  placeholder="All Modules"
+                  options={logModuleOptions}
+                  selected={filterActivityType}
+                  onChange={setFilterActivityType}
+                />
+              </div>
+              <div className="filter-date-group">
+                <span>From Date</span>
+                <DateFilterInput value={filterDateStart || '2026-01-01'} onChange={setFilterDateStart} />
+              </div>
+              <div className="filter-date-group">
+                <span>To Date</span>
+                <DateFilterInput value={filterDateEnd || '2026-12-31'} onChange={setFilterDateEnd} />
+              </div>
+            </div>
+          }
+        >
           <div className="panel-header-bar">
             <h3>Activity Log <span className="count-badge">{visibleRows.length}</span></h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="p23-header-actions">
               <GenerateReportButton rows={visibleRows} />
               <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search logs..." columnChooser={logsView === 'list' ? logColumnChooser : undefined} />
             </div>
           </div>
-          <div className="view-tabs">
-            <button type="button" className={logsView === 'list' ? 'active' : ''} onClick={() => setLogsView('list')}>List View</button>
-            <button type="button" className={logsView === 'recent' ? 'active' : ''} onClick={() => setLogsView('recent')}>Recent Activities</button>
+          <p className="p23-module-intro">
+            <strong>Activity Log</strong> is the read-only accountability record of every user action — who did it, their role, which module, and the record affected.
+            {modules.some(([key]) => key === 'histories') && (
+              <> For one vehicle's own timeline, see <button type="button" className="link-button p23-inline-link" onClick={() => setActiveModule('histories')}>Vehicle History</button>.</>
+            )}
+          </p>
+          <div className="view-tabs p23-tabs" role="group" aria-label="Activity log view">
+            <button type="button" aria-pressed={logsView === 'list'} className={logsView === 'list' ? 'active' : ''} onClick={() => setLogsView('list')}>Full List</button>
+            <button type="button" aria-pressed={logsView === 'recent'} className={logsView === 'recent' ? 'active' : ''} onClick={() => setLogsView('recent')}>Recent Activities</button>
           </div>
+          <p className="p23-view-hint">
+            {logsView === 'list'
+              ? 'Full List: every logged action as a table — choose columns, then use Generate Report to export it.'
+              : 'Recent Activities: the same entries as a day-by-day timeline, newest first, for a quick read of what happened lately.'}
+          </p>
+          <ResultScope
+            shown={visibleRows.length}
+            total={(records.logs ?? []).length}
+            {...logScope}
+            onClear={clearLogFilters}
+            exportNote="Generate Report exports every entry listed here (all pages) as a CSV spreadsheet."
+          />
           {logsView === 'list' ? (
-            <PaginatedTable columns={logColumnChooser.visibleColumns} onReorderColumn={logColumnChooser.reorderColumn} rows={visibleRows} emptyMessage="No activity logged yet." />
+            <PaginatedTable columns={logColumnChooser.visibleColumns} onReorderColumn={logColumnChooser.reorderColumn} rows={visibleRows} emptyMessage={logEmpty(true)} />
           ) : (
-            <ActivityTimeline rows={visibleRows} />
+            <LogDayTimeline rows={visibleRows} vehicles={lookups.vehicles ?? []} emptyState={logEmpty(false)} />
           )}
         </ModulePanel>
       );
