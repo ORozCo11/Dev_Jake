@@ -627,26 +627,6 @@ function Workspace() {
     setMaintenanceLedgerLastTab(key);
     setActiveModule(key);
   }, []);
-  // Which sidebar sections the user has folded away, remembered per browser.
-  // Stored as the collapsed set. Unlike a brand-new section defaulting open,
-  // a first-ever visit (nothing in localStorage yet) starts every section
-  // collapsed — an accordion, matching the reference nav's closed-by-default
-  // look — rather than the old always-expanded list. Whichever group holds
-  // the current module still force-expands below regardless of this set.
-  const [collapsedNavGroups, setCollapsedNavGroups] = useState(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem('vms_nav_collapsed_groups') ?? 'null');
-      if (Array.isArray(raw)) return raw;
-    } catch { /* fall through to default: everything collapsed */ }
-    return moduleGroups.map((g) => g.section).filter(Boolean);
-  });
-  const toggleNavGroup = (section) => {
-    setCollapsedNavGroups((current) => {
-      const next = current.includes(section) ? current.filter((s) => s !== section) : [...current, section];
-      localStorage.setItem('vms_nav_collapsed_groups', JSON.stringify(next));
-      return next;
-    });
-  };
   // Any special page can be reached from places that never touch
   // setActiveModule — a notification click, a shared link opened in a new
   // tab, a direct URL/refresh — so `activeModule` itself can't be trusted
@@ -2746,22 +2726,9 @@ function Workspace() {
           {/* The Return control now lives in the persistent banner below the
               topbar (Phase A5) — a single, more visible home for it instead
               of duplicating the button here too. */}
+          {/* No bell in the top bar — the list opens from the profile
+              menu's "Notifications" item. */}
           <div className="notifications-dropdown-container" ref={notificationsRef}>
-            <button
-              className="icon-btn notification-btn"
-              title="Notifications"
-              type="button"
-              onClick={() => setShowNotifications(!showNotifications)}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-              {unreadCount > 0 && (
-                <span className="notification-indicator">{unreadCount}</span>
-              )}
-            </button>
-
             {showNotifications && (
               <div className="notifications-dropdown">
                 <div className="notifications-header">
@@ -2864,7 +2831,7 @@ function Workspace() {
       <main className={`workspace${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
         <aside className={`sidebar${isSidebarCollapsed ? ' collapsed' : ''}`}>
           <nav className="module-nav" aria-label="Workspace modules">
-            {moduleGroups.map(({ section, icon, items }) => {
+            {moduleGroups.map(({ section, items }) => {
               const renderItem = ([key, label]) => {
                 const badgeCount = badgeCountFor(key);
                 // Admin's "Maintenance Tickets" badge (badge_counts.tickets)
@@ -2931,39 +2898,8 @@ function Workspace() {
                 );
               };
 
-              // Ungrouped (Dashboard) — no header, always visible.
-              if (!section) return <div key="__top" className="module-nav-group">{items.map(renderItem)}</div>;
-
-              // Collapsing must never hide an alert: the header carries the
-              // sum of its children's badges so a folded group still shows
-              // there's something inside needing attention.
-              const groupBadge = items.reduce((sum, [key]) => sum + badgeCountFor(key), 0);
-              // The icon-only rail forces every group open (no room for
-              // headers there, and hiding icons would leave no way to reach
-              // them). Otherwise this is a plain accordion — a group holding
-              // the active module used to also force itself open, which made
-              // clicking that group's own header look broken (the click
-              // toggled the stored state, but this override kept rendering
-              // it expanded regardless) — the user's explicit collapse now
-              // always wins.
-              const expanded = isSidebarCollapsed || !collapsedNavGroups.includes(section);
-
-              return (
-                <div key={section} className="module-nav-group">
-                  <button
-                    type="button"
-                    className="module-nav-section"
-                    onClick={() => toggleNavGroup(section)}
-                    aria-expanded={expanded}
-                  >
-                    {icon && <Icon name={icon} size={16} className="nav-icon" />}
-                    <span className="module-nav-section-label">{section}</span>
-                    {!expanded && groupBadge > 0 && <span className="module-nav-badge">{groupBadge}</span>}
-                    <Icon name="chevronDown" size={14} className={`module-nav-section-chevron${expanded ? ' is-expanded' : ''}`} />
-                  </button>
-                  {expanded && items.map(renderItem)}
-                </div>
-              );
+              // Flat list — no group headings; every item is always visible.
+              return <div key={section ?? '__top'} className="module-nav-group">{items.map(renderItem)}</div>;
             })}
           </nav>
         </aside>
@@ -6738,18 +6674,22 @@ const SELECT_OR_OTHER_SENTINEL = '__other__';
 // e.g. Service Location: pick a known hub, or specify an outside repair shop.
 // Tracks "other mode" locally (not in the form's values), seeded from whether
 // the incoming value already fails to match any preset.
-// Same look/interaction as CreatableSelect's combobox (single bordered
-// input that opens a dropdown panel with a pinned "add new" row) — but for
-// a small fixed set of preset numeric options (e.g. recurrence intervals)
-// with an inline custom-number row instead of a full catalog: there's
-// nothing to persist/rename/delete here, just a value on this one record.
+// Same look/interaction as CreatableSelect's combobox — a single bordered
+// input opening a dropdown with a pinned "+ Add …" row — but for a small
+// fixed set of numeric presets (e.g. recurrence intervals). The custom value
+// is entered in a small popup form, like CreatableSelect's add-new modal;
+// nothing is persisted to a catalog, it's just a value on this one record.
 function SelectOrAddNumberField({ field, value, onChange }) {
   const options = field.options ?? [];
   const matchesPreset = options.some((o) => String(o?.value ?? o) === String(value ?? ''));
   const isCustomActive = Boolean(value) && !matchesPreset;
   const [open, setOpen] = useState(false);
-  const [customDraft, setCustomDraft] = useState('');
+  // Non-null while the custom-value popup is open.
+  const [customDraft, setCustomDraft] = useState(null);
+  const [customError, setCustomError] = useState(null);
   const containerRef = useRef(null);
+  const suffix = field.otherSuffix ?? '';
+  const addLabel = field.otherLabel ?? 'Add Custom Value';
 
   useEffect(() => {
     if (!open) return undefined;
@@ -6760,22 +6700,35 @@ function SelectOrAddNumberField({ field, value, onChange }) {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [open]);
 
+  const customText = (v) => `Every ${v}${suffix ? ` ${suffix}` : ''}`;
   const selectedLabel = matchesPreset
     ? (options.find((o) => String(o?.value ?? o) === String(value ?? ''))?.label ?? '')
-    : (isCustomActive ? `${value}${field.otherSuffix ? ` ${field.otherSuffix}` : ''}` : '');
+    : (isCustomActive ? customText(value) : '');
 
-  const openPanel = () => {
-    setCustomDraft(isCustomActive ? String(value) : '');
-    setOpen(true);
-  };
   const pick = (option) => {
     onChange(String(option?.value ?? option ?? ''));
     setOpen(false);
   };
-  const applyCustom = () => {
-    if (!customDraft) return;
-    onChange(customDraft);
+  const openCustom = () => {
+    setCustomDraft(isCustomActive ? String(value) : '');
+    setCustomError(null);
     setOpen(false);
+  };
+  const closeCustom = () => { setCustomDraft(null); setCustomError(null); };
+  const saveCustom = (e) => {
+    e.preventDefault();
+    // The popup is portaled, but React still bubbles its submit to the
+    // page's own form — stop it there.
+    e.stopPropagation();
+    const n = Number(customDraft);
+    const min = field.otherMin ?? 1;
+    const max = field.otherMax ?? Infinity;
+    if (!customDraft || !Number.isInteger(n) || n < min || n > max) {
+      setCustomError(`Enter a whole number from ${min} to ${max}.`);
+      return;
+    }
+    onChange(String(n));
+    closeCustom();
   };
 
   return (
@@ -6784,38 +6737,16 @@ function SelectOrAddNumberField({ field, value, onChange }) {
         type="text"
         readOnly
         value={selectedLabel}
-        placeholder={field.placeholder ?? 'Select or add a custom interval'}
+        placeholder={field.placeholder ?? 'Select'}
         required={field.required}
-        onFocus={openPanel}
-        onClick={openPanel}
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
       />
       {open && (
         <div className="creatable-select-panel">
-          {/* No onMouseDown preventDefault here (unlike elsewhere in this
-              file's dropdowns) — this row wraps a real <input>, and
-              preventDefault on mousedown blocks the browser's default
-              focus-on-click, so clicking into the number field silently
-              failed to focus it. The outside-click listener above already
-              checks containerRef.current.contains(e.target), so nothing
-              inside this panel needs it to stay open anyway. */}
-          <div className="creatable-select-add creatable-select-add-pinned">
-            <Icon name="plus" size={13} />
-            <input
-              type={field.otherType ?? 'number'}
-              className="creatable-select-custom-input"
-              min={field.otherMin}
-              max={field.otherMax}
-              placeholder={field.otherPlaceholder ?? 'Specify'}
-              value={customDraft}
-              onChange={(e) => setCustomDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyCustom(); } }}
-              autoFocus
-            />
-            {field.otherSuffix && <span className="muted">{field.otherSuffix}</span>}
-            <button type="button" className="ghost-button" disabled={!customDraft} onClick={applyCustom}>
-              {field.otherLabel ?? 'Add'}
-            </button>
-          </div>
+          <button type="button" className="creatable-select-option creatable-select-add creatable-select-add-pinned" onClick={openCustom}>
+            <Icon name="plus" size={13} /> {addLabel}
+          </button>
           <div className="creatable-select-option-list">
             {options.map((option, i) => (
               <div key={option?.value != null ? option.value : `opt-${i}`} className="creatable-select-option-row">
@@ -6824,13 +6755,41 @@ function SelectOrAddNumberField({ field, value, onChange }) {
                 </button>
               </div>
             ))}
+            {isCustomActive && (
+              <div className="creatable-select-option-row">
+                <button type="button" className="creatable-select-option" onClick={() => setOpen(false)}>
+                  {customText(value)} (custom)
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
+      <FormModal open={customDraft !== null} title={addLabel} onClose={closeCustom}>
+        <form className="smart-form" onSubmit={saveCustom} noValidate>
+          <label>
+            <span>{field.otherInputLabel ?? `Number of ${suffix || 'units'}`} <span className="required-asterisk">*</span></span>
+            <input
+              type="number"
+              autoFocus
+              min={field.otherMin}
+              max={field.otherMax}
+              step="1"
+              placeholder={field.otherPlaceholder ?? ''}
+              value={customDraft ?? ''}
+              onChange={(e) => { setCustomDraft(e.target.value); setCustomError(null); }}
+            />
+          </label>
+          {customError && <p className="form-field-error" role="alert" style={{ color: '#b91c1c', margin: 0, fontSize: '0.82rem' }}>{customError}</p>}
+          <div className="form-actions">
+            <button className="ghost-button" type="button" onClick={closeCustom}>Cancel</button>
+            <button className="primary-button" type="submit">Save</button>
+          </div>
+        </form>
+      </FormModal>
     </div>
   );
 }
-
 function SelectOrOtherField({ field, value, onChange }) {
   const options = field.options ?? [];
   const matchesPreset = options.some((o) => String(o?.value ?? o) === String(value ?? ''));
@@ -8990,6 +8949,7 @@ function scheduleFields(lookups, allHubs = [], isEdit = false, suggestOnly = fal
         { value: 12, label: 'Year' },
       ],
       otherLabel: 'Add Custom Month',
+      otherInputLabel: 'Repeat every how many months? (1–60)',
       otherPlaceholder: 'e.g. 4',
       otherSuffix: 'months',
       otherType: 'number',
@@ -10789,12 +10749,11 @@ function scheduleColumns(onEdit, deleteRecord, onComplete, currentUser, onViewRe
           {/* Edit/Delete/Restore are Custodian-only abilities (config/
               permissions.php: schedule.edit/.delete/.restore => ['Custodian']
               — Admin doesn't hold them), gated by canDo rather than role so
-              this actually matches what the backend will accept. Edit also
-              carries the backend's ownership check — a Custodian may only
-              edit the schedule they themselves created, same pattern as
-              condition.edit. A Maintenance Personnel assigned to it only
+              this actually matches what the backend will accept. Any
+              Custodian may edit or cancel any schedule in their barangay,
+              not only the ones they booked. A Maintenance Personnel assigned to it only
               ever gets to act on it via Mark as Done above. */}
-          {canDo(currentUser, 'schedule.edit') && String(row.createdBy?.id) === String(currentUserId) && (
+          {canDo(currentUser, 'schedule.edit') && (
             <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
           )}
           {/* schedule.reassign (Admin only, config/permissions.php) — Admin's
@@ -10978,9 +10937,9 @@ function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelet
             permissions.php — Admin doesn't hold schedule.edit/.delete/
             .restore), gated by canDo so this matches what the backend
             actually accepts — see scheduleColumns' matching Action column
-            for the full reasoning. Edit also keeps the ownership check: a
-            Custodian may only edit the schedule they themselves created. */}
-        {canDo(currentUser, 'schedule.edit') && String(row.createdBy?.id) === String(currentUserId) && (
+            for the full reasoning. Any Custodian may edit any schedule in
+            their barangay. */}
+        {canDo(currentUser, 'schedule.edit') && (
           <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
         )}
         {/* schedule.reassign (Admin only) — Admin's one remaining lever over
@@ -14794,8 +14753,13 @@ function TicketModule({
     });
     return counts;
   }, [statSourceTickets]);
+  const ticketPriorityStats = useMemo(() => {
+    const counts = { High: 0, Medium: 0, Low: 0 };
+    statSourceTickets.forEach((t) => { if (t.priority in counts) counts[t.priority] += 1; });
+    return counts;
+  }, [statSourceTickets]);
 
-  const ticketColumnDefs = useMemo(() => ticketTableColumns(unreadByTicket), [unreadByTicket]);
+  const ticketColumnDefs =useMemo(() => ticketTableColumns(unreadByTicket), [unreadByTicket]);
   const ticketColumnChooser = useColumnChooser('vms_ticket_columns', ticketColumnDefs);
 
   return (
@@ -14809,10 +14773,21 @@ function TicketModule({
         activeFilter={filterStatus}
         onFilterChange={setFilterStatus}
       />
-      {/* Filters (3/4) + Latest Reports (1/4) share one row; the ticket
-          list below is full width on its own row. */}
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', width: '100%' }}>
-        <section className="panel module-filter-panel" style={{ flex: '3 1 0%', minWidth: 0 }}>
+      {/* Same layout as the Issue Reports page: the priority bar and the
+          filters stack on the left, Latest Reports spans both on the right.
+          The bar counts the same full list as the stat cards above. */}
+      <div className={`ticket-summary-grid${recentIssues && recentIssues.length > 0 ? '' : ' no-side'}`}>
+        <div className="ticket-summary-chart">
+          <StackedBarChart
+            title="Maintenance Tickets"
+            segments={[
+              { label: 'High', value: ticketPriorityStats.High, color: '#dc2626' },
+              { label: 'Medium', value: ticketPriorityStats.Medium, color: '#f59e0b' },
+              { label: 'Low', value: ticketPriorityStats.Low, color: '#0ea5e9' },
+            ]}
+          />
+        </div>
+        <section className="panel module-filter-panel ticket-summary-filters">
           <TicketFilterPanel
             categories={categories}
             vehicles={vehicles}
@@ -14844,9 +14819,7 @@ function TicketModule({
             the one thing worth keeping from it, moved here instead of
             dropped. */}
         {recentIssues && recentIssues.length > 0 && (
-          <div style={{ flex: '1 1 0%', minWidth: 0 }}>
-            <LatestIssueCard issues={recentIssues} onRowClick={(row) => row.vehicle && onViewVehicle?.(row.vehicle)} />
-          </div>
+          <LatestIssueCard issues={recentIssues} onRowClick={(row) => row.vehicle && onViewVehicle?.(row.vehicle)} />
         )}
       </div>
 

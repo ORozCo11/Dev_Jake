@@ -14524,3 +14524,25 @@ html .subissue-card.is-collapsed .subissue-body-grid { margin-top: 6px; }
 html .subissue-card.is-collapsed .subissue-meta-strip { padding: 4px 8px; }html .ticket-detail-panel.is-page .ticket-detail-actions { position: static; padding: 12px 20px; }
 html .ticket-detail-panel.is-page .ticket-detail-actions:not(:has(button)) { display: none; }
 html .subissue-card-head .subissue-title { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+/* Maintenance Tickets: priority bar over the filters on the left, Latest
+   Reports spanning both rows on the right — same layout as Issue Reports. */
+.ticket-summary-grid {
+  display: grid; grid-template-columns: minmax(0, 3fr) minmax(240px, 1fr); grid-template-rows: auto auto;
+  gap: 16px 20px; width: 100%;
+}
+.ticket-summary-grid.no-side { grid-template-columns: minmax(0, 1fr); }
+.ticket-summary-chart { grid-column: 1; grid-row: 1; min-width: 0; }
+.ticket-summary-filters { grid-column: 1; grid-row: 2; min-width: 0; }
+.ticket-summary-grid > .latest-issue-card { grid-column: 2; grid-row: 1 / span 2; height: 0; min-height: 100%; overflow: hidden; }
+.ticket-summary-grid > .latest-issue-card .latest-issue-timeline-list { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+@media (max-width: 900px) {
+  .ticket-summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .ticket-summary-grid > .latest-issue-card { grid-column: 1; grid-row: auto; height: auto; min-height: 0; max-height: 420px; }
+  .ticket-summary-grid > .latest-issue-card .latest-issue-timeline-list { flex: 0 1 auto; }
+}.ticket-summary-filters .issue-filter-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+.ticket-summary-filters .issue-filter-right-cluster { flex-wrap: wrap; min-width: 0; }
+.ticket-summary-filters .issue-filter-status-grid { flex: 1 1 260px; grid-template-columns: repeat(2, minmax(110px, 1fr)); }
+.ticket-summary-filters .issue-filter-actions { min-width: 110px; }
+@media (max-width: 900px) {
+  .ticket-summary-filters .issue-filter-panel { grid-template-columns: minmax(0, 1fr); }
+}
