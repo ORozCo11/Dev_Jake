@@ -337,6 +337,63 @@ export const PHASE_STEP_COLORS = {
   'Closed': '#16a34a',
 };
 
+// A sub-issue counts as "logged" once the mechanic has recorded the repair —
+// it stays For Inspection until the Custodian's single verification closes
+// the whole ticket (which flips every line to Done).
+const LOGGED_SUB_ISSUE_STATUSES = ['For Inspection', 'For Confirmation', 'Done', 'Deferred'];
+
+// "2 of 3 repairs logged" — the progress that actually moves while a ticket
+// is Active. (Counting only Done would read 0% until the very end, since
+// sub-issues only become Done when the ticket closes.)
+export function ticketRepairProgress(ticket) {
+  const subs = ticket?.sub_issues;
+  const total = Array.isArray(subs) ? subs.length : (ticket?.progress?.total ?? 0);
+  const noun = (n) => `repair${n === 1 ? '' : 's'}`;
+  if (ticket?.status === 'Closed') {
+    return { logged: total, total, percent: 100, label: total ? `All ${total} ${noun(total)} verified` : 'Closed' };
+  }
+  const logged = Array.isArray(subs)
+    ? subs.filter((s) => LOGGED_SUB_ISSUE_STATUSES.includes(s.status)).length
+    : (ticket?.progress?.done ?? 0);
+  return {
+    logged,
+    total,
+    percent: total > 0 ? Math.round((logged / total) * 100) : 0,
+    label: total > 0 ? `${logged} of ${total} ${noun(total)} logged` : 'No repairs listed',
+  };
+}
+
+// Whose turn it is on a ticket — the role (and person, when one is assigned)
+// that has to act next, plus what they have to do. `role` is null when the
+// ticket is finished and nobody is waited on.
+export function ticketAwaiting(ticket) {
+  if (!ticket) return { role: null, person: null, task: '' };
+  const subs = ticket.sub_issues ?? [];
+  const mechanic = ticket.assigned_mechanic ?? null;
+  const custodian = ticket.assigned_custodian ?? null;
+  switch (ticket.status) {
+    case 'Pending Approval':
+      return { role: 'Admin', person: null, task: 'approve or decline the proposal' };
+    case 'Declined':
+      return { role: null, person: null, task: 'Declined — an Admin can reopen the proposal if needed' };
+    case 'Open':
+      return { role: 'Custodian', person: custodian, task: 'inspect the vehicle' };
+    case 'Active':
+      if (!ticket.assigned_mechanic_id) return { role: 'Admin', person: null, task: 'assign a mechanic' };
+      if (subs.some((s) => s.status === 'Pending Approval')) return { role: 'Admin', person: null, task: 'approve the cannibalized part' };
+      if (subs.length > 0 && subs.every((s) => s.status === 'For Inspection')) return { role: 'Mechanic', person: mechanic, task: 'submit the ticket for verification' };
+      return { role: 'Mechanic', person: mechanic, task: 'log the remaining repairs' };
+    case 'For Verification':
+      return { role: 'Custodian', person: custodian, task: 'verify the repair' };
+    case 'Closed':
+      return { role: null, person: null, task: 'Nothing — the ticket is closed' };
+    case 'Cancelled':
+      return { role: null, person: null, task: 'Nothing — the ticket was cancelled' };
+    default:
+      return { role: null, person: null, task: '' };
+  }
+}
+
 // Toast after the Custodian's whole-ticket verification
 // (TicketController::verifyTicket): approval closes the ticket; a failed
 // check returns it to the mechanic, who is notified.

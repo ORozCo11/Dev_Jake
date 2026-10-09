@@ -1,0 +1,309 @@
+/* =========================================================================
+   Maintenance Tickets — UI audit pass (P23). Refines the redesigned Ticket
+   Details page (ticket-details.css / workflow-redesign.css) and the ticket
+   list/archive without rewriting them. Loaded last (see App.css).
+
+   Surface note: the ticket panel, its hero card, phase stepper, sub-issue
+   cards and footer are drawn on fixed light surfaces in BOTH themes (see
+   ticket-details.css / light-elevation.css), so text placed on them uses
+   fixed slate colours. Content inside .ticket-section cards sits on
+   var(--surface) and therefore uses theme tokens.
+   ========================================================================= */
+
+/* ---- Summary header ---------------------------------------------------- */
+.ticket-process-hero .p23-eyebrow {
+  display: block;
+  margin: 6px 0 2px;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.p23-ticket-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid #e2e8f0;
+}
+.p23-ticket-facts > div { min-width: 0; }
+.p23-ticket-facts dt {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #475569;
+}
+.p23-ticket-facts dd {
+  margin: 2px 0 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+/* "Awaiting <role · person> — to <task>" inside the Next step card. */
+html .ticket-process-next-card .p23-awaiting {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid #bfdbfe;
+  background: #ffffff;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+  color: #1e293b;
+}
+html .ticket-process-next-card .p23-awaiting svg { flex-shrink: 0; margin-top: 2px; color: #1d4ed8; }
+html .ticket-process-next-card .p23-awaiting strong { color: #1e3a8a; font-size: inherit; }
+html .ticket-process-next-card .p23-awaiting.is-me {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+html .ticket-process-next-card .p23-awaiting.is-me svg,
+html .ticket-process-next-card .p23-awaiting.is-me strong { color: #92400e; }
+html .ticket-process-next-card .p23-awaiting.is-none { border-color: #e2e8f0; }
+html .ticket-process-next-card .p23-awaiting.is-none svg { color: #475569; }
+html .ticket-process-next-card .p23-awaiting.is-none strong { color: #334155; }
+
+/* Small hero text that sat below 4.5:1 on the white card. */
+html .ticket-detail-panel.is-page .ticket-process-kicker,
+html .ticket-detail-panel.is-page .ticket-process-kicker > span:not(:first-child),
+html .ticket-detail-panel.is-page .ticket-process-stat-label,
+html .ticket-detail-panel.is-page .ticket-process-meter-core small { color: #475569; }
+html .ticket-detail-panel.is-page .ticket-process-next-label { color: #1d4ed8; }
+
+/* ---- Phase stepper ---------------------------------------------------- */
+/* Label colour comes from --p23-step-color (set inline per phase), darkened
+   so amber/violet phase colours still read at 4.5:1 on the light stepper. */
+html .ticket-process-flow-label.p23-flow-label { color: #475569; }
+html .ticket-process-flow-step:not(.is-upcoming) .ticket-process-flow-label.p23-flow-label {
+  color: color-mix(in srgb, var(--p23-step-color, #1d4ed8) 68%, #000000);
+}
+html .ticket-detail-panel .ticket-process-flow-step > small { color: #475569; }
+
+/* ---- Sub-issues -------------------------------------------------------- */
+html .ticket-section h4 .p23-subissue-progress {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+/* ---- Disabled actions, explained -------------------------------------- */
+.p23-blocked-action p.muted {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+.p23-blocked-action p.muted svg { flex-shrink: 0; margin-top: 2px; }
+.p23-blocked-action button:disabled { cursor: not-allowed; }
+
+/* ---- Other open tickets on this vehicle ------------------------------- */
+.p23-related { margin-top: var(--space-3); }
+.p23-related .ticket-detail-label { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-2xs); color: var(--text-muted); }
+.p23-related .p23-related-empty { margin: var(--space-1) 0 0; font-size: var(--font-size-xs); }
+.p23-related-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.p23-related-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.p23-related-item:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--primary-border); color: var(--text-strong); }
+.p23-related-item:disabled { cursor: default; }
+.p23-related-id { font-weight: var(--font-weight-bold); color: var(--text-strong); flex-shrink: 0; }
+.p23-related-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Activity history ------------------------------------------------- */
+.p23-activity {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
+.p23-activity h5 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.p23-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.p23-activity-item {
+  position: relative;
+  padding: 0 0 var(--space-3) var(--space-4);
+  border-left: 2px solid var(--border);
+  margin-left: 5px;
+}
+.p23-activity-item:last-child { padding-bottom: 0; }
+.p23-activity-item::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--surface);
+}
+.p23-activity-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px var(--space-2);
+}
+.p23-activity-head strong { font-size: var(--font-size-xs); color: var(--text-strong); }
+.p23-activity-head time { font-size: var(--font-size-2xs); color: var(--text-muted); white-space: nowrap; }
+.ticket-section .p23-activity-item p {
+  margin: 2px 0;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.p23-activity-by { font-size: var(--font-size-2xs); color: var(--text-muted); }
+
+.p23-link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  margin: 0 0 var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary-strong, var(--primary));
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+.p23-link-button:hover { text-decoration: underline; }
+
+/* ---- Rare / destructive actions --------------------------------------- */
+/* The footer and sub-issue cards are white in both themes, so the dark
+   theme's light danger token would wash out there. */
+html .ticket-detail-actions .text-danger-button,
+html .subissue-card .text-danger-button { color: #991b1b; }
+html .ticket-detail-actions .text-danger-button:hover,
+html .subissue-card .text-danger-button:hover { color: #7f1d1d; background: #fee2e2; border-color: #fca5a5; }
+html .ticket-detail-panel.is-page .ticket-detail-actions { border-top: 1px solid #e2e8f0; }
+
+/* ---- Focus + touch targets ------------------------------------------- */
+.p23-related-item:focus-visible,
+.p23-link-button:focus-visible,
+.text-danger-button:focus-visible,
+html .subissue-toggle:focus-visible,
+html .ticket-subissue-toggle-all:focus-visible,
+.ticket-card:focus-visible,
+.p23-archive-actions button:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* Small icon controls keep their look but get a 44px hit area. */
+html .subissue-toggle { position: relative; }
+html .subissue-toggle::before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+}
+html .ticket-subissue-toggle-all { min-height: var(--touch-target); }
+.ticket-detail-panel.is-page .ticket-detail-actions button,
+.ticket-detail-panel.is-page .p23-blocked-action button,
+.ticket-detail-panel.is-page .ticket-section > .primary-button { min-height: var(--touch-target); }
+@media (pointer: coarse) {
+  html .subissue-card-head-actions .icon-btn,
+  .p23-archive-actions button.icon-btn,
+  html .ticket-process-close {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+}
+
+/* ---- Archive table actions: centred, one consistent size -------------- */
+.row-actions.p23-archive-actions { justify-content: center; }
+
+/* ---- Ticket card progress -------------------------------------------- */
+.p23-card-progress {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--status-neutral-bg);
+  overflow: hidden;
+}
+.p23-card-progress > div {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--warning, #d97706);
+}
+.p23-card-progress > div.is-complete { background: var(--success, #16a34a); }
+.p23-card-progress-label,
+.p23-card-awaiting {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--font-size-2xs);
+  color: var(--text-muted);
+}
+.p23-card-awaiting { font-weight: var(--font-weight-semibold); color: var(--text); }
+
+/* ---- Narrow screens (390px and below) -------------------------------- */
+.ticket-detail-panel.is-page .ticket-detail-col-left,
+.ticket-detail-panel.is-page .ticket-detail-col-right,
+.ticket-detail-panel.is-page .ticket-process-hero-main,
+.ticket-detail-panel.is-page .ticket-process-next-card { min-width: 0; }
+.ticket-detail-panel.is-page { max-width: 100%; }
+
+@media (max-width: 640px) {
+  .ticket-detail-footer-actions { flex-direction: column-reverse; align-items: stretch; }
+  .ticket-detail-footer-secondary,
+  .ticket-detail-footer-primary { justify-content: center; margin-left: 0; }
+  .ticket-detail-footer-primary > button { width: 100%; justify-content: center; }
+  html .ticket-kv-row { grid-template-columns: minmax(0, 1fr); }
+  html .subissue-card-head .subissue-title { flex-basis: calc(100% - 80px); }
+  .proposal-review-buttons { flex-wrap: wrap; }
+}
+@media (max-width: 520px) {
+  html .ticket-detail-panel.is-page .ticket-process-flow { padding-left: var(--space-2); padding-right: var(--space-2); }
+  html .ticket-detail-panel.is-page .ticket-process-flow-step { min-width: 0; }
+  html .ticket-detail-panel.is-page .ticket-process-flow-label { padding: 2px 4px; font-size: var(--font-size-2xs); text-align: center; }
+  /* Only the current phase keeps its hint, so four steps fit at 390px. */
+  html .ticket-detail-panel.is-page .ticket-process-flow-step:not(.is-active) > small { display: none; }
+  .p23-ticket-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

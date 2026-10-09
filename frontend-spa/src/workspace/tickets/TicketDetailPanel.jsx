@@ -9,7 +9,7 @@ import { ExpandableText, FormModal, ModuleLoader, ModulePanel, PartsTags, QuietD
 import { SmartForm } from '../forms/SmartForm';
 import { formatDate, resolvePhotoUrl } from '../lib/format';
 import { canDo, hasRole, roleRoutes } from '../lib/permissions';
-import { PHASE_STEP_COLORS, PHASE_STEP_ICONS, phaseOrder, verifyOutcomeMessage } from '../lib/workflow';
+import { PHASE_STEP_COLORS, PHASE_STEP_ICONS, phaseOrder, ticketAwaiting, ticketRepairProgress, verifyOutcomeMessage } from '../lib/workflow';
 
 
 // =========================================================================
@@ -144,7 +144,7 @@ export function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline
 
       {isDeclined && (
         <div className="notice danger" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 12px' }}>
-          <Icon name="alert" size={15} /> You declined this proposal{ticket.decline_reason ? `: ${ticket.decline_reason}` : '.'} Undecline to send it back to the Custodian, or approve it as-is below.
+          <Icon name="alert" size={15} /> You declined this proposal{ticket.decline_reason ? `: ${ticket.decline_reason}` : '.'} Reopen it to put it back in Pending Approval, or approve it as-is below.
         </div>
       )}
 
@@ -225,21 +225,21 @@ export function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline
         <div className="proposal-review-actions">
           <p className="proposal-review-hint">
             {isDeclined
-              ? 'Undecline to send this back to the Custodian as-is, or approve it directly below.'
+              ? 'Reopen this proposal to put it back in Pending Approval, or approve it directly below.'
               : 'Edit anything above before approving or declining.'}
           </p>
           <div className="proposal-review-buttons">
             {isDeclined ? (
               <button className="btn-sm ghost-button" type="button" onClick={onUndecline} disabled={submitting}>
-                <Icon name="undo" size={14} /> Undecline
+                <Icon name="undo" size={14} /> Reopen Proposal
               </button>
             ) : (
-              <button className="btn-sm danger-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
+              <button className="text-danger-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
                 <Icon name="close" size={14} /> Decline
               </button>
             )}
             <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
-              <Icon name="checkCircle" size={14} /> Approve & Assign
+              <Icon name="checkCircle" size={14} /> {submitting ? 'Approving…' : 'Approve & Assign'}
             </button>
           </div>
         </div>
@@ -292,7 +292,7 @@ export function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOption
   const subissueBoxHeadStyle = { display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', marginBottom: 10 };
 
   return (
-    <div className="subissue-two-col" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(260px, 1fr)', gap: 18, alignItems: 'start' }}>
+    <div className="subissue-two-col" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 18, alignItems: 'start' }}>
       <div style={subissueBoxStyle}>
         <span style={subissueBoxHeadStyle}>Sub-Issue</span>
         <label>
@@ -366,8 +366,10 @@ export function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOption
 // TICKET DETAIL PANEL — shown when admin clicks a ticket row
 // =========================================================================
 
-export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEditSubIssue, onDeleteSubIssue, onAssignTicketMechanic, onReassignCustodian, onReopenDone, onLogRepairs, onSubmitForVerification, onVerifyTicket, onViewIssue, onCancel, onUncancel, onDelete, onRequestConfirmation, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onUndeclineProposal, onClose, asPage = false }) {
+export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEditSubIssue, onDeleteSubIssue, onAssignTicketMechanic, onReassignCustodian, onReopenDone, onLogRepairs, onSubmitForVerification, onVerifyTicket, onViewIssue, onCancel, onUncancel, onDelete, onRequestConfirmation, onApproveCannibalization, onRejectCannibalization, onApproveProposal, onDeclineProposal, onUndeclineProposal, onClose, relatedTickets, onOpenTicket, asPage = false }) {
   const [subDraft, setSubDraft] = useState(null); // { id|null, title, maintenance_type }
+  // Activity History shows the latest few entries until expanded.
+  const [showAllActivity, setShowAllActivity] = useState(false);
   // Cannibalization approval — tracks which sub-issue's reject form is
   // open; Approve has no form of its own (it needs no input beyond the
   // click itself), so it doesn't need a tracked id.
@@ -404,7 +406,6 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
   const isAdminUser = hasRole(user, 'Admin');
   const isAssignedMechanic = ticket.assigned_mechanic_id != null && String(ticket.assigned_mechanic_id) === String(userId);
   const isAssignedCustodian = ticket.assigned_custodian_id != null && String(ticket.assigned_custodian_id) === String(userId);
-  const resolvedCount = progress.done + progress.deferred;
   const inRepairCount = subIssues.filter((s) => s.status === 'Under Repair').length;
   const loggedCount = subIssues.filter((s) => s.status === 'For Inspection').length;
   const pendingApprovalCount = subIssues.filter((s) => s.status === 'Pending Approval').length;
@@ -416,14 +417,38 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
   const canSubmitForVerification = ticket.status === 'Active' && isAssignedMechanic && allLogged && canDo(user, 'ticket.submit_for_verification');
   const canVerifyTicket = ticket.status === 'For Verification' && isAssignedCustodian && canDo(user, 'ticket.verify');
   const ticketCost = subIssues.reduce((sum, s) => sum + (Number(s.maintenance_cost) || 0), 0);
-  const resolvedPercent = ticket.status === 'Closed'
-    ? 100
-    : subIssues.length > 0 ? Math.round((resolvedCount / subIssues.length) * 100) : 0;
+  // Progress that actually moves while the ticket is Active: repairs the
+  // mechanic has logged (sub-issues only become Done when the ticket closes).
+  const repairProgress = ticketRepairProgress(ticket);
+  const resolvedPercent = repairProgress.percent;
+  const awaiting = ticketAwaiting(ticket);
+  const awaitingIsMe = awaiting.person?.id != null && String(awaiting.person.id) === String(userId);
+  const awaitingWho = awaiting.role
+    ? `${awaiting.role}${awaitingIsMe ? ' · You' : awaiting.person?.name ? ` · ${awaiting.person.name}` : ''}`
+    : 'No one';
+  const remainingToLog = Math.max(0, repairProgress.total - repairProgress.logged);
+  // Why the mechanic's Submit button is unavailable, when it is.
+  const submitBlockedReason = subIssues.length === 0
+    ? 'This ticket has no sub-issues to log yet.'
+    : pendingApprovalCount > 0
+      ? `${pendingApprovalCount} cannibalized repair${pendingApprovalCount === 1 ? '' : 's'} still ${pendingApprovalCount === 1 ? 'needs' : 'need'} Admin approval.`
+      : `Log the remaining ${remainingToLog} repair${remainingToLog === 1 ? '' : 's'} first (${repairProgress.label}).`;
+  const showSubmitBlocked = ticket.status === 'Active' && isAssignedMechanic && !allLogged && canDo(user, 'ticket.submit_for_verification') && Boolean(onSubmitForVerification);
+  const showVerifyBlocked = ticket.status === 'Active' && isAssignedCustodian && canDo(user, 'ticket.verify');
+  const ticketLabel = `Ticket #${ticket.ticket_id}${ticket.ticket_title ? ` "${ticket.ticket_title}"` : ''}${ticket.vehicle?.vehicle_name ? ` on ${ticket.vehicle.vehicle_name}${ticket.vehicle.plate_number ? ` (${ticket.vehicle.plate_number})` : ''}` : ''}`;
+  const otherOpenTickets = Array.isArray(relatedTickets) ? relatedTickets : null;
+  const activity = Array.isArray(ticket.activity) ? ticket.activity : [];
+  const ACTIVITY_PREVIEW = 5;
+  const shownActivity = showAllActivity ? activity : activity.slice(-ACTIVITY_PREVIEW);
   const nextSignal = (() => {
-    if (ticket.status === 'Cancelled') return { tone: 'alert', label: 'Ticket cancelled', detail: 'Restore it only if work needs to resume.' };
-    if (ticket.status === 'Closed') return { tone: 'ok', label: 'Closed', detail: 'All recorded work is complete.' };
-    if (ticket.status === 'Declined') return { tone: 'alert', label: 'Declined', detail: 'Undecline to revise and resubmit it, or approve it as-is below.' };
-    if (ticket.status === 'Pending Approval') return { tone: 'warn', label: 'Review proposal', detail: 'A Custodian proposed this ticket — review and approve or decline it below.' };
+    if (ticket.status === 'Cancelled') return { tone: 'alert', label: 'Ticket cancelled', detail: 'Reopen it only if work needs to resume.' };
+    if (ticket.status === 'Closed') return { tone: 'ok', label: 'Closed', detail: 'The Custodian verified the repair. Closed tickets stay on record and can no longer be cancelled or deleted.' };
+    if (ticket.status === 'Declined') return canDo(user, 'ticket.approve')
+      ? { tone: 'alert', label: 'Declined', detail: 'Reopen the proposal to reconsider it, or approve it as-is below.' }
+      : { tone: 'alert', label: 'Declined', detail: 'An Admin declined this proposal. They can reopen it if anything changes.' };
+    if (ticket.status === 'Pending Approval') return canDo(user, 'ticket.approve')
+      ? { tone: 'warn', label: 'Review proposal', detail: 'A Custodian proposed this ticket — review and approve or decline it below.' }
+      : { tone: 'active', label: 'Awaiting Admin review', detail: "You'll be notified once an Admin approves or declines it." };
     if (ticket.status === 'For Verification') return isAssignedCustodian
       ? { tone: 'warn', label: 'Verify repair', detail: 'The mechanic says this is done — confirm it before the ticket closes.' }
       : { tone: 'active', label: 'Awaiting verification', detail: `${ticket.assigned_custodian?.name ?? 'The assigned Custodian'} needs to verify this repair.` };
@@ -445,11 +470,13 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
   const daysOpen = ticket.days_open;
   const isAging = ticket.status !== 'Closed' && ticket.status !== 'Cancelled' && typeof daysOpen === 'number' && daysOpen >= 30;
 
+  // Confirmations name the exact ticket (number, Main Issue and vehicle) so
+  // nobody cancels or deletes the wrong one from a similar-looking page.
   const requestDelete = () => {
     onRequestConfirmation({
-      title: 'Delete Ticket',
-      message: `Permanently delete Ticket #${ticket.ticket_id}? This cannot be undone. If the ticket should stay on record (for example it was raised by mistake but already worked on), cancel it instead.`,
-      confirmLabel: 'Delete Ticket',
+      title: `Delete Ticket #${ticket.ticket_id}?`,
+      message: `Delete ${ticketLabel}? It leaves the active ticket list and is kept in Archives as Deleted, where only an Admin can reopen it. If it should stay on record as-is (for example it was raised by mistake but already worked on), cancel it instead.`,
+      confirmLabel: `Delete Ticket #${ticket.ticket_id}`,
       variant: 'danger',
       onConfirm: () => onDelete(ticket),
     });
@@ -457,11 +484,21 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
 
   const requestCancel = () => {
     onRequestConfirmation({
-      title: 'Cancel Ticket',
-      message: `Are you sure you want to cancel Ticket #${ticket.ticket_id}? Work on it stops here — it can be uncancelled later if needed.`,
-      confirmLabel: 'Cancel Ticket',
-      variant: 'primary',
+      title: `Cancel Ticket #${ticket.ticket_id}?`,
+      message: `Cancel ${ticketLabel}? All work on it stops and the assigned people are no longer waited on. It stays on record and can be reopened later if needed.`,
+      confirmLabel: `Cancel Ticket #${ticket.ticket_id}`,
+      variant: 'danger',
       onConfirm: () => onCancel(ticket),
+    });
+  };
+
+  const requestUncancel = () => {
+    onRequestConfirmation({
+      title: `Reopen Ticket #${ticket.ticket_id}?`,
+      message: `Reopen ${ticketLabel}? It goes back to Active so work can resume.`,
+      confirmLabel: `Reopen Ticket #${ticket.ticket_id}`,
+      variant: 'primary',
+      onConfirm: () => onUncancel(ticket),
     });
   };
 
@@ -471,20 +508,20 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
           <div
             className="ticket-process-meter"
             role="progressbar"
-            aria-label="Resolved sub-issues"
+            aria-label="Repairs logged"
             aria-valuemin="0"
             aria-valuemax="100"
-            aria-valuenow={progress.total > 0 ? resolvedPercent : undefined}
-            aria-valuetext={progress.total > 0 ? `${resolvedCount} of ${progress.total} sub-issues resolved` : 'No sub-issues'}
+            aria-valuenow={repairProgress.total > 0 ? resolvedPercent : undefined}
+            aria-valuetext={repairProgress.label}
             style={{ '--ticket-progress': `${resolvedPercent}%` }}
           >
             <div className="ticket-process-meter-core">
-              <span>Resolved</span>
+              <span>{ticket.status === 'Closed' ? 'Verified' : 'Logged'}</span>
               {/* A zero-sub-issue ticket (inspection found nothing to repair) has
                   nothing to measure progress against — "0%" would read as
                   "nothing done" right next to a "ready to close" banner. */}
-              <strong>{progress.total > 0 ? `${resolvedPercent}%` : '—'}</strong>
-              <small>{progress.total > 0 ? `${resolvedCount}/${progress.total} items` : 'No sub-issues'}</small>
+              <strong>{repairProgress.total > 0 ? `${resolvedPercent}%` : '—'}</strong>
+              <small>{repairProgress.total > 0 ? `${repairProgress.logged}/${repairProgress.total} repairs` : 'No sub-issues'}</small>
             </div>
           </div>
           <div className="ticket-process-hero-main">
@@ -494,6 +531,7 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                 <span>{daysOpen === 0 ? 'Opened today' : `${daysOpen} day${daysOpen === 1 ? '' : 's'} open`}</span>
               )}
             </div>
+            <span className="p23-eyebrow">Main Issue</span>
             <h3 className="ticket-detail-title" id={`ticket-${ticket.ticket_id}-title`}>{ticket.ticket_title}</h3>
             <div className="ticket-detail-meta">
               <TicketStatusBadge value={ticket.priority} />
@@ -515,15 +553,46 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                 <span><Icon name="alert" size={12} /> {progress.deferred} deferred</span>
               </div>
             )}
+            {/* One-glance summary: what, where, which phase, whose turn and
+                how far along — so nobody has to scan the cards below for it. */}
+            <dl className="p23-ticket-facts">
+              <div>
+                <dt>Vehicle</dt>
+                <dd>{ticket.vehicle?.vehicle_name ?? '—'}{ticket.vehicle?.plate_number ? ` · ${ticket.vehicle.plate_number}` : ''}</dd>
+              </div>
+              <div>
+                <dt>Phase</dt>
+                <dd>{ticket.status ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Custodian (owner)</dt>
+                <dd>{ticket.assigned_custodian?.name ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Mechanic</dt>
+                <dd>{ticket.assigned_mechanic?.name ?? 'Not assigned yet'}</dd>
+              </div>
+              <div>
+                <dt>Progress</dt>
+                <dd>{repairProgress.label}</dd>
+              </div>
+            </dl>
           </div>
 
           <div className="ticket-process-next-card">
             {asPage ? null : (
               <button className="icon-btn ticket-process-close" onClick={onClose} type="button" title="Close" aria-label="Close"><Icon name="close" size={18} /></button>
             )}
-            <span className="ticket-process-next-label">Next best action</span>
+            <span className="ticket-process-next-label">Next step</span>
             <strong>{nextSignal.label}</strong>
             <p>{nextSignal.detail}</p>
+            <p className={`p23-awaiting${awaitingIsMe ? ' is-me' : ''}${awaiting.role ? '' : ' is-none'}`} role="status">
+              <Icon name="flag" size={13} />
+              <span>
+                {awaiting.role ? 'Awaiting ' : ''}<strong>{awaiting.role ? awaitingWho : awaiting.task}</strong>
+                {awaiting.role && awaiting.task ? ` — ${awaitingIsMe ? 'your turn to ' : 'to '}${awaiting.task}` : ''}
+              </span>
+            </p>
             <div className="ticket-process-stat-grid">
               {processStats.map((stat) => (
                 <div key={stat.label} className="ticket-process-stat">
@@ -550,15 +619,16 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
               const hint = {
                 'Pending Approval': 'Admin approves & assigns a mechanic',
                 Active: 'Mechanic repairs, logs, submits',
-                'For Verification': 'Custodian verifies',
-                Closed: 'Return or archive',
+                'For Verification': 'Custodian verifies or returns for repair',
+                Closed: 'Verified & archived',
               }[s];
               return (
                 <div key={s} className={`ticket-process-flow-step is-${state}`} role="listitem" aria-current={state === 'active' ? 'step' : undefined} style={state === 'active' ? { '--ticket-flow-active-color': PHASE_STEP_COLORS[s] } : undefined}>
                   <span className="ticket-process-flow-marker" style={state === 'active' ? { background: PHASE_STEP_COLORS[s], borderColor: PHASE_STEP_COLORS[s] } : undefined}>
                     {state === 'done' ? <Icon name="checkCircle" size={16} /> : <Icon name={PHASE_STEP_ICONS[s]} size={16} />}
                   </span>
-                  <span className="ticket-process-flow-label" style={state !== 'upcoming' ? { color: PHASE_STEP_COLORS[s] } : undefined}>{s}</span>
+                  <span className="ticket-process-flow-label p23-flow-label" style={state !== 'upcoming' ? { '--p23-step-color': PHASE_STEP_COLORS[s] } : undefined}>{s}</span>
+                  <span className="sr-only">{state === 'done' ? ' (done)' : state === 'active' ? ' (current phase)' : ' (upcoming)'}</span>
                   <small>{hint}</small>
                 </div>
               );
@@ -593,6 +663,32 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                 <button className="ghost-button" type="button" style={{ marginTop: 10 }} onClick={() => onViewIssue(ticket.issue_report_id)}>
                   <Icon name="alert" size={13} /> From Issue Report #{ticket.issue_report_id}
                 </button>
+              )}
+              {/* Other unfinished tickets on the same vehicle — from the ticket
+                  list already loaded for this page, so it costs no request.
+                  Hidden entirely when that list isn't available. */}
+              {otherOpenTickets && (
+                <div className="p23-related">
+                  <span className="ticket-detail-label">
+                    Other open tickets on this vehicle{!isAdminUser ? ' (assigned to you)' : ''}
+                    <span className="ticket-count-pill">{otherOpenTickets.length}</span>
+                  </span>
+                  {otherOpenTickets.length === 0 ? (
+                    <p className="muted p23-related-empty">None — this is the only open ticket for this vehicle.</p>
+                  ) : (
+                    <ul className="p23-related-list">
+                      {otherOpenTickets.map((t) => (
+                        <li key={t.ticket_id}>
+                          <button type="button" className="p23-related-item" onClick={() => onOpenTicket?.(t)} disabled={!onOpenTicket}>
+                            <span className="p23-related-id">#{t.ticket_id}</span>
+                            <span className="p23-related-title">{t.ticket_title}</span>
+                            <TicketStatusBadge value={t.status} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               )}
             </section>
 
@@ -715,6 +811,39 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                   </div>
                 ))}
               </div>
+
+              {/* Every recorded action on this ticket (approve, log, submit,
+                  verify, return for repair...), oldest first, each with its
+                  full date and time — from the ticket's own Activity Log. */}
+              {activity.length > 0 && (
+                <div className="p23-activity">
+                  <h5 id={`ticket-${ticket.ticket_id}-activity`}>Activity History <span className="ticket-count-pill">{activity.length}</span></h5>
+                  {activity.length > ACTIVITY_PREVIEW && (
+                    <button
+                      type="button"
+                      className="p23-link-button"
+                      aria-expanded={showAllActivity}
+                      onClick={() => setShowAllActivity((v) => !v)}
+                    >
+                      {showAllActivity ? `Show latest ${ACTIVITY_PREVIEW} only` : `Show all ${activity.length} entries`}
+                    </button>
+                  )}
+                  <ol className="p23-activity-list" aria-labelledby={`ticket-${ticket.ticket_id}-activity`}>
+                    {shownActivity.map((entry) => (
+                      <li key={entry.log_id} className="p23-activity-item">
+                        <div className="p23-activity-head">
+                          <strong>{entry.action}</strong>
+                          {entry.created_at && <time dateTime={entry.created_at}>{formatDate(entry.created_at)}</time>}
+                        </div>
+                        {entry.details && <p>{entry.details}</p>}
+                        <span className="p23-activity-by">
+                          by {entry.user?.name ?? 'System'}{entry.role ? ` (${entry.role})` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
             </section>
           </div>
 
@@ -739,9 +868,12 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
               <h4>
                 <Icon name="wrench" size={14} /> Sub-Issues
                 {progress.total > 0 && <span className="ticket-count-pill">{progress.total}</span>}
+                {repairProgress.total > 0 && <span className="p23-subissue-progress">{repairProgress.label}</span>}
                 <span
                   className="ticket-section-info-icon"
                   title="Keep sub-issues and the mechanic's Maintenance Type scoped to this Main Issue — an unrelated repair belongs on its own ticket instead."
+                  role="img"
+                  aria-label="Keep sub-issues scoped to this Main Issue — an unrelated repair belongs on its own ticket instead."
                 >
                   <Icon name="info" size={13} />
                 </span>
@@ -749,6 +881,7 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                   <button
                     type="button"
                     className="ticket-subissue-toggle-all"
+                    aria-expanded={allSubsExpanded}
                     onClick={() => setExpandedSubIds(allSubsExpanded ? [] : subIssues.map((s) => s.sub_issue_id))}
                   >
                     {allSubsExpanded ? 'Collapse all' : 'Expand all'}
@@ -827,6 +960,7 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                       aria-expanded={open}
                       aria-controls={detailsId}
                       title={open ? 'Hide repair details' : 'Show repair details'}
+                      aria-label={`${open ? 'Hide' : 'Show'} repair details for sub-issue ${index + 1}: ${si.title}`}
                       onClick={() => toggleSubExpanded(si.sub_issue_id)}
                     >
                       <Icon name="chevronDown" size={14} />
@@ -836,9 +970,9 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                     <TicketStatusBadge value={si.status} />
                     {onEditSubIssue && ticket.status === 'Active' && ['Open', 'Under Repair'].includes(si.status) && canDo(user, 'subissue.manage') && (hasRole(user, 'Admin') || String(ticket.assigned_custodian_id) === String(userId)) && (
                       <span className="subissue-card-head-actions">
-                        <button type="button" className="btn-edit-action icon-btn" title="Edit sub-issue" aria-label="Edit sub-issue" onClick={() => setSubDraft({ id: si.sub_issue_id, title: si.title, maintenance_type: si.maintenance_type ?? '' })}><Icon name="edit" size={13} /></button>
+                        <button type="button" className="btn-edit-action icon-btn" title="Edit sub-issue" aria-label={`Edit sub-issue ${index + 1}: ${si.title}`} onClick={() => setSubDraft({ id: si.sub_issue_id, title: si.title, maintenance_type: si.maintenance_type ?? '' })}><Icon name="edit" size={13} /></button>
                         {subIssues.length > 1 && (
-                          <button type="button" className="btn-delete-action icon-btn" title="Remove sub-issue" aria-label="Remove sub-issue" onClick={() => onDeleteSubIssue(ticket, si)}><Icon name="trash" size={13} /></button>
+                          <button type="button" className="btn-delete-action icon-btn" title="Remove sub-issue" aria-label={`Remove sub-issue ${index + 1}: ${si.title}`} onClick={() => onDeleteSubIssue(ticket, si)}><Icon name="trash" size={13} /></button>
                         )}
                       </span>
                     )}                  </div>
@@ -940,7 +1074,7 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                         <Icon name="alert" size={14} /> <strong>Reopened by {si.reopened_by?.name || 'Admin'}</strong>
                       </div>
                       {si.confirmation_notes && <p><strong>Reason:</strong> {si.confirmation_notes}</p>}
-                      <p className="subissue-alert-banner-footnote">This repair was unconfirmed and needs to be re-verified.</p>
+                      <p className="subissue-alert-banner-footnote">This repair was reopened and needs to be verified again.</p>
                     </div>
                   )}
 
@@ -968,19 +1102,19 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                       <div className="ticket-inline-form subissue-inline-form">
                         <SmartForm
                           fields={[
-                            { label: 'Rejection Reason', name: 'cannibalization_rejection_reason', type: 'textarea', rows: 2, required: true, placeholder: 'e.g., Needed on the donor vehicle itself' },
+                            { label: 'Reason for declining', name: 'cannibalization_rejection_reason', type: 'textarea', rows: 2, required: true, placeholder: 'e.g., Needed on the donor vehicle itself' },
                           ]}
                           key={`reject-cannibalization-${si.sub_issue_id}`}
                           onCancel={() => setReviewingCannibalizationId(null)}
                           onSubmit={(payload) => onRejectCannibalization(ticket, si, payload).then((ok) => { if (ok !== false) setReviewingCannibalizationId(null); })}
-                          submitLabel="Reject Repair"
+                          submitLabel="Decline Cannibalized Part"
                           title=""
                         />
                       </div>
                     ) : (
                       <div className="subissue-cannibal-approval">
                         <p className="muted">
-                          Donor vehicle: <strong>{si.source_vehicle?.vehicle_name ?? 'Unknown'}</strong> ({si.source_vehicle?.plate_number ?? '-'}). Approving opens an Issue Report on it for the removed part.
+                          Donor vehicle: <strong>{si.source_vehicle?.vehicle_name ?? 'Unknown'}</strong> ({si.source_vehicle?.plate_number ?? '-'}). Approving opens an Issue Report on it for the removed part; declining sends this repair back to the mechanic.
                         </p>
                         <div className="subissue-cannibal-approval-actions">
                           {canDo(user, 'repair.approve_cannibalized') && (
@@ -997,8 +1131,8 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                             </button>
                           )}
                           {canDo(user, 'repair.reject_cannibalized') && (
-                            <button className="ghost-button" type="button" onClick={() => setReviewingCannibalizationId(si.sub_issue_id)}>
-                              Reject
+                            <button className="text-danger-button" type="button" onClick={() => setReviewingCannibalizationId(si.sub_issue_id)}>
+                              <Icon name="close" size={14} /> Decline
                             </button>
                           )}
                         </div>
@@ -1009,7 +1143,7 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                   {ticket.status === 'Active' && canDo(user, 'subissue.reopen_confirmed') && si.status === 'Done' && (
                     editingDoneId === si.sub_issue_id ? (
                       <div className="ticket-inline-form subissue-inline-form">
-                        <p className="muted" style={{ marginBottom: 8, fontSize: '0.8rem' }}>Unconfirm this repair so you can make adjustments and re-confirm it.</p>
+                        <p className="muted" style={{ marginBottom: 8, fontSize: '0.8rem' }}>Reopen this repair so it can be adjusted and verified again.</p>
                         <SmartForm
                           fields={[
                             { label: 'Notes (optional)', name: 'reopen_reason', type: 'textarea', rows: 2, placeholder: 'e.g., Needs adjustment, additional notes' },
@@ -1017,13 +1151,13 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                           key={`unconfirm-done-${si.sub_issue_id}`}
                           onCancel={() => setEditingDoneId(null)}
                           onSubmit={(payload) => onReopenDone(ticket, si, payload).then((ok) => { if (ok !== false) setEditingDoneId(null); })}
-                          submitLabel="Unconfirm"
+                          submitLabel="Reopen Repair"
                           title=""
                         />
                       </div>
                     ) : (
                       <button className="ghost-button btn-edit-action" type="button" onClick={() => setEditingDoneId(si.sub_issue_id)}>
-                        <Icon name="undo" size={14} /> Unconfirm
+                        <Icon name="undo" size={14} /> Reopen Repair
                       </button>
                     )
                   )}
@@ -1043,6 +1177,20 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
           {/* The mechanic's one handoff for the whole ticket — every
               sub-issue is logged, so there's nothing left but to tell the
               Custodian it's ready. */}
+          {/* Explains why Submit isn't available yet, instead of the
+              mechanic wondering where the button went. */}
+          {showSubmitBlocked && (
+            <section className="ticket-section p23-blocked-action">
+              <h4><Icon name="checkCircle" size={14} /> Submit for Verification</h4>
+              <p className="muted" id={`submit-blocked-${ticket.ticket_id}`}>
+                <Icon name="info" size={13} /> Not available yet — {submitBlockedReason}
+              </p>
+              <button className="primary-button" type="button" disabled aria-describedby={`submit-blocked-${ticket.ticket_id}`}>
+                <Icon name="checkCircle" size={14} /> Submit for Verification
+              </button>
+            </section>
+          )}
+
           {canSubmitForVerification && (
             <section className="ticket-section">
               <h4><Icon name="checkCircle" size={14} /> Ready for Verification</h4>
@@ -1056,7 +1204,21 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
                   try { await onSubmitForVerification(ticket); } finally { setSubmittingForVerification(false); }
                 }}
               >
-                <Icon name="checkCircle" size={14} /> Submit for Verification
+                <Icon name="checkCircle" size={14} /> {submittingForVerification ? 'Submitting…' : 'Submit for Verification'}
+              </button>
+            </section>
+          )}
+
+          {/* The assigned Custodian sees where verification will happen and
+              why it isn't open to them yet. */}
+          {showVerifyBlocked && (
+            <section className="ticket-section p23-blocked-action">
+              <h4><Icon name="search" size={14} /> Verify Repair</h4>
+              <p className="muted" id={`verify-blocked-${ticket.ticket_id}`}>
+                <Icon name="info" size={13} /> Not available yet — you can verify once {ticket.assigned_mechanic?.name ?? 'the mechanic'} submits the ticket ({repairProgress.label} so far).
+              </p>
+              <button className="primary-button" type="button" disabled aria-describedby={`verify-blocked-${ticket.ticket_id}`}>
+                <Icon name="checkCircle" size={14} /> Verify Repair
               </button>
             </section>
           )}
@@ -1066,6 +1228,9 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
           {canVerifyTicket && (
             <section className="ticket-section">
               <h4><Icon name="checkCircle" size={14} /> Verify Repair</h4>
+              {!verifying && (
+                <p className="muted">Operate the vehicle and run the checks. Approving closes the ticket; any failed check returns it to {ticket.assigned_mechanic?.name ?? 'the mechanic'} for repair.</p>
+              )}
               {verifying ? (
                 <TicketVerificationForm
                   ticket={ticket}
@@ -1084,27 +1249,34 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
         </div>
 
         <div className="ticket-detail-actions">
-          {/* Closing now happens only one way: the Custodian's verification
-              above (Verify Repair) finalizes every sub-issue and closes the
-              ticket in one step. There is no separate close/decision-close
-              action anymore — if work genuinely can't be finished, cancel
-              the ticket instead (below). */}
-          <div className="ticket-detail-actions-row">
+          {/* Closing happens only one way: the Custodian's verification
+              above. These are the rare, administrative actions — kept apart
+              from the workflow's one primary action, on the left and quiet,
+              each behind a confirmation that names the ticket. */}
+          <div className="ticket-detail-footer-actions">
+            <div className="ticket-detail-footer-secondary" role="group" aria-label="Rare ticket actions">
+              {/* A Pending Approval or Declined proposal isn't a live ticket
+                  yet — Approve/Decline/Reopen in the Review Proposal block
+                  above are its real actions. */}
+              {canDo(user, 'ticket.cancel') && onCancel && !['Closed', 'Cancelled', 'Pending Approval', 'Declined'].includes(ticket.status) && (
+                <button className="text-danger-button" type="button" onClick={requestCancel}>
+                  <Icon name="close" size={14} /> Cancel Ticket
+                </button>
+              )}
+              {/* Once Closed there's verified work on record — Delete is only
+                  for genuine mistakes, not for discarding finished repairs. */}
+              {canDo(user, 'ticket.delete') && onDelete && ticket.status !== 'Closed' && ticket.status !== 'Pending Approval' && (
+                <button className="text-danger-button" type="button" onClick={requestDelete}>
+                  <Icon name="trash" size={14} /> Delete Ticket
+                </button>
+              )}
+            </div>
             {canDo(user, 'ticket.uncancel') && ticket.status === 'Cancelled' && onUncancel && (
-              <button className="primary-button" type="button" onClick={() => onUncancel(ticket)}>Restore Ticket</button>
-            )}
-            {/* A Pending Approval or Declined proposal isn't a live ticket
-                yet — Approve/Decline/Undecline in the Review Proposal block
-                above are its real actions; Cancel/Delete here are for
-                already-live tickets. */}
-            {canDo(user, 'ticket.cancel') && ticket.status !== 'Closed' && ticket.status !== 'Cancelled' && ticket.status !== 'Pending Approval' && ticket.status !== 'Declined' && (
-              <button className="ghost-button" type="button" onClick={requestCancel}>Cancel Ticket</button>
-            )}
-            {/* Once a ticket is Closed there's real, confirmed work on
-                record — Delete is only for genuine mistakes, not for
-                discarding finished repairs. */}
-            {canDo(user, 'ticket.delete') && ticket.status !== 'Closed' && ticket.status !== 'Pending Approval' && (
-              <button className="danger-button ticket-detail-actions-danger" type="button" onClick={requestDelete}>Delete Ticket</button>
+              <div className="ticket-detail-footer-primary">
+                <button className="primary-button" type="button" onClick={requestUncancel}>
+                  <Icon name="undo" size={14} /> Reopen Ticket
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1120,7 +1292,7 @@ export function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue
   );
 }
 
-export function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBack, onDeleteTicket, onRequestConfirmation, ticketAction: sendTicketAction }) {
+export function TicketProfilePage({ ticketId, user, userId, ticketLookups, knownTickets, onBack, onDeleteTicket, onRequestConfirmation, ticketAction: sendTicketAction }) {
   const navigate = useNavigate();
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1174,34 +1346,48 @@ export function TicketProfilePage({ ticketId, user, userId, ticketLookups, onBac
     );
   }
 
+  // Other unfinished tickets on this vehicle, from whatever ticket list the
+  // workspace already has loaded (role-scoped for non-Admins). null = no
+  // list available, so the panel hides the block instead of claiming "none".
+  const vehicleIdOf = (t) => t?.vehicle_id ?? t?.vehicle?.vehicle_id ?? null;
+  const relatedTickets = Array.isArray(knownTickets) && vehicleIdOf(ticket) != null
+    ? knownTickets.filter((t) => t && t.ticket_id != null
+      && String(t.ticket_id) !== String(ticket.ticket_id)
+      && String(vehicleIdOf(t)) === String(vehicleIdOf(ticket))
+      && !['Closed', 'Cancelled', 'Declined'].includes(t.status))
+    : null;
+
   return (
     <TicketDetailPanel
+      key={ticket.ticket_id}
       asPage
+      relatedTickets={relatedTickets}
+      onOpenTicket={(t) => navigate(`${roleRoutes[user.role]}/tickets/${t.ticket_id}`)}
       user={user}
       userId={userId}
       ticket={ticket}
       lookups={ticketLookups}
       onAddSubIssue={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues`, payload, 'Sub-issue added.', 'post').then(afterAction)}
       onEditSubIssue={(t, id, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${id}`, payload, 'Sub-issue updated.').then(afterAction)}
-      onDeleteSubIssue={(t, si) => onRequestConfirmation({ title: 'Remove sub-issue?', message: `"${si.title}" will be removed from this ticket.`, confirmLabel: 'Remove', onConfirm: () => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${si.sub_issue_id}`, {}, 'Sub-issue removed.', 'delete').then(afterAction) })}
+      onDeleteSubIssue={(t, si) => onRequestConfirmation({ title: 'Remove sub-issue?', message: `"${si.title}" will be removed from Ticket #${t.ticket_id} "${t.ticket_title}". This can't be undone.`, confirmLabel: 'Remove Sub-issue', variant: 'danger', onConfirm: () => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${si.sub_issue_id}`, {}, 'Sub-issue removed.', 'delete').then(afterAction) })}
       onAssignTicketMechanic={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/assign-mechanic`, payload, 'Mechanic reassigned.').then(afterAction)}
       onReassignCustodian={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/reassign-custodian`, payload, 'Custodian reassigned.').then(afterAction)}
-      onReopenDone={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reopen-confirmed`, payload, 'Sub-issue reopened for re-verification.').then(afterAction)}
+      onReopenDone={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reopen-confirmed`, payload, 'Repair reopened — it needs to be verified again.').then(afterAction)}
       onSubmitForVerification={(t) => sendTicketAction(`/tickets/${t.ticket_id}/submit-for-verification`, {}, 'Ticket submitted for verification.').then(afterAction)}
       onVerifyTicket={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/verify`, payload, verifyOutcomeMessage(payload)).then(afterAction)}
       onApproveCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/approve-cannibalization`, payload, 'Cannibalized repair approved — a donor-vehicle issue report was opened.').then(afterAction)}
-      onRejectCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reject-cannibalization`, payload, 'Cannibalized repair rejected.').then(afterAction)}
+      onRejectCannibalization={(t, subIssue, payload) => sendTicketAction(`/tickets/${t.ticket_id}/sub-issues/${subIssue.sub_issue_id}/reject-cannibalization`, payload, 'Cannibalized part declined — the repair went back to the mechanic.').then(afterAction)}
       onViewIssue={(id) => navigate(`${roleRoutes[user.role]}/issues/${id}`)}
       onLogRepairs={(t, si) => navigate(`${roleRoutes[user.role]}/work-orders/${t.ticket_id}/${si.sub_issue_id}/log-repairs`)}
       onCancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/cancel`, {}, 'Ticket cancelled.').then(afterAction)}
-      onUncancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/uncancel`, {}, 'Ticket restored.').then(afterAction)}
+      onUncancel={(t) => sendTicketAction(`/tickets/${t.ticket_id}/uncancel`, {}, 'Ticket reopened.').then(afterAction)}
       onDelete={(t) => onDeleteTicket(t).then(onBack)}
       onApproveProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/approve`, payload, 'Ticket proposal approved.').then(afterAction)}
       // Declining no longer deletes the ticket — it becomes a visible,
       // reversible Declined status, so this stays on the page and refreshes
       // in place, same as every other action here.
       onDeclineProposal={(t, payload) => sendTicketAction(`/tickets/${t.ticket_id}/decline`, payload, 'Ticket proposal declined.').then(afterAction)}
-      onUndeclineProposal={(t) => sendTicketAction(`/tickets/${t.ticket_id}/undecline`, {}, 'Proposal restored to Pending Approval.').then(afterAction)}
+      onUndeclineProposal={(t) => sendTicketAction(`/tickets/${t.ticket_id}/undecline`, {}, 'Proposal reopened — back to Pending Approval.').then(afterAction)}
       onRequestConfirmation={onRequestConfirmation}
       onClose={onBack}
     />
