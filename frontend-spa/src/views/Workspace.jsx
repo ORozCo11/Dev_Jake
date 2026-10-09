@@ -1973,50 +1973,42 @@ function Workspace() {
       label: 'Actions',
       locked: true,
       className: 'cell-center',
-      render: (row) => {
-        if (row.final_status === 'Deleted') {
-          return (
-            <div className="row-actions">
-              <button
-                className="btn-reopen-action icon-btn"
-                type="button"
-                title="Reopen Ticket"
-                aria-label="Reopen Ticket"
-                onClick={() => {
-                  setConfirmDialog({
-                    title: 'Reopen Deleted Ticket',
-                    message: `Are you sure you want to reopen Ticket #${row.ticket_id} for ${row.vehicle_name}? It will be restored with all its sub-issues to how they were before it was deleted.`,
-                    confirmLabel: 'Reopen Ticket',
-                    variant: 'primary',
-                    onConfirm: () => ticketAction(`/ticket-archives/${row.archive_id}/reopen`, {}, 'Ticket successfully reopened.'),
-                  });
-                }}
-              >
-                <Icon name="undo" size={14} />
-              </button>
-            </div>
-          );
-        }
-        // A Closed ticket is permanently locked (no Reopen), but its
-        // record still exists — the Admin can still open it read-only
-        // to see the full history of what was done.
-        if (row.final_status === 'Closed') {
-          return (
-            <div className="row-actions">
-              <button
-                className="btn-view-action icon-btn"
-                type="button"
-                title="View Ticket"
-                aria-label="View Ticket"
-                onClick={() => openTicketProfile({ ticket_id: row.ticket_id })}
-              >
-                <Icon name="eye" size={14} />
-              </button>
-            </div>
-          );
-        }
-        return <span className="muted">—</span>;
-      },
+      // Same centered, labelled icon buttons on every row: View whenever the
+      // ticket still exists (a Closed one opens read-only), Reopen only for
+      // a Deleted one, which has no live ticket left to view.
+      render: (row) => (
+        <div className="row-actions p23-archive-actions">
+          {row.final_status === 'Deleted' ? (
+            <button
+              className="btn-reopen-action icon-btn"
+              type="button"
+              title={`Reopen Ticket #${row.ticket_id}`}
+              aria-label={`Reopen Ticket #${row.ticket_id}`}
+              onClick={() => {
+                setConfirmDialog({
+                  title: `Reopen Ticket #${row.ticket_id}?`,
+                  message: `Reopen deleted Ticket #${row.ticket_id} "${row.ticket_title}" for ${row.vehicle_name}${row.plate_number ? ` (${row.plate_number})` : ''}? It will be restored with all its sub-issues to how they were before it was deleted.`,
+                  confirmLabel: `Reopen Ticket #${row.ticket_id}`,
+                  variant: 'primary',
+                  onConfirm: () => ticketAction(`/ticket-archives/${row.archive_id}/reopen`, {}, 'Ticket successfully reopened.'),
+                });
+              }}
+            >
+              <Icon name="undo" size={14} />
+            </button>
+          ) : (
+            <button
+              className="btn-view-action icon-btn"
+              type="button"
+              title={`View Ticket #${row.ticket_id}`}
+              aria-label={`View Ticket #${row.ticket_id}`}
+              onClick={() => openTicketProfile({ ticket_id: row.ticket_id })}
+            >
+              <Icon name="eye" size={14} />
+            </button>
+          )}
+        </div>
+      ),
     },
   ], [setConfirmDialog, openTicketProfile, ticketAction]);
   const archiveColumnChooser = useColumnChooser('vms_ticket_archive_columns', archiveColumnDefs);
@@ -2715,6 +2707,7 @@ function Workspace() {
               user={user}
               userId={user.id}
               ticketLookups={ticketLookups}
+              knownTickets={records[activeModule]}
               onBack={() => returnToModule('tickets')}
               onDeleteTicket={deleteTicket}
               onRequestConfirmation={setConfirmDialog}

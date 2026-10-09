@@ -10,7 +10,7 @@ import { formatDate, formatTime, resolvePhotoUrl } from '../lib/format';
 import { hasRole } from '../lib/permissions';
 import { exportRowsToCsv } from '../lib/reports';
 import { TICKET_INSPECTION_STAT_CARDS, TICKET_STAT_CARDS, TICKET_VERIFICATION_STAT_CARDS, TICKET_WORK_ORDER_STAT_CARDS, WORK_TRACKER_STAT_CARDS } from '../lib/statCards';
-import { flattenWorkTrackerRows, groupMechanicRowsByTicket, groupWorkTrackerByTicket, ticketWorkflowStage, workTrackerBucket, workTrackerNeedsAction, workTrackerOutcome } from '../lib/workflow';
+import { flattenWorkTrackerRows, groupMechanicRowsByTicket, groupWorkTrackerByTicket, ticketAwaiting, ticketRepairProgress, ticketWorkflowStage, workTrackerBucket, workTrackerNeedsAction, workTrackerOutcome } from '../lib/workflow';
 import { LatestIssueCard } from '../issues/issues';
 import { TicketVerificationForm } from './VerificationForm';
 
@@ -366,11 +366,25 @@ export function TicketModule({
 }
 
 export function TicketCard({ ticket, unreadCount = 0, onClick }) {
-  const progress = ticket.progress;
+  // Repairs logged so far (sub-issues only turn Done when the ticket
+  // closes, so counting Done alone read 0 for the ticket's whole life).
+  const progress = ticketRepairProgress(ticket);
+  const awaiting = ticketAwaiting(ticket);
   const stage = ticketWorkflowStage(ticket);
 
   return (
-    <div className="ticket-card" style={{ position: 'relative' }} onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
+    <div
+      className="ticket-card"
+      style={{ position: 'relative' }}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open Ticket #${ticket.ticket_id}: ${ticket.ticket_title ?? ''}${ticket.vehicle?.vehicle_name ? `, ${ticket.vehicle.vehicle_name}` : ''}, ${ticket.status}`}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
+      }}
+    >
       {unreadCount > 0 && (
         <span
           title={`${unreadCount} unread update${unreadCount > 1 ? 's' : ''} on this ticket`}
@@ -399,18 +413,21 @@ export function TicketCard({ ticket, unreadCount = 0, onClick }) {
         )}
       </div>
       <div style={{ margin: '8px 0 2px', minHeight: 22 }}>
-        {progress?.total > 0 && (
+        {progress.total > 0 && (
           <>
-            <div style={{ height: 6, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${(progress.done / progress.total) * 100}%`,
-                background: progress.done === progress.total ? '#16a34a' : '#d97706',
-                borderRadius: 999,
-              }} />
+            <div className="p23-card-progress" aria-hidden="true">
+              <div
+                className={progress.logged === progress.total ? 'is-complete' : undefined}
+                style={{ width: `${progress.percent}%` }}
+              />
             </div>
-            <span className="muted" style={{ fontSize: '0.72rem' }}>{progress.done}/{progress.total} sub-issues done</span>
+            <span className="p23-card-progress-label">{progress.label}</span>
           </>
+        )}
+        {awaiting.role && (
+          <span className="p23-card-awaiting">
+            Next: awaiting {awaiting.role}{awaiting.person?.name ? ` (${awaiting.person.name})` : ''}
+          </span>
         )}
       </div>
       <div style={{ margin: '6px 0 2px', minHeight: 26 }}>
