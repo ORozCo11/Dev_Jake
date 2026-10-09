@@ -10,6 +10,7 @@ import { formatDate, resolvePhotoUrl, timeAgo } from '../lib/format';
 import { canDo } from '../lib/permissions';
 import { ISSUE_STATUS_COLORS } from '../lib/statCards';
 import { issueNeedsTicket } from '../lib/workflow';
+import { IssueSeverityBadge, IssueTicketStateBadge } from './issueBadges';
 
 // Full-page issue detail — mirrors the vehicle/ticket profile pages so every
 // "View" action opens its own page rather than a modal, consistently for all roles.
@@ -82,8 +83,9 @@ export function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onC
           <span className="ticket-detail-id">Issue #{issue.issue_report_id}</span>
           <h3 className="ticket-detail-title">{issue.issue_type}</h3>
           <div className="ticket-detail-meta">
-            <TicketStatusBadge value={issue.severity_level} />
+            <IssueSeverityBadge value={issue.severity_level} />
             <StatusBadge value={issue.status} />
+            <IssueTicketStateBadge issue={issue} showSub={false} />
           </div>
         </div>
         {/* A repair starts only as a Custodian's proposal, which the Admin
@@ -104,6 +106,17 @@ export function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onC
           </div>
         )}
       </div>
+
+      {onDismissIssue && canDo(user, 'issue.dismiss') && !issueNeedsTicket(issue) && (
+        <p className="p23-why-note">
+          <Icon name="info" size={14} />
+          <span>
+            {issue.maintenance_ticket
+              ? `This report can’t be dismissed because Ticket #${issue.maintenance_ticket.ticket_id} was opened from it — close or decline that ticket instead.`
+              : 'This report is already closed, so there is nothing left to dismiss.'}
+          </span>
+        </p>
+      )}
 
       {recurrence && recurrence.count > 0 && (
         <div className="ticket-alert-banner formaint" style={{ marginBottom: 16 }}>
@@ -152,8 +165,11 @@ export function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onC
 
               <div className="issue-view-facts">
                 <p><strong>Issue Type:</strong> {issue.issue_type}</p>
-                <p><strong>Severity:</strong> <TicketStatusBadge value={issue.severity_level} /></p>
+                <p><strong>Severity:</strong> <IssueSeverityBadge value={issue.severity_level} /></p>
                 <p><strong>Status:</strong> <StatusBadge value={issue.status} /></p>
+                {issue.vehicle?.status && (
+                  <p><strong>Vehicle:</strong> <StatusBadge value={issue.vehicle.status} /></p>
+                )}
                 {issue.maintenance_ticket && (
                   <p>
                     <strong>Linked Ticket:</strong>{' '}
@@ -172,11 +188,11 @@ export function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onC
           <section className="veh-card issue-view-desc">
             <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Description &amp; Remarks</h4></div>
             <div className="issue-view-text">
-              <p>{issue.issue_description || '-'}</p>
+              <p className="p23-prewrap">{issue.issue_description || '-'}</p>
               {issue.remarks && (
                 <div className="issue-view-remarks">
                   <span className="issue-view-remarks-label"><Icon name="clipboard" size={12} /> Remarks</span>
-                  <p>{issue.remarks}</p>
+                  <p className="p23-prewrap">{issue.remarks}</p>
                 </div>
               )}
             </div>
@@ -205,11 +221,20 @@ export function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onC
                   <QuietDate value={issue.created_at} />
                 </div>
               </div>
+              {issue.maintenance_ticket && (
+                <div className="issue-view-timeline-row">
+                  <span className="issue-view-timeline-dot" />
+                  <div>
+                    <p className="issue-view-timeline-label">Ticket #{issue.maintenance_ticket.ticket_id} — {issue.maintenance_ticket.status}</p>
+                    {issue.maintenance_ticket.created_at && <QuietDate value={issue.maintenance_ticket.created_at} />}
+                  </div>
+                </div>
+              )}
               {issue.updated_at && issue.updated_at !== issue.created_at && (
                 <div className="issue-view-timeline-row">
                   <span className="issue-view-timeline-dot is-last" />
                   <div>
-                    <p className="issue-view-timeline-label">Last Updated</p>
+                    <p className="issue-view-timeline-label">{issue.status === 'Resolved' ? 'Resolved' : 'Last Updated'}</p>
                     <QuietDate value={issue.updated_at} />
                   </div>
                 </div>

@@ -19,6 +19,9 @@ import { FilterBar, IssueFilterPanel } from '../workspace/components/filters';
 import { DateFilterInput, MultiSelectDropdown } from '../workspace/components/inputs';
 import { DataTable, ModuleStatCards, PaginatedCardGrid, PaginatedTable, ViewModeDropdown } from '../workspace/components/tables';
 import { ActivityTimeline, ChartLegend, FormModal, LocalSearchInput, ModuleLoader, ModulePanel, SegmentedBar } from '../workspace/components/ui';
+import { ExpandableText } from '../workspace/components/ui';
+import { IssueFilteredEmpty, IssueReportsIntro } from '../workspace/issues/issueBadges';
+import { ConditionFilteredEmpty, ConditionMonitoringIntro } from '../workspace/conditions/conditions';
 import { ErrorState } from '../workspace/components/states';
 import { FormNoticeContext, RowActionsContext } from '../workspace/contexts';
 import { FormPage, OpenItemsWarning } from '../workspace/forms/FormPage';
@@ -1862,6 +1865,17 @@ function Workspace() {
     return [...visibleRows, ...syntheticRows];
   }, [activeModule, visibleRows, records.conditions, lookups.vehicles, searchQuery, filterCategory, filterCapacity, filterCheckedBy, filterStatus, condFilterStartDate, condFilterEndDate]);
 
+  // Each vehicle's most recent condition check (highest id), so the table
+  // can tag it "Latest" and it stands out from that vehicle's older history.
+  const latestConditionCheckIds = useMemo(() => {
+    const latestByVehicle = new Map();
+    (records.conditions ?? []).forEach((r) => {
+      const prev = latestByVehicle.get(r.vehicle_id);
+      if (prev == null || r.condition_check_id > prev) latestByVehicle.set(r.vehicle_id, r.condition_check_id);
+    });
+    return new Set(latestByVehicle.values());
+  }, [records.conditions]);
+
   const viewVehicleOnMap = useCallback((row) => {
     const vehicleId = row.vehicle_id ?? row.vehicle?.vehicle_id;
     if (!vehicleId) return;
@@ -1913,8 +1927,10 @@ function Workspace() {
         setPrefilledConditionVehicleId(row.vehicle_id);
         navigate(`${roleRoutes[user.role]}/conditions/new`);
       } : undefined,
+      openTicketProfile,
+      latestConditionCheckIds,
     ),
-    [user, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition],
+    [user, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition, openTicketProfile, latestConditionCheckIds],
   );
   const conditionColumnChooser = useColumnChooser('vms_condition_columns', conditionColumnDefs);
 
@@ -3546,6 +3562,7 @@ function Workspace() {
             </div>
           }
         >
+            <ConditionMonitoringIntro />
             <div className="panel-header-bar">
               <h3>Condition Records <span className="count-badge">{conditionRows.length}</span></h3>
               <LocalSearchInput
@@ -3561,10 +3578,29 @@ function Workspace() {
             <PaginatedTable
               columns={conditionColumnChooser.visibleColumns}
               onReorderColumn={conditionColumnChooser.reorderColumn}
-              emptyMessage="No condition checks logged yet — click the + button to record one."
+              emptyMessage={(filterCategory.length || filterStatus.length || filterCapacity.length || filterCheckedBy.length || condFilterStartDate || condFilterEndDate || searchQuery)
+                ? (
+                  <ConditionFilteredEmpty
+                    results={filterStatus}
+                    search={searchQuery}
+                    onClear={() => {
+                      setFilterCategory([]);
+                      setFilterStatus([]);
+                      setFilterCapacity([]);
+                      setFilterCheckedBy([]);
+                      setCondFilterStartDate('');
+                      setCondFilterEndDate('');
+                      setCondDraft({ category: [], status: [], capacity: [], checkedBy: [], start: '', end: '' });
+                      setSearchQuery('');
+                    }}
+                  />
+                )
+                : 'No condition checks logged yet — click the + button to record one.'}
               rows={conditionRows}
               onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
-              renderSubRow={(row) => row.observations}
+              renderSubRow={(row) => row.observations && (
+                <span className="p23-subrow"><strong>Observations:</strong> <ExpandableText text={row.observations} lines={3} className="p23-prewrap" /></span>
+              )}
             />
         </ModulePanel>
       );
@@ -3638,6 +3674,7 @@ function Workspace() {
             </div>
           }
         >
+          <IssueReportsIntro canPropose={canDo(user, 'ticket.propose')} />
           <div className="panel-header-bar">
             <h3>Issue Reports <span className="count-badge">{visibleRows.length}</span></h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -3655,10 +3692,30 @@ function Workspace() {
           <PaginatedTable
             columns={issueColumnChooser.visibleColumns}
             onReorderColumn={issueColumnChooser.reorderColumn}
-            emptyMessage="No issues reported — the fleet has no open problems right now."
+            emptyMessage={(filterCategory.length || filterCapacity.length || filterIssueType.length || filterStatus.length || filterPriority.length || filterDateStart || filterDateEnd || searchQuery)
+              ? (
+                <IssueFilteredEmpty
+                  severity={filterPriority}
+                  statuses={filterStatus}
+                  search={searchQuery}
+                  onClear={() => {
+                    setFilterCategory([]);
+                    setFilterCapacity([]);
+                    setFilterIssueType([]);
+                    setFilterStatus([]);
+                    setFilterPriority([]);
+                    setFilterDateStart('');
+                    setFilterDateEnd('');
+                    setSearchQuery('');
+                  }}
+                />
+              )
+              : 'No issue reports waiting — every reported problem already has an approved ticket or has been closed.'}
             rows={visibleRows}
             onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
-            renderSubRow={(row) => row.issue_description && <span><strong>Note:</strong> {row.issue_description}</span>}
+            renderSubRow={(row) => row.issue_description && (
+              <span className="p23-subrow"><strong>Description:</strong> <ExpandableText text={row.issue_description} lines={2} className="p23-prewrap" /></span>
+            )}
           />
         </ModulePanel>
       );

@@ -53,8 +53,10 @@ export const MY_ASSIGNED_SCHEDULE_CARD = { key: 'MyAssigned', label: 'Assigned t
 
 export const CONDITION_STAT_CARDS = [
   { key: 'Good', label: 'Good', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
-  { key: 'Needs Inspection', label: 'Needs Inspection', icon: 'search', bg: '#e0f2fe', color: '#0369a1' },
-  { key: 'Needs Repair', label: 'Needs Repair', icon: 'wrench', bg: '#fef3c7', color: '#b45309' },
+  // Same tones as the .status-badge result pills (amber = look closer,
+  // red = needs repair), so a result reads the same colour on every page.
+  { key: 'Needs Inspection', label: 'Needs Inspection', icon: 'search', bg: '#fef3c7', color: '#b45309' },
+  { key: 'Needs Repair', label: 'Needs Repair', icon: 'wrench', bg: '#fee2e2', color: '#b91c1c' },
   { key: 'Not Checked', label: 'Not Checked', icon: 'eyeOff', bg: '#f1f5f9', color: '#64748b' },
 ];
 
