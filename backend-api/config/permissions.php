@@ -157,7 +157,7 @@ return [
     // empty grant, not deleted, so the POST /tickets endpoint it gates
     // (TicketController::createTicket) stays documented as intentionally
     // unreachable rather than looking like an oversight.
-    'ticket.create' => [],
+    'ticket.create' => ['Admin'],
     'ticket.propose' => ['Custodian'],
     'ticket.approve' => ['Admin'],
     'ticket.decline' => ['Admin'],

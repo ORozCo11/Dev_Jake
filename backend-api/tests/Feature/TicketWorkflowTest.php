@@ -166,7 +166,7 @@ class TicketWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function nobody_can_create_a_ticket_directly_any_more(): void
+    public function admin_can_create_a_ticket_directly_but_custodian_cannot(): void
     {
         // ticket.create has no role (config/permissions.php) — every ticket
         // must now originate as a Custodian's proposal (see the propose/
@@ -174,8 +174,8 @@ class TicketWorkflowTest extends TestCase
         $vehicle = $this->vehicle();
         $payload = [
             'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'Nope',
-            'ticket_description' => 'Nobody can open a ticket directly.',
+            'ticket_title' => 'Direct Admin Ticket',
+            'ticket_description' => 'Created through the Admin ticket form.',
             'priority' => 'Low',
             'assigned_custodian_id' => $this->custodian->id,
         ];
@@ -184,7 +184,7 @@ class TicketWorkflowTest extends TestCase
         $this->postJson('/api/tickets', $payload)->assertForbidden();
 
         Sanctum::actingAs($this->admin, ['*']);
-        $this->postJson('/api/tickets', $payload)->assertForbidden();
+        $this->postJson('/api/tickets', $payload)->assertCreated();
     }
 
     #[Test]

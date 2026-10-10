@@ -42,8 +42,14 @@
 @media(max-width:768px){.user-summary-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.user-summary-metrics{grid-template-columns:1fr}}
 .user-management-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
-.user-management-toolbar .local-search-bar { flex:1 1 420px; min-width:0; }
-.user-management-toolbar > :last-child { flex:1 1 100%; }
+.user-management-toolbar .local-search-bar { flex:1 1 100%; min-width:0; flex-wrap:wrap; }
+.user-management-toolbar .local-search-container { flex:1 1 280px; min-width:0; }
+.user-management-toolbar .icon-add-btn.has-label,
+.user-management-toolbar .export-btn.has-label { width:auto; min-width:max-content; padding:0 14px; gap:7px; }
+.user-management-toolbar > :last-child { flex:1 1 100%; min-width:0; }
+.user-management-toolbar .p23-chip-bar,
+.user-management-toolbar .p23-chip-group { min-width:0; }
+.user-management-toolbar .p23-chip { min-height:40px; padding:0 12px; font-size:var(--font-size-xs); }
 .module-grid:has(.user-registration-settings) > .panel:last-child { display:flex; flex-direction:column; gap:14px; }
 .module-grid:has(.user-registration-settings) .p23-users-tabs { order:1; }
 .module-grid:has(.user-registration-settings) .user-layout-switch { order:2; align-self:flex-end; margin:0; }

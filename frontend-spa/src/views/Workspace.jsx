@@ -2597,7 +2597,7 @@ function Workspace() {
                 onProposeTicket={proposeTicket}
                 onDirty={() => setHasUnsavedChanges(true)}
               />
-            ) : canDo(user, 'ticket.create') ? (
+            ) : (canDo(user, 'ticket.create') || hasRole(user, 'Admin')) ? (
               <NewTicketPage
                 onBack={() => { setPrefilledTicketData(null); returnToModule('tickets'); }}
                 ticketLookups={ticketLookups}
@@ -4352,7 +4352,7 @@ function Workspace() {
           ticketLookups={ticketLookups}
           notifications={notifications}
           onViewTicket={openTicketProfile}
-          onCreateNew={canDo(user, 'ticket.create') ? () => navigate(`${roleRoutes[user.role]}/tickets/new`) : undefined}
+          onCreateNew={hasRole(user, 'Admin') ? () => navigate(`${roleRoutes[user.role]}/tickets/new`) : undefined}
           onViewArchives={canDo(user, 'ticket.view_archives') ? () => setActiveModule('ticketArchives') : undefined}
           recentIssues={hasRole(user, 'Admin') ? (records.issues ?? []) : undefined}
           onViewVehicle={openVehicleProfile}
