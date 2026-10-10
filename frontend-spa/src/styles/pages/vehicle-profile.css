@@ -131,6 +131,15 @@
 .form-grid-2col.user-form-grid .photo-box {
   max-width: 280px;
 }
+.form-grid-2col.user-form-grid { max-width: 920px; margin: 0 auto; width: 100%; }
+.form-grid-2col.user-form-grid .smart-form { padding: 24px 28px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+.form-grid-2col.user-form-grid .smart-form h3 { margin-bottom: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle); color: var(--text-strong); font-size: 1.15rem; }
+.form-grid-2col.user-form-grid .smart-form label:has(input[name="roles"]) { grid-column: 1 / -1; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
+.form-grid-2col.user-form-grid .smart-form label:has(input[name="roles"]) .checkbox-group { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px !important; margin-top:10px; }
+.form-grid-2col.user-form-grid .smart-form label:has(input[name="roles"]) .checkbox-group label { min-height:44px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); }
+.form-grid-2col.user-form-grid .smart-form label:has(input[type="file"]) { align-self:start; }
+@media(max-width:768px){.form-grid-2col.user-form-grid .smart-form{padding:18px}.form-grid-2col.user-form-grid .smart-form label:has(input[name="roles"]) .checkbox-group{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.form-grid-2col.user-form-grid .smart-form label:has(input[name="roles"]) .checkbox-group{grid-template-columns:1fr}}
 
 /* Add/Edit Vehicle Type — just 2 short fields + a textarea; letting it
    stretch across the same width as the big multi-section forms (Vehicle,
