@@ -12,7 +12,6 @@ export default function WorkspaceFooter() {
         © {new Date().getFullYear()} Barangay Vehicle Management System. All rights reserved.
       </p>
       <nav className="workspace-footer-links" aria-label="Legal">
-        <a href="https://www.figma.com/community/file/1166831539721848736" rel="noreferrer" target="_blank">Icons by 480 Design</a>
         <Link to="/privacy">Privacy Policy</Link>
         <Link to="/terms">Terms of Service</Link>
       </nav>

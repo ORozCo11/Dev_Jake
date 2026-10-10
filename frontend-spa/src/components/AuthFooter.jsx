@@ -24,7 +24,6 @@ export default function AuthFooter() {
           © {new Date().getFullYear()} Barangay Vehicle Management System
         </p>
         <div className="auth-footer-legal">
-          <a href="https://www.figma.com/community/file/1166831539721848736" rel="noreferrer" target="_blank">Icons by 480 Design</a>
           <Link to="/privacy">Privacy Policy</Link>
           <Link to="/terms">Terms of Service</Link>
         </div>
