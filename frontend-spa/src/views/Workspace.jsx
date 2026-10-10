@@ -449,6 +449,7 @@ function Workspace() {
   // The Staff Registration Code the barangay office hands to real staff —
   // Admin-only, fetched once so it's ready whenever they open Users.
   const [registrationCode, setRegistrationCode] = useState(null);
+  const [registrationCodeVisible, setRegistrationCodeVisible] = useState(false);
   useEffect(() => {
     if (!hasRole(user, 'Admin')) return;
     api.get('/registration-settings').then((res) => setRegistrationCode(res.data.staff_code)).catch(() => {});
@@ -3221,9 +3222,8 @@ function Workspace() {
           description="Create and manage user accounts — Admin, Custodian, and Maintenance Personnel. New staff sign-ups wait under Pending Registrations until you approve them; deactivating an account blocks sign-in but keeps everything they did attributed to them."
           statCards={
             <div className="user-summary-metrics" aria-label="User account summary">
-              <div><span>Total Users</span><strong>{accountRows.length}</strong></div>
+              <div><span>Total Staff</span><strong>{accountRows.length}</strong></div>
               <div><span>Active Users</span><strong>{accountRows.filter((row) => row.is_active).length}</strong></div>
-              <div><span>Inactive Users</span><strong>{accountRows.filter((row) => !row.is_active).length}</strong></div>
               <div><span>Pending Registrations</span><strong>{pendingRegistrations.length}</strong></div>
             </div>
             /*
@@ -3245,18 +3245,15 @@ function Workspace() {
             </div> */
           }
           filterBar={
-            <UserFilterChips
-              statusOptions={['Active', 'Inactive']}
-              selectedStatus={filterActive}
-              onStatusChange={setFilterActive}
-              roleOptions={['Admin', 'Custodian', 'Maintenance Personnel']}
-              selectedRoles={filterStatus}
-              onRolesChange={setFilterStatus}
-            />
+            <div className="user-management-toolbar">
+              <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search by name or email..." onAdd={() => navigate(`${roleRoutes[user.role]}/users/new`)} addLabel="Add User" onExport={() => exportRowsToCsv('users.csv', USER_EXPORT_COLUMNS, accountRows)} showActionLabels />
+              <UserFilterChips statusOptions={['Active', 'Inactive']} selectedStatus={filterActive} onStatusChange={setFilterActive} roleOptions={['Admin', 'Custodian', 'Maintenance Personnel']} selectedRoles={filterStatus} onRolesChange={setFilterStatus} />
+            </div>
           }
         >
           {hasRole(user, 'Admin') && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 14px', marginBottom: 14, border: '1px solid var(--border-subtle, #e2e8f0)', borderRadius: 8 }}>
+            <details className="user-registration-settings">
+              <summary>Staff Registration Settings</summary>
               <div>
                 <strong style={{ display: 'block', fontSize: '0.8rem' }}>Staff Registration Code</strong>
                 <span className="muted" style={{ fontSize: '0.78rem' }}>
@@ -3265,11 +3262,13 @@ function Workspace() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                 <code style={{ fontSize: '0.95rem', fontWeight: 700, padding: '6px 12px', background: 'var(--surface-2, #f8fafc)', borderRadius: 6 }}>
-                  {registrationCode ?? '…'}
+                  {registrationCode ? (registrationCodeVisible ? registrationCode : '••••••••') : 'Loading…'}
                 </code>
+                <button className="ghost-button" type="button" onClick={() => setRegistrationCodeVisible((visible) => !visible)} disabled={!registrationCode}>{registrationCodeVisible ? 'Hide' : 'Reveal'}</button>
+                <button className="ghost-button" type="button" onClick={() => registrationCode && navigator.clipboard?.writeText(registrationCode)} disabled={!registrationCode}>Copy</button>
                 <button className="ghost-button" type="button" onClick={regenerateRegistrationCode}>Regenerate</button>
               </div>
-            </div>
+            </details>
           )}
           <div className="view-tabs p23-tabs p23-users-tabs" role="group" aria-label="User accounts">
             <button type="button" aria-pressed={usersTab === 'accounts'} className={usersTab === 'accounts' ? 'active' : ''} onClick={() => setUsersTab('accounts')}>
@@ -3283,19 +3282,7 @@ function Workspace() {
             <PendingRegistrations rows={pendingRegistrations} onReview={(row) => toggleUserActive(row, true)} />
           ) : (
           <>
-          <div className="panel-header-bar">
-            <h3>User Accounts <span className="count-badge">{accountRows.length}</span></h3>
-            <LocalSearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search users..."
-              columnChooser={usersViewMode === 'card' ? undefined : userColumnChooser}
-              onAdd={() => navigate(`${roleRoutes[user.role]}/users/new`)}
-              addLabel="Add User"
-              onExport={() => exportRowsToCsv('users.csv', USER_EXPORT_COLUMNS, accountRows)}
-            />
-          </div>
-          <div className="view-tabs p23-tabs" role="group" aria-label="Layout">
+          <div className="view-tabs p23-tabs user-layout-switch" role="group" aria-label="Layout">
             <button type="button" aria-pressed={usersViewMode === 'list'} className={usersViewMode === 'list' ? 'active' : ''} onClick={() => setUsersViewMode('list')}>List View</button>
             <button type="button" aria-pressed={usersViewMode === 'card'} className={usersViewMode === 'card' ? 'active' : ''} onClick={() => setUsersViewMode('card')}>Card View</button>
           </div>

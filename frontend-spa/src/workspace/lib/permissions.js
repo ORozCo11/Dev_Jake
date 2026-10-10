@@ -38,7 +38,7 @@ export const modulesByRole = {
       ['locations', 'Vehicle Location'],
     ] },
     { section: 'Administration', icon: 'key', items: [
-      ['users', 'Users'],
+      ['users', 'User Management'],
       ['reports', 'Reports'],
       ['logs', 'Activity Log'],
     ] },

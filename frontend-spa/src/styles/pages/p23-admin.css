@@ -35,12 +35,28 @@
   color: var(--status-warning-fg);
   border: 1px solid var(--status-warning-border);
 }
-.user-summary-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-3); margin-bottom:var(--space-4); }
+.user-summary-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--space-3); margin-bottom:var(--space-4); }
 .user-summary-metrics > div { display:flex; flex-direction:column; gap:var(--space-1); padding:var(--space-3) var(--space-4); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); }
 .user-summary-metrics span { color:var(--text-muted); font-size:var(--font-size-xs); }
 .user-summary-metrics strong { color:var(--text-strong); font-size:1.45rem; }
 @media(max-width:768px){.user-summary-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.user-summary-metrics{grid-template-columns:1fr}}
+.user-management-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.user-management-toolbar .local-search-bar { flex:1 1 420px; min-width:0; }
+.user-management-toolbar > :last-child { flex:1 1 100%; }
+.module-grid:has(.user-registration-settings) > .panel:last-child { display:flex; flex-direction:column; gap:14px; }
+.module-grid:has(.user-registration-settings) .p23-users-tabs { order:1; }
+.module-grid:has(.user-registration-settings) .user-layout-switch { order:2; align-self:flex-end; margin:0; }
+.module-grid:has(.user-registration-settings) .table-shell,
+.module-grid:has(.user-registration-settings) .paginated-card-grid { order:3; }
+.module-grid:has(.user-registration-settings) .pagination-controls { order:4; }
+.user-registration-settings { order:10; margin-top:8px; padding:0; border-top:1px solid var(--border-subtle); }
+.user-registration-settings summary { min-height:44px; display:flex; align-items:center; color:var(--text-strong); font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); cursor:pointer; }
+.user-registration-settings > div { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; }
+.user-registration-settings code { padding:7px 10px; border-radius:6px; background:var(--surface-2); font-weight:700; letter-spacing:.08em; }
+.user-registration-settings > div:last-child { justify-content:flex-end; flex-wrap:wrap; }
+.module-grid:has(.user-registration-settings) table thead th { background:var(--surface-2) !important; color:var(--text-strong) !important; border-bottom:1px solid var(--border) !important; }
+@media(max-width:768px){.user-management-toolbar{align-items:stretch;flex-direction:column}.user-management-toolbar .local-search-bar{flex-basis:auto;width:100%}.user-registration-settings>div{align-items:flex-start;flex-direction:column}.module-grid:has(.user-registration-settings) .user-layout-switch{align-self:stretch}}
 
 .p23-view-hint {
   margin: calc(var(--space-2) * -1) 0 var(--space-3);
