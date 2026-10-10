@@ -413,6 +413,7 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
   const primaryActionIcon = isMaintenanceDashboard ? 'wrench' : reportedIssues > 0 ? 'alert' : 'checkCircle';
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const legacyAdminAnalytics = false;
 
   if (isMaintenanceDashboard) {
     return (
@@ -758,7 +759,28 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
   return (
     <div className="dashboard-grid dashboard-grid-smart dashboard-admin">
       {noVerifiedReady && <NoReadyUnitAlert available={availableVehicles} total={operationalTotal} onReview={readiness.length > 0 ? () => setOpenDashboardModal('emergencyReadiness') : undefined} />}
-      <section className={`dashboard-command-center full-span is-${opsTone}`}>
+      <header className="admin-ops-header full-span">
+        <div><h1>Fleet Operations Overview</h1><p>Monitor fleet readiness, maintenance, and operational priorities.</p></div>
+      </header>
+
+      <section className="admin-ops-metrics full-span" aria-label="Fleet operational metrics">
+        <button type="button" onClick={() => onGoToModule('vehicles', [])}><Icon name="vehicle" size={18} /><span>Total Vehicles</span><strong>{totalVehicles}</strong><small>Fleet units on record</small></button>
+        <button type="button" onClick={readiness.length ? () => setOpenDashboardModal('emergencyReadiness') : () => onGoToModule('vehicles', [])}><Icon name="checkCircle" size={18} /><span>Verified Ready</span><strong>{verifiedReady}</strong><small>Current readiness verification</small></button>
+        <button type="button" onClick={() => onGoToModule('vehicles', ['Under Maintenance'])}><Icon name="wrench" size={18} /><span>In Maintenance</span><strong>{underMaintenanceVehicles}</strong><small>Vehicles currently in shop</small></button>
+        <button type="button" onClick={() => setOpenDashboardModal('actionQueue')}><Icon name="alert" size={18} /><span>Pending Admin Actions</span><strong>{actionQueue.length}</strong><small>Records requiring review</small></button>
+      </section>
+
+      <section className="admin-attention full-span">
+        <div className="admin-section-head"><div><h2>Requires Your Attention</h2><p>Highest-priority records awaiting an administrator decision.</p></div>{actionQueue.length > 5 && <button type="button" className="ghost-button" onClick={() => setOpenDashboardModal('actionQueue')}>View All {actionQueue.length}</button>}</div>
+        {actionQueue.length === 0 ? <p className="action-queue-clear"><Icon name="checkCircle" size={16} /> No administrative actions are pending.</p> : <div className="action-queue-list">{actionQueue.slice(0, 5).map((item) => <ActionQueueRow key={`${item.type}-${item.id}`} item={item} basePath={basePath} onNavigate={onNavigate} onGoToSchedules={onGoToSchedules} />)}</div>}
+      </section>
+
+      <section className="admin-ops-summary full-span">
+        <article><div className="admin-section-head"><div><h2>Response Readiness</h2><p>Verified readiness, separate from availability.</p></div><strong>{readinessRate}%</strong></div><div className="admin-readiness-count"><strong>{verifiedReady}</strong><span>of {operationalTotal} operational vehicles verified ready</span></div><div className="admin-linear-meter" role="progressbar" aria-label="Verified response readiness" aria-valuemin="0" aria-valuemax="100" aria-valuenow={readinessRate}><span style={{ width: `${readinessRate}%` }} /></div>{readiness.length > 0 && <button type="button" className="dashboard-inline-action" onClick={() => setOpenDashboardModal('emergencyReadiness')}>View readiness details</button>}</article>
+        <article><div className="admin-section-head"><div><h2>Fleet Condition</h2><p>Latest recorded vehicle condition.</p></div></div><div className="admin-condition-counts">{vehicleCondition.map((item) => <div key={item.label}><span className="admin-condition-dot" style={{ background:item.color }} /><span>{item.label}</span><strong>{item.value}</strong></div>)}</div></article>
+      </section>
+
+      {legacyAdminAnalytics && <section className={`dashboard-command-center full-span is-${opsTone}`}>
         <div className="dashboard-command-copy">
           <span className="dashboard-command-role">{greetingRole}</span>
             <h1>Fleet Operations Overview</h1>
@@ -808,9 +830,9 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
             <DashboardMicroMetric icon="calendar" label="Overdue" value={overdueMaintenanceCount} tone={overdueMaintenanceCount > 0 ? 'alert' : 'neutral'} onClick={onGoToSchedules} />
           </div>
         </div>
-      </section>
+      </section>}
 
-      <section className="dashboard-signal-grid full-span" aria-label="Dashboard signals">
+      {legacyAdminAnalytics && <section className="dashboard-signal-grid full-span" aria-label="Dashboard signals">
         <DashboardSignalCard
           icon={primaryActionIcon}
           label={primaryActionTitle}
@@ -847,9 +869,9 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
           meter={totalVehicles ? Math.min(100, (maintenanceLoad / Math.max(totalVehicles, 1)) * 100) : 0}
           onClick={onGoToSchedules}
         />
-      </section>
+      </section>}
 
-      <section className="dashboard-intelligence-grid full-span">
+      {legacyAdminAnalytics && <section className="dashboard-intelligence-grid full-span">
         <article className="dashboard-smart-panel dashboard-readiness-matrix">
           <div className="dashboard-smart-panel-head">
             <div>
@@ -927,7 +949,7 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
             </div>
           </div>
         </article>
-      </section>
+      </section>}
       {hasRole(user, 'Maintenance Personnel') && (
         <section className="panel col-span-7 action-queue-panel">
           <div className="panel-header-bar">
