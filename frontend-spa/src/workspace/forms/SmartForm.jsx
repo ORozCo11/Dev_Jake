@@ -155,7 +155,6 @@ export function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelL
           : rawFieldValue !== undefined && rawFieldValue !== null && String(rawFieldValue).trim() !== '';
         return (
         <Fragment key={field.name}>
-        {field.sectionHeading ? <div className="smart-form-section-heading" role="heading" aria-level="4"><strong>{field.sectionHeading}</strong>{field.sectionHint ? <span>{field.sectionHint}</span> : null}</div> : null}
         <label
           className={[field.compactFile ? 'file-inline' : null, fieldHasValue ? 'has-value' : null].filter(Boolean).join(' ') || undefined}
           style={field.fullWidth ? { gridColumn: '1 / -1' } : undefined}

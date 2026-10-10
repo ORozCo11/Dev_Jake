@@ -5,7 +5,7 @@ import { EMPTY_OBJ, options, vehicleOptions } from './format';
 
 export function profileFields(existingPhotoUrl) {
   return [
-    { label: 'Full Name', name: 'name', required: true, type: 'text', sectionHeading: 'Personal Information' },
+    { label: 'Full Name', name: 'name', required: true, type: 'text' },
     { label: 'Email', name: 'email', required: true, type: 'text', placeholder: 'name@barangay.gov' },
     { label: 'Phone', name: 'phone', type: 'tel', pattern: '[0-9]{10}', placeholder: '09XXXXXXXXX', title: 'Phone must be exactly 10 digits' },
     { label: 'Address', name: 'address', type: 'text' },
@@ -43,27 +43,26 @@ export const categoryFields = [
 // reset is that they don't (and shouldn't need to) know the old one.
 export function userFields(isEditing, liveValues = EMPTY_OBJ) {
   return [
-    { label: 'Full Name', name: 'name', required: true, type: 'text' },
-    { label: 'Email', name: 'email', required: true, type: 'text', placeholder: 'name@barangay.gov' },
-    { label: 'Phone', name: 'phone', type: 'tel', pattern: '[0-9]{10}', placeholder: '09XXXXXXXXX', title: 'Phone must be exactly 10 digits' },
-    { label: 'Address', name: 'address', type: 'text' },
+    { label: 'Full Name', name: 'name', required: true, type: 'text', group: 'Personal Information' },
+    { label: 'Email Address', name: 'email', required: true, type: 'text', placeholder: 'name@barangay.gov', group: 'Personal Information' },
+    { label: 'Phone', name: 'phone', type: 'tel', pattern: '[0-9]{10}', placeholder: '09XXXXXXXXX', title: 'Phone must be exactly 10 digits', group: 'Personal Information' },
+    { label: 'Address', name: 'address', type: 'text', group: 'Personal Information' },
     // Deliberately paired side by side, in this order, both NOT full-width:
     // the grid's dense auto-flow (App.css .form-grid-2col .smart-form)
     // only backfills gaps when one exists — keeping every field here a
     // plain single-column item, in strict declared order, means each row
     // fills left-then-right with no gaps for later fields to jump into
     // (which is what previously stranded Confirm Password alone).
-    { label: 'Select roles', name: 'roles', options: ['Admin', 'Custodian', 'Maintenance Personnel'], required: true, type: 'checkboxes', sectionHeading: 'Role Assignment', sectionHint: 'Select one or more roles. The first selected role remains the primary portal role.' },
+    { label: 'Select one or more roles. The first selected role is the primary portal role.', name: 'roles', options: ['Admin', 'Custodian', 'Maintenance Personnel'], required: true, type: 'checkboxes', group: 'Roles & Access' },
     // No per-account "Vehicle Registration" checkbox any more: every
     // Custodian can register vehicles (see canRegisterVehicles in
     // permissions.js), so the old delegation toggle was removed.
-    { label: 'Profile Photo (optional)', name: 'photo', accept: 'image/*', type: 'file', sectionHeading: 'Profile Photo' },
     {
       label: isEditing ? 'New Password (leave blank to keep current)' : 'Password',
       name: 'password',
       required: !isEditing,
       type: 'password',
-      sectionHeading: 'Account Security',
+      group: 'Account Security',
     },
     {
       label: isEditing ? 'Confirm New Password' : 'Confirm Password',
@@ -71,7 +70,9 @@ export function userFields(isEditing, liveValues = EMPTY_OBJ) {
       required: isEditing ? Boolean(liveValues.password) : true,
       type: 'password',
       confirmOf: 'password',
+      group: 'Account Security',
     },
+    { label: 'Profile Photo (optional)', name: 'photo', accept: 'image/*', type: 'file', group: 'Profile Photo' },
   ];
 }
 
