@@ -11,7 +11,7 @@ import { PaginationControls } from '../components/tables';
 import { StatusBadge, UserAvatarName, VehicleCell } from '../components/ui';
 import { usePagination } from '../hooks/usePagination';
 import { actionLabel, describeDateRange, groupRowsByDay, hasActiveScope, historyRecordKind, logRecordKind, relatedRecordText } from '../lib/activity';
-import { formatTime } from '../lib/format';
+import { formatDate, formatTime } from '../lib/format';
 import { roleRoutes } from '../lib/permissions';
 import { moduleBadgeTone } from '../lib/statCards';
 
@@ -91,19 +91,30 @@ export function HistoryDayTimeline({ rows, emptyState }) {
       renderRow={(row) => {
         const kind = historyRecordKind(row.related_table);
         return (
-          <article className="p23-entry-card">
-            <div className="p23-entry-head">
-              <strong className="p23-entry-title">{row.activity_type ?? 'Vehicle activity'}</strong>
-              <span className="p23-entry-time">{formatTime(row.created_at)}</span>
+          <article className="history-event">
+            <span className="history-event-node" aria-hidden="true"><Icon name="clock" size={15} /></span>
+            <div className="history-event-main">
+              <div className="history-event-heading">
+                <div>
+                  <strong>{row.activity_type ?? 'Vehicle activity'}</strong>
+                  <span>{row.vehicle?.vehicle_name ?? 'Vehicle not recorded'}{row.vehicle?.plate_number ? ` · ${row.vehicle.plate_number}` : ''}</span>
+                </div>
+                <time dateTime={row.created_at}>{formatTime(row.created_at)}</time>
+              </div>
+              {row.description && <p className="history-event-summary">{row.description}</p>}
+              <details className="history-event-details">
+                <summary>View event details <Icon name="chevronDown" size={13} /></summary>
+                <dl>
+                  <div><dt>Vehicle</dt><dd><VehicleCell vehicle={row.vehicle} isRowTitle={false} /></dd></div>
+                  <div><dt>Recorded by</dt><dd><ActorLine user={row.updated_by} /></dd></div>
+                  <div><dt>Recorded at</dt><dd>{formatDate(row.created_at)} at {formatTime(row.created_at)}</dd></div>
+                  {!kind?.self && row.related_record_id != null && (
+                    <div><dt>Related record</dt><dd><RelatedRecordLink kind={kind} id={row.related_record_id} /></dd></div>
+                  )}
+                  <div><dt>History entry</dt><dd>#{row.history_id}</dd></div>
+                </dl>
+              </details>
             </div>
-            {row.description && <p className="p23-entry-desc">{row.description}</p>}
-            <dl className="p23-entry-meta">
-              <div><dt>Vehicle</dt><dd><VehicleCell vehicle={row.vehicle} isRowTitle={false} /></dd></div>
-              {!kind?.self && row.related_record_id != null && (
-                <div><dt>Related</dt><dd><RelatedRecordLink kind={kind} id={row.related_record_id} /></dd></div>
-              )}
-              <div><dt>By</dt><dd><ActorLine user={row.updated_by} /></dd></div>
-            </dl>
           </article>
         );
       }}

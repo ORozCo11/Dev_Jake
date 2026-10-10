@@ -66,7 +66,18 @@ export function actionLabel(action) {
 }
 
 const pad = (n) => String(n).padStart(2, '0');
-const localDayKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+export const localDayKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+// History is chronological by the recorded timestamp. The immutable row id is
+// only a stable tie-breaker when two events were written at the same instant.
+export function newestHistoryFirst(rows) {
+  return [...rows].sort((a, b) => {
+    const aTime = new Date(a.created_at ?? 0).getTime();
+    const bTime = new Date(b.created_at ?? 0).getTime();
+    const timeDiff = (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+    return timeDiff || Number(b.history_id ?? 0) - Number(a.history_id ?? 0);
+  });
+}
 
 function dayHeading(key) {
   const today = new Date();

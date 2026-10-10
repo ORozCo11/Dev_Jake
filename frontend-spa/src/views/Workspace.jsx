@@ -13,7 +13,7 @@ import WorkspaceFooter from '../components/WorkspaceFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { DonutChart } from '../components/lazy';
 import { LocationDensityMap } from '../components/lazy';
-import { categoryColumns, historyColumns, issueColumns, locationColumns, logColumns, maintenanceStatusColumns, scheduleColumns, ticketArchiveColumns, userColumns, vehicleColumns } from '../workspace/columns';
+import { categoryColumns, issueColumns, locationColumns, logColumns, maintenanceStatusColumns, scheduleColumns, ticketArchiveColumns, userColumns, vehicleColumns } from '../workspace/columns';
 import { FilterBar, IssueFilterPanel, VehicleFilterPanel } from '../workspace/components/filters';
 import { DateFilterInput, MultiSelectDropdown } from '../workspace/components/inputs';
 import { DataTable, ModuleStatCards, PaginatedCardGrid, PaginatedTable, ViewModeDropdown } from '../workspace/components/tables';
@@ -38,7 +38,7 @@ import { moduleIcons } from '../workspace/moduleIcons';
 import { PendingRegistrations, ProfileMenu, ProfilePage, UserCard, UserFilterChips, UserInfoModal, UserViewPage } from '../workspace/users/users';
 import { isPendingRegistration } from '../workspace/lib/userAccounts';
 import { HistoryDayTimeline, LogDayTimeline, ResultScope, ScopedEmptyState } from '../workspace/history/activity';
-import { describeDateRange, hasActiveScope } from '../workspace/lib/activity';
+import { describeDateRange, hasActiveScope, localDayKey, newestHistoryFirst } from '../workspace/lib/activity';
 import { PrintSheet } from '../workspace/reports/PrintSheet';
 
 // Pages and module views load on first use (see the Suspense boundary around
@@ -383,13 +383,6 @@ function Workspace() {
   const changeScheduleViewMode = (mode) => {
     setScheduleViewMode(mode);
     localStorage.setItem('vms_schedule_view', mode);
-  };
-  const [historyViewMode, setHistoryViewMode] = useState(
-    () => localStorage.getItem('vms_history_view') || 'table'
-  );
-  const changeHistoryViewMode = (mode) => {
-    setHistoryViewMode(mode);
-    localStorage.setItem('vms_history_view', mode);
   };
   // List/Recent-Activities tab for the Activity Log — not persisted, since
   // "recent activities" is a quick-glance view you'd want defaulting back
@@ -1557,7 +1550,8 @@ function Workspace() {
         result = result.filter((row) => {
           const raw = row[dateField];
           if (!raw) return false;
-          const rowDate = raw.substring(0, 10);
+          const parsed = new Date(raw);
+          const rowDate = Number.isNaN(parsed.getTime()) ? raw.substring(0, 10) : localDayKey(parsed);
           if (filterDateStart && rowDate < filterDateStart) return false;
           if (filterDateEnd && rowDate > filterDateEnd) return false;
           return true;
@@ -1680,6 +1674,10 @@ function Workspace() {
         row.status === 'Completed' && row.resulting_maintenance && row.resulting_maintenance.progress_status !== 'Completed' ? 0 : 1
       );
       result = [...result].sort((a, b) => needsAttention(a) - needsAttention(b));
+    }
+
+    if (activeModule === 'histories') {
+      result = newestHistoryFirst(result);
     }
 
     return result;
@@ -1916,7 +1914,6 @@ function Workspace() {
     () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile, approveSchedule, setDeclineScheduleTarget, records.schedules),
     [navigate, user, deleteRecord, restoreRecord, openTicketProfile, records.schedules],
   );
-  const vehicleHistoryColumnChooser = useColumnChooser('vms_vehicle_history_columns', historyColumns);
 
   const logColumnDefs = useMemo(
     () => logColumns(lookups.vehicles, openVehicleProfile, openTicketProfile),
@@ -4214,35 +4211,26 @@ function Workspace() {
               </div>
               <div className="filter-date-group">
                 <span>From Date</span>
-                <DateFilterInput
-                  value={filterDateStart || '2026-01-01'}
-                  onChange={setFilterDateStart}
-                />
+                <DateFilterInput value={filterDateStart} onChange={setFilterDateStart} />
               </div>
               <div className="filter-date-group">
                 <span>To Date</span>
-                <DateFilterInput
-                  value={filterDateEnd || '2026-12-31'}
-                  onChange={setFilterDateEnd}
-                />
+                <DateFilterInput value={filterDateEnd} onChange={setFilterDateEnd} />
               </div>
             </div>
           }
         >
-          <div className="panel-header-bar">
-            <h3>Vehicle History <span className="count-badge">{visibleRows.length}</span></h3>
-            <div className="p23-header-actions">
-              <ViewModeDropdown value={historyViewMode} onChange={changeHistoryViewMode} />
-              <LocalSearchInput
-                value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder="Search history..."
-                onExport={() => exportRowsToCsv(`vehicle-history-${new Date().toISOString().slice(0, 10)}.csv`, VEHICLE_HISTORY_EXPORT_COLUMNS, visibleRows)}
-                columnChooser={historyViewMode === 'card' ? undefined : vehicleHistoryColumnChooser}
-              />
-              <button className="ghost-button" onClick={() => window.print()} type="button" disabled={!visibleRows.length}>Print</button>
+          <header className="history-page-header">
+            <div><span className="history-page-eyebrow">Fleet activity</span><h2>Vehicle History</h2><p>A chronological record of vehicle updates, checks, reported issues, and maintenance.</p></div>
+            <div className="history-page-actions">
+              <button className="ghost-button" onClick={() => exportRowsToCsv(`vehicle-history-${new Date().toISOString().slice(0, 10)}.csv`, VEHICLE_HISTORY_EXPORT_COLUMNS, visibleRows)} type="button" disabled={!visibleRows.length}><Icon name="download" size={15} /> Export CSV</button>
+              <button className="ghost-button" onClick={() => window.print()} type="button" disabled={!visibleRows.length}><Icon name="print" size={15} /> Print</button>
             </div>
-          </div>
+          </header>
+          <section className="history-toolbar" aria-label="Search vehicle history">
+            <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search vehicle, activity, person, or description..." />
+            {historyFiltered && <button type="button" className="ghost-button history-clear-button" onClick={clearHistoryFilters}><Icon name="close" size={13} /> Clear all filters</button>}
+          </section>
           <p className="p23-module-intro">
             <strong>Vehicle History</strong> is each vehicle's own timeline — location changes, issues, condition checks, and maintenance — recorded automatically.
             {modules.some(([key]) => key === 'logs') && (
@@ -4256,20 +4244,9 @@ function Workspace() {
             onClear={clearHistoryFilters}
             exportNote="Export (CSV spreadsheet) and Print include every entry listed here across all pages — not just the page on screen."
           />
-          {historyViewMode === 'card' ? (
+          <section className="history-timeline-surface" aria-label="Chronological vehicle activity">
             <HistoryDayTimeline rows={visibleRows} emptyState={historyEmpty(false)} />
-          ) : (
-            <PaginatedTable
-              columns={vehicleHistoryColumnChooser.visibleColumns}
-              onReorderColumn={vehicleHistoryColumnChooser.reorderColumn}
-              emptyMessage={historyEmpty(true)}
-              rows={visibleRows}
-              onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
-              pageSizeOptions={[10, 20, 40, 50]}
-              initialPageSize={10}
-              renderSubRow={(row) => row.description}
-            />
-          )}
+          </section>
 
           <PrintSheet
             title="Vehicle Activity History"
