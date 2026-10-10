@@ -208,46 +208,28 @@ export function userColumns(onEdit, onToggleActive, currentUserId) {
 
 export function locationColumns(currentUser, onViewOnMap, onEdit) {
   return [
-  { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.location_record_id ?? 'Current' },
-  { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> }, { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (row) => row.vehicle?.plate_number ?? '-' },
-  { key: 'status', label: 'Status', className: 'cell-center', render: (row) => <StatusBadge value={row.vehicle?.status ?? '-'} /> },
+  { key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => <VehicleCell vehicle={row.vehicle} /> },
   { key: 'current_location', label: 'Current Location', render: (row) => row.current_location ?? '-' },
-  { key: 'address_area', label: 'Address / Area', render: (row) => row.address_area ?? '-' },
-  {
-    key: 'updated_by',
-    label: 'Updated By',
-    className: 'cell-center',
-    render: (row) => <UserAvatarName user={row.is_current_snapshot ? currentUser : row.updated_by} />,
-  },
-  { key: 'date_updated', label: 'Date Updated', className: 'cell-center', render: (row) => <DateBadge value={row.updated_at} /> },
-  { key: 'time', label: 'Time', className: 'cell-center', render: (row) => formatTime(row.updated_at) },
+  { key: 'status', label: 'Vehicle Status', className: 'cell-center', render: (row) => <StatusBadge value={row.vehicle?.status ?? '-'} /> },
+  { key: 'date_updated', label: 'Last Updated', render: (row) => row.updated_at ? `${formatDate(row.updated_at)} · ${formatTime(row.updated_at)}` : '-' },
   {
     key: 'action',
     label: 'Action',
     locked: true,
     className: 'cell-center',
     render: (row) => (
-      <div className="row-actions">
+      <div className="row-actions location-row-actions">
+        <button className="ghost-button" onClick={(event) => { event.stopPropagation(); onViewOnMap(row); }} type="button">View Details</button>
         {hasRole(currentUser, 'Admin') && (
           <button
-            className="btn-edit-action icon-btn"
-            onClick={() => onEdit(row)}
+            className="ghost-button"
+            onClick={(event) => { event.stopPropagation(); onEdit(row); }}
             title="Update this vehicle's location"
-            aria-label="Update this vehicle's location"
             type="button"
           >
-            <Icon name="edit" size={14} />
+            <Icon name="edit" size={14} /> Update
           </button>
         )}
-        <button
-          className="btn-view-action icon-btn"
-          onClick={() => onViewOnMap(row)}
-          title="View vehicle on map"
-          aria-label="View vehicle on map"
-          type="button"
-        >
-          <Icon name="eye" size={16} />
-        </button>
       </div>
     ),
   },

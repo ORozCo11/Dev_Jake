@@ -3351,9 +3351,9 @@ function Workspace() {
             )}
 
             {locationsTab === 'records' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div className="filter-bar-container">
-                  <div className="filter-label"><span>Filters:</span></div>
+              <div className="location-records-workspace">
+                <div className="location-records-toolbar">
+                  <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search vehicle name or plate number..." onAdd={hasRole(user, 'Admin') ? () => navigate(`${roleRoutes[user.role]}/locations/new`) : undefined} addLabel="Add Location" />
                   <div className="filter-date-group">
                     <span>Status</span>
                     <MultiSelectDropdown
@@ -3373,7 +3373,7 @@ function Workspace() {
                     />
                   </div>
                 </div>
-                <div className="panel-header-bar">
+                <div className="panel-header-bar location-records-legacy-header" aria-hidden="true">
                   <h3>Location Records <span className="count-badge">{locationRows.length}</span></h3>
                   <LocalSearchInput
                     value={searchQuery}
@@ -3391,7 +3391,7 @@ function Workspace() {
                     columnChooser={locationColumnChooser}
                   />
                 </div>
-                <div style={{ overflowX: 'auto' }}>
+                <div className="location-table-region">
                   <PaginatedTable
                     columns={locationColumnChooser.visibleColumns}
                     onReorderColumn={locationColumnChooser.reorderColumn}

@@ -1145,3 +1145,21 @@
   animation: vms-gear-spin 4s linear infinite;
   flex-shrink: 0;
 }
+.location-records-workspace { display:flex; min-width:0; flex-direction:column; gap:16px; }
+.location-records-toolbar { display:grid; grid-template-columns:minmax(280px,1fr) minmax(170px,220px) minmax(170px,220px); align-items:end; gap:12px; padding:12px; border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface-2); }
+.location-records-toolbar .local-search-bar,
+.location-records-toolbar .local-search-container { min-width:0; width:100%; }
+.location-records-legacy-header { display:none !important; }
+.location-table-region { min-width:0; }
+.location-table-region .table-shell { overflow-x:visible; }
+.location-table-region table { width:100%; table-layout:fixed; }
+.location-table-region th:nth-child(1), .location-table-region td:nth-child(1) { width:26%; }
+.location-table-region th:nth-child(2), .location-table-region td:nth-child(2) { width:24%; }
+.location-table-region th:nth-child(3), .location-table-region td:nth-child(3) { width:16%; }
+.location-table-region th:nth-child(4), .location-table-region td:nth-child(4) { width:18%; }
+.location-table-region th:nth-child(5), .location-table-region td:nth-child(5) { width:16%; }
+.location-table-region td { overflow-wrap:anywhere; }
+.location-row-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; }
+.location-row-actions .ghost-button { min-height:34px; padding:0 9px; font-size:var(--font-size-2xs); }
+@media(max-width:900px){.location-records-toolbar{grid-template-columns:1fr 1fr}.location-records-toolbar .local-search-bar{grid-column:1 / -1}.location-table-region .table-shell{overflow-x:auto}.location-table-region table{min-width:760px;table-layout:auto}}
+@media(max-width:600px){.location-records-toolbar{grid-template-columns:1fr}.location-records-toolbar .local-search-bar{grid-column:auto}.location-table-region .table-shell{overflow:visible}.location-table-region table,.location-table-region thead,.location-table-region tbody,.location-table-region tr,.location-table-region th,.location-table-region td{display:block;width:100%}.location-table-region thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.location-table-region tbody{display:grid;gap:10px}.location-table-region tr{padding:14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}.location-table-region td{padding:6px 0;border:0}.location-row-actions{justify-content:flex-start;margin-top:4px}}
