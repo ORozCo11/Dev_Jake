@@ -756,22 +756,13 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
   }
 
   return (
-    <div className="dashboard-grid dashboard-grid-smart">
+    <div className="dashboard-grid dashboard-grid-smart dashboard-admin">
       {noVerifiedReady && <NoReadyUnitAlert available={availableVehicles} total={operationalTotal} onReview={readiness.length > 0 ? () => setOpenDashboardModal('emergencyReadiness') : undefined} />}
       <section className={`dashboard-command-center full-span is-${opsTone}`}>
         <div className="dashboard-command-copy">
           <span className="dashboard-command-role">{greetingRole}</span>
-          <TextType
-            key={greeting}
-            as="h2"
-            text={[greeting]}
-            typingSpeed={150}
-            pauseDuration={1500}
-            loop={false}
-            showCursor={true}
-            cursorCharacter="|"
-          />
-          <p>{dateStr || 'Today'}</p>
+            <h1>Fleet Operations Overview</h1>
+            <p>Monitor fleet readiness, maintenance, and operational priorities.</p>
           <div className="dashboard-command-pills">
             <button type="button" onClick={() => onGoToModule('vehicles', [])}>{totalVehicles} fleet units</button>
             <button type="button" onClick={() => onGoToModule('locations', [])}>{locationsByHub.length} active sites</button>
