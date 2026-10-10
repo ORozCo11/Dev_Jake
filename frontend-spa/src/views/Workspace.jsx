@@ -11,13 +11,12 @@ import { geoJsonToRings } from '../utils/boundary';
 import { PAKNAAN_POLYGON } from '../data/paknaanLocationDensity';
 import WorkspaceFooter from '../components/WorkspaceFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { DonutChart } from '../components/lazy';
 import { LocationDensityMap } from '../components/lazy';
 import { categoryColumns, issueColumns, locationColumns, logColumns, maintenanceStatusColumns, scheduleColumns, ticketArchiveColumns, userColumns, vehicleColumns } from '../workspace/columns';
 import { FilterBar, IssueFilterPanel, VehicleFilterPanel } from '../workspace/components/filters';
 import { DateFilterInput, MultiSelectDropdown } from '../workspace/components/inputs';
 import { DataTable, ModuleStatCards, PaginatedCardGrid, PaginatedTable, ViewModeDropdown } from '../workspace/components/tables';
-import { ChartLegend, DateBadge, FormModal, LocalSearchInput, ModuleLoader, ModulePanel, SegmentedBar, TicketStatusBadge } from '../workspace/components/ui';
+import { DateBadge, FormModal, LocalSearchInput, ModuleLoader, ModulePanel, TicketStatusBadge } from '../workspace/components/ui';
 import { IssueFilteredEmpty } from '../workspace/issues/issueBadges';
 import { ConditionFilteredEmpty, ConditionMonitoringIntro, ConditionResultBadge, ConditionTicketCell } from '../workspace/conditions/conditions';
 import { ErrorState } from '../workspace/components/states';
@@ -450,7 +449,6 @@ function Workspace() {
   // The Staff Registration Code the barangay office hands to real staff —
   // Admin-only, fetched once so it's ready whenever they open Users.
   const [registrationCode, setRegistrationCode] = useState(null);
-  const [registrationCodeVisible, setRegistrationCodeVisible] = useState(false);
   useEffect(() => {
     if (!hasRole(user, 'Admin')) return;
     api.get('/registration-settings').then((res) => setRegistrationCode(res.data.staff_code)).catch(() => {});
@@ -1729,14 +1727,6 @@ function Workspace() {
     [records.maintenance]
   );
 
-  const userStats = useMemo(
-    () => countByValues(records.users ?? [], (r) => r.role, ['Admin', 'Custodian', 'Maintenance Personnel']),
-    [records.users]
-  );
-  const userStatusStats = useMemo(
-    () => countByValues(records.users ?? [], (r) => (r.is_active ? 'Active' : 'Inactive'), ['Active', 'Inactive']),
-    [records.users]
-  );
 
   const inspectionStats = useMemo(() => {
     const rows = records.ticketInspections ?? [];

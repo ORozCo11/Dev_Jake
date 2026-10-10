@@ -5,7 +5,7 @@ import { EMPTY_OBJ, options, vehicleOptions } from './format';
 
 export function profileFields(existingPhotoUrl) {
   return [
-    { label: 'Full Name', name: 'name', required: true, type: 'text' },
+    { label: 'Full Name', name: 'name', required: true, type: 'text', sectionHeading: 'Personal Information' },
     { label: 'Email', name: 'email', required: true, type: 'text', placeholder: 'name@barangay.gov' },
     { label: 'Phone', name: 'phone', type: 'tel', pattern: '[0-9]{10}', placeholder: '09XXXXXXXXX', title: 'Phone must be exactly 10 digits' },
     { label: 'Address', name: 'address', type: 'text' },
@@ -53,16 +53,17 @@ export function userFields(isEditing, liveValues = EMPTY_OBJ) {
     // plain single-column item, in strict declared order, means each row
     // fills left-then-right with no gaps for later fields to jump into
     // (which is what previously stranded Confirm Password alone).
-    { label: 'Roles (a person can hold more than one — the first is their primary role, which decides the portal they open in)', name: 'roles', options: ['Admin', 'Custodian', 'Maintenance Personnel'], required: true, type: 'checkboxes' },
+    { label: 'Select roles', name: 'roles', options: ['Admin', 'Custodian', 'Maintenance Personnel'], required: true, type: 'checkboxes', sectionHeading: 'Role Assignment', sectionHint: 'Select one or more roles. The first selected role remains the primary portal role.' },
     // No per-account "Vehicle Registration" checkbox any more: every
     // Custodian can register vehicles (see canRegisterVehicles in
     // permissions.js), so the old delegation toggle was removed.
-    { label: 'Profile Photo', name: 'photo', accept: 'image/*', type: 'file' },
+    { label: 'Profile Photo (optional)', name: 'photo', accept: 'image/*', type: 'file', sectionHeading: 'Profile Photo' },
     {
       label: isEditing ? 'New Password (leave blank to keep current)' : 'Password',
       name: 'password',
       required: !isEditing,
       type: 'password',
+      sectionHeading: 'Account Security',
     },
     {
       label: isEditing ? 'Confirm New Password' : 'Confirm Password',
