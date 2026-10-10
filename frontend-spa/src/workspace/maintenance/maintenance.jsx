@@ -9,7 +9,6 @@ import { canDo } from '../lib/permissions';
 import {
   MAINTENANCE_PROGRESS_STAGES,
   MAINTENANCE_SOURCE_INFO,
-  findNextScheduleOccurrence,
   formatMaintenanceCost,
   isClosedUnverified,
   isRecordReturnedForRework,
@@ -17,7 +16,6 @@ import {
   maintenanceNextStep,
   maintenancePerformerText,
   maintenanceStageIndex,
-  recurrenceSentence,
   scheduleDueLabel,
   scheduleStatusNote,
   scheduleUrgencyBucket,
@@ -135,63 +133,33 @@ function RecordFlags({ record }) {
 // (and reuses its themed .ticket-card-* classes) so both modules read as the
 // same product rather than two different card systems.
 export function MaintenanceRecordCard({ record, onClick }) {
-  const step = maintenanceNextStep(record);
-  const isDone = record.progress_status === 'Completed';
-  const rework = isRecordReturnedForRework(record);
-  const performer = maintenancePerformerText(record);
-  const cost = formatMaintenanceCost(record.maintenance_cost);
+  const displayStatus = { 'For Verification': 'Needs Verification', 'Under Repair': 'Repair in Progress' }[record.progress_status]
+    ?? record.progress_status ?? 'Not recorded';
+  const statusTone = { Assigned: 'neutral', 'Under Repair': 'info', 'For Verification': 'warning', Completed: 'success' }[record.progress_status]
+    ?? 'neutral';
+  const relevantDate = record.date_completed || record.date_started;
 
   return (
     <div
-      className={`ticket-card p23-record-card${rework ? ' is-rework' : ''}`}
+      className="ticket-card p24-maint-card"
       onClick={onClick}
       role="button"
       tabIndex={0}
-      aria-label={`Maintenance #${record.maintenance_id} — ${record.maintenance_type ?? ''}, ${record.vehicle?.vehicle_name ?? 'vehicle'}. ${step?.title ?? ''}. Open details`}
+      aria-label={`Maintenance #${record.maintenance_id} — ${record.maintenance_type ?? ''}, ${record.vehicle?.vehicle_name ?? 'vehicle'}. Open details`}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
       }}
     >
-      <div className="ticket-card-content-wrapper">
-        <div className="ticket-card-info">
-          <div className="ticket-card-top">
-            <span className="ticket-card-id">#{record.maintenance_id}</span>
-            <div className="p23-badge-group">
-              <SourceBadge source={record.source} />
-              <StatusBadge value={record.progress_status} />
-            </div>
-          </div>
-          <p className="ticket-card-title">{record.maintenance_type}</p>
-          <p className="ticket-card-vehicle">
-            {record.vehicle?.vehicle_name}{record.vehicle?.plate_number ? ` · ${record.vehicle.plate_number}` : ''}
-          </p>
-        </div>
-        {record.vehicle?.photo_url && (
-          <div className="ticket-card-photo">
-            <img src={resolvePhotoUrl(record.vehicle.photo_url)} alt="" />
-          </div>
-        )}
+      <div className="p24-maint-card-top">
+        <span className="ticket-card-id">Record #{record.maintenance_id}</span>
+        <span className={`p24-maint-status tone-${statusTone}`}>{displayStatus}</span>
       </div>
-
-      <MaintenanceStageTrail record={record} compact />
-
-      {!isDone && step && (
-        <p className={`p23-card-next tone-${step.tone}`}>
-          <strong>{step.title}.</strong> {step.next}
-        </p>
-      )}
-
-      <RecordFlags record={record} />
-
-      <dl className="p23-record-meta">
-        <div><dt>Performed by</dt><dd>{performer ?? 'Not recorded'}</dd></div>
-        <div><dt>Cost</dt><dd>{cost ?? 'Not recorded'}</dd></div>
-        <div>
-          <dt>{record.date_completed ? 'Completed' : 'Started'}</dt>
-          <dd>{record.date_completed ? formatDate(record.date_completed) : (record.date_started ? formatDate(record.date_started) : 'Not recorded')}</dd>
-        </div>
-      </dl>
+      <div className="p24-maint-card-main">
+        <div><h3>{record.maintenance_type || 'Maintenance work'}</h3><p>{record.vehicle?.vehicle_name ?? 'Vehicle not recorded'}{record.vehicle?.plate_number ? ` · ${record.vehicle.plate_number}` : ''}</p></div>
+        <div className="p24-maint-card-date"><span>{record.date_completed ? 'Completed' : 'Started'}</span><strong>{relevantDate ? formatDate(relevantDate) : 'Not recorded'}</strong></div>
+      </div>
+      <span className="p24-maint-card-link">View details <Icon name="chevronRight" size={14} /></span>
     </div>
   );
 }
@@ -326,7 +294,9 @@ export function MaintenanceRecordDetail({ record, onConfirm, onReopen, onDecisio
           <VehicleCell vehicle={record.vehicle} />
           <span className="p23-record-type">{record.maintenance_type}</span>
           <SourceBadge source={record.source} />
-          <StatusBadge value={record.progress_status} />
+          <span className={`p24-maint-status tone-${record.progress_status === 'Completed' ? 'success' : record.progress_status === 'For Verification' ? 'warning' : record.progress_status === 'Under Repair' ? 'info' : 'neutral'}`}>
+            {{ 'For Verification': 'Needs Verification', 'Under Repair': 'Repair in Progress' }[record.progress_status] ?? record.progress_status}
+          </span>
         </div>
         <RecordFlags record={record} />
 
@@ -403,7 +373,7 @@ export function MaintenanceRecordDetail({ record, onConfirm, onReopen, onDecisio
         </dl>
 
         <section className="p23-record-section" aria-labelledby={`p23-worklog-${record.maintenance_id}`}>
-          <h4 className="p23-section-title" id={`p23-worklog-${record.maintenance_id}`}>Work log</h4>
+          <h4 className="p23-section-title" id={`p23-worklog-${record.maintenance_id}`}>Repair Details</h4>
           <div className="p23-worklog">
             <div>
               <span className="maintenance-detail-label">Problem / Reason</span>
@@ -430,7 +400,7 @@ export function MaintenanceRecordDetail({ record, onConfirm, onReopen, onDecisio
             edit form is not having to click away just to see it. */}
         {record.receipt_url && (
           <section className="p23-record-section">
-            <h4 className="p23-section-title">Proof of completion</h4>
+            <h4 className="p23-section-title">Supporting Evidence</h4>
             <a href={resolvePhotoUrl(record.receipt_url)} target="_blank" rel="noopener noreferrer" className="p23-proof-link">
               <img src={resolvePhotoUrl(record.receipt_url)} alt={`Proof of completion for maintenance #${record.maintenance_id} (opens full size in a new tab)`} className="p23-proof-image" />
             </a>
@@ -602,15 +572,20 @@ export function ScheduleActionMenu({ label, children }) {
 // Deliberately NOT one big click target: unlike a Maintenance Record, a
 // schedule has no detail page to open, and a whole-card click would fight
 // with the action buttons it needs to carry.
-export function MaintenanceScheduleCard({ row, currentUser, allSchedules, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign, onViewTicket, onViewVehicle, onApprove, onDecline }) {
+export function MaintenanceScheduleCard({ row, currentUser, onComplete, onEdit, onDelete, onViewRecord, onRestore, onReassign, onViewTicket, onViewVehicle, onApprove, onDecline }) {
   const currentUserId = currentUser?.id;
   const isMine = currentUserId != null && String(row.assigned_to) === String(currentUserId);
   const overdue = isScheduleOverdue(row);
   const urgency = scheduleUrgencyBucket(row);
   const dueLabel = scheduleDueLabel(row);
+  const readableTime = (() => {
+    if (!row.scheduled_time) return '';
+    const [hours, minutes] = String(row.scheduled_time).split(':').map(Number);
+    if (!Number.isFinite(hours)) return row.scheduled_time;
+    return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(2000, 0, 1, hours, minutes || 0));
+  })();
   const resulting = row.resulting_maintenance;
   const isCompleted = row.status === 'Completed';
-  const nextOccurrence = findNextScheduleOccurrence(row, allSchedules);
   const statusNote = scheduleStatusNote(row);
   // Once a due schedule has become a ticket, the ticket is where the work is
   // done — completing the schedule directly would be refused. Final senior
@@ -666,11 +641,6 @@ export function MaintenanceScheduleCard({ row, currentUser, allSchedules, onComp
             {row.vehicle?.plate_number ? ` · ${row.vehicle.plate_number}` : ''}
           </p>
         </div>
-        {row.vehicle?.photo_url && (
-          <div className="ticket-card-photo">
-            <img src={resolvePhotoUrl(row.vehicle.photo_url)} alt="" />
-          </div>
-        )}
       </div>
 
       {statusNote && (
@@ -684,12 +654,9 @@ export function MaintenanceScheduleCard({ row, currentUser, allSchedules, onComp
           "due in" label beside it, never one without the other. */}
       <div className="schedule-date-row">
         <span className={`schedule-date-value ${overdue ? 'is-overdue' : ''}`}>
-          <Icon name="calendar" size={13} /> {formatDate(row.scheduled_date)}{row.scheduled_time ? ` · ${row.scheduled_time}` : ''}
+          <Icon name="calendar" size={13} /> {formatDate(row.scheduled_date)}{readableTime ? ` · ${readableTime}` : ''}
         </span>
         {dueLabel && <span className={`schedule-due-label ${overdue ? 'is-overdue' : ''}`}>{dueLabel}</span>}
-        <span className="schedule-repeat-label">
-          <Icon name="undo" size={13} /> {recurrenceSentence(row.recurrence_months)}
-        </span>
       </div>
 
       <div className="p23-schedule-assignee">
@@ -704,12 +671,6 @@ export function MaintenanceScheduleCard({ row, currentUser, allSchedules, onComp
           : <span className="muted">Unassigned</span>}
       </div>
 
-      {row.service_location && (
-        <p className="p23-schedule-location">
-          <Icon name="pin" size={12} /> <span className="p23-meta-label">Location</span> {row.service_location}
-        </p>
-      )}
-
       {/* Traceability, same as the table's Status column: "Completed" alone
           doesn't say whether the record it produced was ever verified. */}
       {isCompleted && (
@@ -721,17 +682,6 @@ export function MaintenanceScheduleCard({ row, currentUser, allSchedules, onComp
               Record #{resulting.maintenance_id}: {resulting.progress_status}
             </span>
           ))}
-          {row.recurrence_months ? (
-            <p className="p23-schedule-next">
-              <strong>Next occurrence:</strong>{' '}
-              {nextOccurrence
-                ? `${formatDate(nextOccurrence.scheduled_date)} (Schedule #${nextOccurrence.schedule_id}, ${nextOccurrence.status})`
-                : 'Not in the current list — it is created automatically from the completion date.'}
-            </p>
-          ) : null}
-          <p className="p23-help-text">
-            Completed schedules can't be edited or cancelled — the work is already recorded{row.resulting_maintenance_id ? ` in Maintenance #${row.resulting_maintenance_id}` : ''}. Make corrections on that record instead.
-          </p>
         </div>
       )}
 

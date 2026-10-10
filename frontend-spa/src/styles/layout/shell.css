@@ -539,135 +539,65 @@ html[data-theme="light"] .impersonation-banner-return { color: #92400e; }
 /* MAIN CONTENT PADDING */
 .content-body { padding: 28px 32px; }
 
-/* WORKSPACE FOOTER */
+/* WORKSPACE FOOTER — a single quiet row under the content column (never
+   under the sidebar, never sticky). Neutral surface + hairline top border so
+   it reads as page chrome, not content. */
 .workspace-footer {
   margin-top: auto;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 24px 32px;
-  padding: 40px 40px;
-  background: #2563eb;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-3) 32px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  font-size: var(--font-size-2xs);
+  line-height: var(--line-height-normal);
+  color: var(--text-muted);
 }
-.workspace-footer-brand {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  min-width: 0;
-}
-.workspace-footer-wordmark {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.workspace-footer-gear-icon {
-  color: #ffffff;
-  /* White gear on the blue footer — draw the center ring in the footer blue so it stays visible */
-  --gear-ring: #2563eb;
-}
-.workspace-footer-wordmark .vms-wordmark {
-  color: #ffffff;
-}
-/* Footer text is solid white: the 75-88% white it used before fell below
-   4.5:1 on the brand blue. Links are told apart by underline instead. */
-.workspace-footer-tagline {
-  font-style: italic;
-  font-size: 0.95rem;
-  color: #ffffff;
+.workspace-footer-copyright {
   margin: 0;
-}
-.workspace-footer-social {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.workspace-footer-social a {
-  display: inline-flex;
-  color: #ffffff;
-  opacity: 0.9;
-  transition: opacity 0.15s;
-}
-.workspace-footer-social a:hover {
-  opacity: 1;
-}
-.workspace-footer-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 14px;
-}
-.workspace-footer-buttons {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.workspace-footer-btn {
-  display: inline-block;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.workspace-footer-btn-light {
-  background: #ffffff;
-  border: 1px solid #ffffff;
-  color: #2563eb;
-}
-.workspace-footer-btn-light:hover {
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-.workspace-footer-btn-dark {
-  background: rgba(15, 23, 42, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  color: #ffffff;
-}
-.workspace-footer-btn-dark:hover {
-  background: rgba(15, 23, 42, 0.4);
+  color: inherit;
 }
 .workspace-footer-links {
   display: flex;
   align-items: center;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
 }
 .workspace-footer-links a {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #ffffff;
+  color: inherit;
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  border-radius: var(--radius-xs);
+}
+.workspace-footer-links a:hover {
+  color: var(--text-strong);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.workspace-footer-links a:hover {
-  color: #ffffff;
-}
-.workspace-footer-copyright {
-  font-size: 0.78rem;
-  color: #ffffff;
-  white-space: nowrap;
-  margin: 0;
+.workspace-footer-links a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
-@media (max-width: 900px) {
+/* Side padding tracks .content-body in each theme so the text lines up
+   with the page content above it. */
+html[data-theme="light"] .workspace-footer {
+  padding-inline: 24px;
+}
+@media (max-width: 768px) {
+  .workspace-footer,
+  html[data-theme="light"] .workspace-footer {
+    padding-inline: 14px;
+  }
+}
+@media (max-width: 640px) {
   .workspace-footer {
-    justify-content: center;
-    text-align: center;
-  }
-  .workspace-footer-actions {
-    align-items: center;
-    min-width: 0;
-  }
-  .workspace-footer-buttons,
-  .workspace-footer-links {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  .workspace-footer-copyright {
-    white-space: normal;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
   }
 }
 

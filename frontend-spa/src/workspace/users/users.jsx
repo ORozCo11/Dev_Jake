@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Icon from '../../components/Icon';
 import api from '../../api/axios';
 import Modal from '../components/Modal';
@@ -139,15 +139,17 @@ export function ProfileMenu({ user, open, setOpen, onLogout, onOpenNotifications
           <button className="profile-menu-item" type="button" onClick={() => { onOpenNotifications(); setOpen(false); }}>
             <Icon name="bell" size={15} /> Notifications
           </button>
+          <Link className="profile-menu-item" to="/support" onClick={() => setOpen(false)}>
+            <Icon name="info" size={15} /> Help &amp; Support
+          </Link>
+          <Link className="profile-menu-item" to="/support#contact" onClick={() => setOpen(false)}>
+            <Icon name="mail" size={15} /> Contact Us
+          </Link>
 
           <div className="profile-menu-divider" />
 
           <button className="profile-menu-item profile-menu-item-danger" type="button" onClick={onLogout}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-              <polyline points="16 17 21 12 16 7"></polyline>
-              <line x1="21" y1="12" x2="9" y2="12"></line>
-            </svg>
+            <Icon name="logout" size={15} />
             Logout
           </button>
         </div>

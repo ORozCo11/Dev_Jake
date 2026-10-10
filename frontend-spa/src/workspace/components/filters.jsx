@@ -394,6 +394,37 @@ export function ActiveFilterChips({ groups }) {
   );
 }
 
+export function VehicleFilterPanel(props) {
+  const [expanded, setExpanded] = useState(false);
+  const activeCount = [
+    props.filterCategory, props.filterCapacity, props.filterStatus,
+    props.filterPriority, props.filterLocation, props.filterDomain,
+    props.filterReadiness,
+  ].reduce((sum, values) => sum + (values?.length ?? 0), 0);
+
+  return (
+    <div className="vehicle-filter-panel">
+      <button type="button" className="vehicle-filter-toggle" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls="vehicle-advanced-filters">
+        <span><Icon name="filter" size={15} /> Advanced Filters {activeCount > 0 && <strong>{activeCount}</strong>}</span>
+        <Icon name="chevronDown" size={15} className={expanded ? 'is-expanded' : ''} />
+      </button>
+      {expanded && (
+        <div id="vehicle-advanced-filters">
+          <FilterBar
+            {...props}
+            priorityLabel="Condition"
+            extraFilters={[{
+              key: 'readiness', label: 'Response Readiness', options: ['Ready', 'Not Ready'],
+              selected: props.filterReadiness, setSelected: props.setFilterReadiness,
+            }]}
+          />
+        </div>
+      )}
+      {!expanded && activeCount > 0 && <p className="vehicle-filter-summary">{activeCount} applied filter{activeCount === 1 ? '' : 's'} · Expand to review or clear</p>}
+    </div>
+  );
+}
+
 export function FilterBar({
   categories = [],
   vehicles = [],

@@ -123,7 +123,7 @@ export function DataTable({ columns, rows, compact = false, onRowClick, onReorde
 // module's table, matching the Vehicle Management stat cards exactly.
 // `cards` is [{ key, label, icon, bg, color }]; `counts` maps key -> number;
 // clicking a card toggles `activeFilter` via `onFilterChange`.
-export function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange, gridClassName = '' }) {
+export function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, activeFilter, onFilterChange, onTotalClick, gridClassName = '' }) {
   const isFilterMulti = Array.isArray(activeFilter);
   const isTotalActive = isFilterMulti ? activeFilter.length === 0 : !activeFilter;
   return (
@@ -135,7 +135,7 @@ export function ModuleStatCards({ totalLabel = 'Total', total, cards, counts, ac
           cursor: 'pointer',
           boxShadow: isTotalActive ? '0 0 0 2px #2563eb' : undefined,
         }}
-        onClick={() => onFilterChange(isFilterMulti ? [] : '')}
+        onClick={() => onTotalClick ? onTotalClick() : onFilterChange(isFilterMulti ? [] : '')}
         title={`Show all ${totalLabel.replace(/^Total\s*/i, '') || 'items'}`.trim()}
       >
         <span className="metric-card-icon is-total">

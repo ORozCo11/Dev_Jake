@@ -124,9 +124,7 @@ export function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
         <div className="veh-files-head-title"><Icon name="clipboard" size={16} /><h4>Files</h4></div>
         <div className="veh-files-head-actions">
           <button type="button" className="file-card-icon-btn" onClick={() => openModal()} title="Expand" aria-label="Expand">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-            </svg>
+            <Icon name="maximize" size={13} />
           </button>
           {canManage && (
             <button type="button" className="file-card-icon-btn" onClick={() => openModal()} title="Add file" aria-label="Add file">
@@ -169,11 +167,7 @@ export function VehicleFiles({ vehicleId, canManage, onRequestConfirmation }) {
         )}
         {canManage && (
           <button type="button" className="file-card-dropzone veh-files-dropzone-trigger" onClick={() => openModal()}>
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 18a4.5 4.5 0 0 1-1-8.9A5.5 5.5 0 0 1 16.7 7 4.5 4.5 0 0 1 18 18" />
-              <path d="M12 12v7" />
-              <path d="M9.5 14.5 12 12l2.5 2.5" />
-            </svg>
+            <Icon name="upload" size={30} strokeWidth={1.6} />
             <span>Drag file here</span>
           </button>
         )}
@@ -387,11 +381,7 @@ export function VehicleFilesModal({ onClose, vehicleId, documents, canManage, on
                 style={{ display: 'none' }}
                 onChange={(e) => { const file = e.target.files?.[0]; if (file) handlePick(file); }}
               />
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 18a4.5 4.5 0 0 1-1-8.9A5.5 5.5 0 0 1 16.7 7 4.5 4.5 0 0 1 18 18" />
-                <path d="M12 12v7" />
-                <path d="M9.5 14.5 12 12l2.5 2.5" />
-              </svg>
+              <Icon name="upload" size={30} strokeWidth={1.6} />
               <span>Drag file here</span>
             </div>
           )}
@@ -911,11 +901,7 @@ export function VehicleProfilePage({ vehicleId, lookups, allHubs, basePath, canM
                     <option value="summary">Vehicle Summary Report</option>
                   </select>
                   <button type="button" className="veh-reports-print-btn" onClick={() => window.print()} title="Print report" aria-label="Print report">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M6 9V3h12v6" />
-                      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                      <rect x="6" y="14" width="12" height="8" />
-                    </svg>
+                    <Icon name="print" size={16} />
                   </button>
                 </div>
               </section>

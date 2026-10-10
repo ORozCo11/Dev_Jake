@@ -9,31 +9,26 @@ import { LogRecordCell, RelatedRecordLink } from './history/activity';
 import { READINESS_BADGE, isScheduleOverdue, issueNeedsTicket } from './lib/workflow';
 import { MAINTENANCE_PROGRESS_STAGES, MAINTENANCE_SOURCE_INFO, findNextScheduleOccurrence, formatMaintenanceCost, isClosedUnverified, isRecordReturnedForRework, maintenanceStageIndex, recurrenceLabel, recurrenceSentence, scheduleDueLabel, scheduleStatusNote } from './lib/workflow';
 import { ScheduleActionMenu } from './maintenance/maintenance';
-import { IssueSeverityBadge, IssueTicketStateBadge } from './issues/issueBadges';
+import { IssueSeverityBadge, IssueStatusBadge } from './issues/issueBadges';
 import { ConditionResultBadge, ConditionTicketCell } from './conditions/conditions';
 
-export function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket, onReadinessCheck) {
+export function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filterStatus, onViewTicket, onReadinessCheck, onViewVehicle) {
   const columns = [
-    { key: 'id', label: 'ID', locked: true, className: 'cell-center', render: (row) => row.vehicle_id },
     {
       key: 'vehicle',
       label: 'Vehicle',
       locked: true,
       render: (row) => (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+        <div className="fleet-vehicle-cell">
           <PhotoCell alt={row.vehicle_name} url={row.photo_url} />
-          <span className="row-title-text">{row.vehicle_name}</span>
+          <span><strong className="row-title-text">{row.vehicle_name}</strong><small>{row.category?.category_name ?? 'Unassigned type'}</small></span>
         </div>
       ),
     },
-    { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (row) => row.plate_number },
-    { key: 'type', label: 'Type', render: (row) => row.category?.category_name ?? 'Unassigned' },
-    { key: 'brand_model', label: 'Brand / Model', render: (row) => `${row.brand} ${row.model}` },
-    { key: 'capacity', label: 'Capacity', className: 'cell-center', render: (row) => row.capacity },
-    { key: 'location', label: 'Location', render: (row) => row.current_location },
+    { key: 'plate', label: 'Plate Number', render: (row) => <span className="plate-number">{row.plate_number}</span> },
     {
       key: 'status',
-      label: 'Status',
+      label: 'Operational Status',
       className: 'cell-center',
       render: (row) => (
         // centered (not flex-start) so it lines up with every other badge
@@ -60,7 +55,7 @@ export function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filter
         </div>
       ),
     },
-    { key: 'condition', label: 'Condition', className: 'cell-center', render: (row) => <StatusBadge value={row.condition} /> },
+    { key: 'condition', label: 'Physical Condition', className: 'cell-center', render: (row) => <StatusBadge value={row.condition} /> },
     {
       key: 'ready',
       label: 'Ready to Respond',
@@ -83,57 +78,34 @@ export function vehicleColumns(user, onEdit, deleteRecord, restoreRecord, filter
     },
   ];
 
-  if (filterStatus?.includes?.('Inactive')) {
-    columns.push(
-      { key: 'archived_at', label: 'Archived At', className: 'cell-center', render: (row) => <DateBadge value={row.archived_at} /> },
-      { key: 'archived_by', label: 'Archived By', className: 'cell-center', render: (row) => <UserAvatarName user={row.archived_by} fallback="—" /> },
-    );
-  }
-
   const canEditVehicle = canDo(user, 'vehicle.edit');
   const canRestoreVehicle = canDo(user, 'vehicle.restore');
   const canArchiveVehicle = canDo(user, 'vehicle.archive');
   // Readiness checks are a Custodian's hands-on job — give them an Action
   // column even though they can't edit/restore/archive vehicles.
   const canCheckReadiness = canDo(user, 'vehicle.readiness_check') && !!onReadinessCheck;
-  if (canEditVehicle || canRestoreVehicle || canArchiveVehicle || canCheckReadiness) {
-    columns.push({
-      key: 'action',
-      label: 'Action',
-      locked: true,
-      className: 'cell-center',
-      render: (row) => (
-        <div className="row-actions">
-          {/* Jumps straight to whatever ticket is keeping this vehicle
-              unavailable — no need to go hunt for it in Maintenance Tickets.
-              A same-size invisible spacer holds this slot when absent, so
-              Edit/Delete always land in the same column across rows instead
-              of shifting depending on whether a row has this button. */}
-          {row.open_ticket_id && onViewTicket ? (
-            <button className="btn-view-action icon-btn" onClick={() => onViewTicket({ ticket_id: row.open_ticket_id })} type="button" title={`View Ticket #${row.open_ticket_id}`} aria-label={`View Ticket #${row.open_ticket_id}`}><Icon name="ticket" size={14} /></button>
-          ) : (
-            <span className="icon-btn-spacer" aria-hidden="true" />
-          )}
-          {canCheckReadiness && (
-            (row.status === 'Inactive' || row.status === 'Decommissioned') ? (
-              <span className="icon-btn-spacer" aria-hidden="true" />
-            ) : (
-              <button className="btn-confirm-action icon-btn" onClick={() => onReadinessCheck(row)} type="button" title="Record Readiness Check" aria-label="Record Readiness Check"><Icon name="checkCircle" size={14} /></button>
-            )
-          )}
+  columns.push({
+    key: 'action',
+    label: 'Actions',
+    locked: true,
+    className: 'cell-center',
+    render: (row) => (
+      <details className="vehicle-actions-menu" onClick={(event) => event.stopPropagation()}>
+        <summary aria-label={`Actions for ${row.vehicle_name}`}>Actions <Icon name="chevronDown" size={13} /></summary>
+        <div className="vehicle-actions-popover">
+          <button type="button" onClick={() => onViewVehicle?.(row)}><Icon name="search" size={14} /> View Vehicle</button>
+          {row.open_ticket_id && onViewTicket && <button type="button" onClick={() => onViewTicket({ ticket_id: row.open_ticket_id })}><Icon name="ticket" size={14} /> View Maintenance</button>}
+          {canCheckReadiness && !['Inactive', 'Decommissioned'].includes(row.status) && <button type="button" onClick={() => onReadinessCheck(row)}><Icon name="checkCircle" size={14} /> Record Readiness Check</button>}
+          {canEditVehicle && <button type="button" onClick={() => onEdit(row)}><Icon name="edit" size={14} /> Edit Vehicle</button>}
           {(row.status === 'Inactive' || row.status === 'Decommissioned') ? (
-            canRestoreVehicle && (
-              <button className="btn-edit-action icon-btn" onClick={() => restoreRecord(`/vehicles/${row.vehicle_id}/restore`, row.status === 'Decommissioned' ? 'Vehicle recommissioned.' : 'Vehicle restored.', `Return ${row.vehicle_name} to active service? It counts toward availability again; run a readiness check before dispatching it.`, { title: `${row.status === 'Decommissioned' ? 'Recommission' : 'Restore'} ${row.vehicle_name}`, confirmLabel: row.status === 'Decommissioned' ? 'Recommission' : 'Restore' })} type="button" title={row.status === 'Decommissioned' ? 'Recommission' : 'Restore'} aria-label="Restore"><Icon name="undo" size={14} /></button>
-            )
+            canRestoreVehicle && <button type="button" onClick={() => restoreRecord(`/vehicles/${row.vehicle_id}/restore`, row.status === 'Decommissioned' ? 'Vehicle recommissioned.' : 'Vehicle restored.', `Return ${row.vehicle_name} to active service? It counts toward availability again; run a readiness check before dispatching it.`, { title: `${row.status === 'Decommissioned' ? 'Recommission' : 'Restore'} ${row.vehicle_name}`, confirmLabel: row.status === 'Decommissioned' ? 'Recommission' : 'Restore' })}><Icon name="undo" size={14} /> {row.status === 'Decommissioned' ? 'Recommission Vehicle' : 'Restore Vehicle'}</button>
           ) : (
-            canArchiveVehicle && (
-              <button className="btn-archive-action icon-btn" onClick={() => deleteRecord(`/vehicles/${row.vehicle_id}`, 'Vehicle marked inactive.', `${row.vehicle_name} will be marked Inactive: it drops out of availability and readiness counts and can't be dispatched. Its history is kept, and it can be restored later.`, { title: `Deactivate ${row.vehicle_name}`, confirmLabel: 'Deactivate' })} type="button" title="Deactivate (reversible)" aria-label="Deactivate"><Icon name="archive" size={14} /></button>
-            )
+            canArchiveVehicle && <button type="button" className="is-danger" onClick={() => deleteRecord(`/vehicles/${row.vehicle_id}`, 'Vehicle marked inactive.', `${row.vehicle_name} will be marked Inactive: it drops out of availability and readiness counts and can't be dispatched. Its history is kept, and it can be restored later.`, { title: `Archive ${row.vehicle_name}`, confirmLabel: 'Archive' })}><Icon name="archive" size={14} /> Archive Vehicle</button>
           )}
         </div>
-      ),
-    });
-  }
+      </details>
+    ),
+  });
 
   return columns;
 }
@@ -274,10 +246,7 @@ export function locationColumns(currentUser, onViewOnMap, onEdit) {
           aria-label="View vehicle on map"
           type="button"
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
+          <Icon name="eye" size={16} />
         </button>
       </div>
     ),
@@ -367,8 +336,33 @@ export function conditionColumns(user, onEdit, deleteRecord, onCreateTicketFromC
   return columns;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
+function IssueRowActions({ row, role, user, onView, onEdit, onCreateTicketFromIssue, deleteRecord, onViewTicket, onDismiss }) {
+  const canOpenTicket = Boolean(row.maintenance_ticket && onViewTicket && ['Admin', 'Custodian'].includes(role));
+  const canPropose = Boolean(onCreateTicketFromIssue && (canDo(user, 'ticket.create') || canDo(user, 'ticket.propose')) && ['Pending', 'Under Review'].includes(row.status) && !row.maintenance_ticket);
+  const canEdit = canDo(user, 'issue.edit') && (role !== 'Custodian' || row.status === 'Pending');
+  const canDelete = role === 'Custodian' && row.status === 'Pending';
+  const canDismiss = Boolean(canDo(user, 'issue.dismiss') && onDismiss && issueNeedsTicket(row));
+  const hasMore = canOpenTicket || canPropose || canEdit || canDelete || canDismiss;
+  return (
+    <div className="issue-row-actions">
+      <button className="ghost-button issue-row-view" onClick={() => onView(row)} type="button">View Details</button>
+      {hasMore && <details className="issue-more-actions" onClick={(event) => event.stopPropagation()}>
+        <summary aria-label={`More actions for report ${row.issue_report_id}`}><span>More Actions</span><Icon name="chevronDown" size={14} /></summary>
+        <div className="issue-more-menu" role="menu">
+          {canOpenTicket && <button type="button" role="menuitem" onClick={() => onViewTicket(row.maintenance_ticket)}><Icon name="ticket" size={14} /> View Related Ticket</button>}
+          {canPropose && <button type="button" role="menuitem" onClick={() => onCreateTicketFromIssue(row)}><Icon name="ticket" size={14} /> {canDo(user, 'ticket.propose') ? 'Propose Repair Work' : 'Create Ticket'}</button>}
+          {canEdit && <button type="button" role="menuitem" onClick={() => onEdit(row)}><Icon name="edit" size={14} /> Edit Report</button>}
+          {canDismiss && <button type="button" role="menuitem" onClick={() => onDismiss(row)}><Icon name="close" size={14} /> Dismiss Report</button>}
+          {canDelete && <button className="is-danger" type="button" role="menuitem" onClick={() => deleteRecord(`/issues/${row.issue_report_id}`, 'Issue deleted.', `Delete this "${row.issue_type}" report for ${row.vehicle?.vehicle_name ?? 'this vehicle'}? This cannot be undone.`, { title: 'Delete issue report', confirmLabel: 'Delete' })}><Icon name="trash" size={14} /> Delete Report</button>}
+        </div>
+      </details>}
+    </div>
+  );
+}
+
 export function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, onView, deleteRecord, user, onViewTicket, onDismiss) {
-  const columns = [
+  const legacyColumns = [
     { key: 'id', label: 'ID', width: '5%', locked: true, className: 'cell-center', render: (row) => row.issue_report_id },
     {
       key: 'issue',
@@ -400,31 +394,41 @@ export function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoT
     },
     { key: 'date', label: 'Date', width: '9%', className: 'cell-center', render: (row) => <DateBadge value={row.created_at} /> },
   ];
+  void legacyColumns;
+
+  // The full record remains available on the detail page; the default list
+  // is deliberately limited to the fields needed to find and understand it.
+  const columns = [
+    {
+      key: 'issue', label: 'Reported Problem', width: '24%', locked: true,
+      render: (row) => <span className="issue-list-primary"><strong>{row.issue_type}</strong><small>Report #{row.issue_report_id}</small></span>,
+    },
+    {
+      key: 'vehicle', label: 'Vehicle', width: '20%',
+      render: (row) => <span className="issue-list-primary"><strong>{row.vehicle?.vehicle_name ?? 'Vehicle unavailable'}</strong><small>{row.vehicle?.plate_number ?? 'No plate number'}</small></span>,
+    },
+    { key: 'severity', label: 'Severity', width: '11%', render: (row) => <IssueSeverityBadge value={row.severity_level} /> },
+    { key: 'status', label: 'Status', width: '17%', render: (row) => <IssueStatusBadge value={row.status} /> },
+    { key: 'date', label: 'Date', width: '12%', render: (row) => <span className="issue-date-text">{formatDate(row.created_at)}</span> },
+  ];
 
   // Where this report stands against the ticket workflow — No ticket yet /
   // Ticket proposed / Proposal declined / Ticket active / Resolved — as text
   // + icon, with the ticket number as a link for roles that can open it.
-  columns.splice(columns.length - 1, 0, {
-    key: 'ticket',
-    label: 'Ticket',
-    width: '11%',
-    className: 'cell-center',
-    render: (row) => <IssueTicketStateBadge issue={row} onViewTicket={['Admin', 'Custodian'].includes(role) ? onViewTicket : undefined} />,
-  });
-
   if (['Admin', 'Maintenance Personnel'].includes(role)) {
     columns.push({
       key: 'action',
       label: 'Action',
-      width: '10%',
+      width: '16%',
       locked: true,
       className: 'cell-center',
-      render: (row) => (
+      render: (row) => <IssueRowActions {...{ row, role, user, onView, onEdit, onCreateTicketFromIssue, deleteRecord, onViewTicket, onDismiss }} />,
+      legacyRender: (row) => (
         <div className="row-actions" style={{ flexWrap: 'nowrap' }}>
           {row.maintenance_ticket && onViewTicket ? (
-            <button className="btn-view-action icon-btn" onClick={() => onViewTicket({ ticket_id: row.maintenance_ticket.ticket_id })} type="button" title={`View Ticket #${row.maintenance_ticket.ticket_id}`} aria-label={`View Ticket #${row.maintenance_ticket.ticket_id}`}><Icon name="eye" size={14} /></button>
+            <button className="ghost-button issue-row-view" onClick={() => onView(row)} type="button">View Details</button>
           ) : (
-            <button className="btn-view-action icon-btn" onClick={() => onView(row)} type="button" title="View" aria-label="View"><Icon name="eye" size={14} /></button>
+            <button className="ghost-button issue-row-view" onClick={() => onView(row)} type="button">View Details</button>
           )}
           {/* issue.edit is Admin+Custodian only (Phase B4 narrowed Maintenance
               Personnel out) — gated by ability rather than this block's role
@@ -446,14 +450,16 @@ export function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoT
   if (role === 'Custodian') {
     columns.push({
       label: 'Action',
-      width: '10%',
+      key: 'action',
+      width: '16%',
       className: 'cell-center',
-      render: (row) => (
+      render: (row) => <IssueRowActions {...{ row, role, user, onView, onEdit, onCreateTicketFromIssue, deleteRecord, onViewTicket, onDismiss }} />,
+      legacyRender: (row) => (
         <div className="row-actions" style={{ flexWrap: 'nowrap' }}>
           {row.maintenance_ticket && onViewTicket ? (
-            <button className="btn-view-action icon-btn" onClick={() => onViewTicket({ ticket_id: row.maintenance_ticket.ticket_id })} type="button" title={`View Ticket #${row.maintenance_ticket.ticket_id}`} aria-label={`View Ticket #${row.maintenance_ticket.ticket_id}`}><Icon name="eye" size={14} /></button>
+            <button className="ghost-button issue-row-view" onClick={() => onView(row)} type="button">View Details</button>
           ) : (
-            <button className="btn-view-action icon-btn" onClick={() => onView(row)} type="button" title="View" aria-label="View"><Icon name="eye" size={14} /></button>
+            <button className="ghost-button issue-row-view" onClick={() => onView(row)} type="button">View Details</button>
           )}
           {/* A Custodian turns a flagged concern into a ticket proposal right
               from the row — only while the issue can still take one. */}

@@ -9,7 +9,7 @@ import { useColumnChooser } from '../hooks/useColumnChooser';
 import { formatDate, formatTime, resolvePhotoUrl } from '../lib/format';
 import { hasRole } from '../lib/permissions';
 import { exportRowsToCsv } from '../lib/reports';
-import { TICKET_INSPECTION_STAT_CARDS, TICKET_STAT_CARDS, TICKET_VERIFICATION_STAT_CARDS, TICKET_WORK_ORDER_STAT_CARDS, WORK_TRACKER_STAT_CARDS } from '../lib/statCards';
+import { TICKET_INSPECTION_STAT_CARDS, TICKET_VERIFICATION_STAT_CARDS, TICKET_WORK_ORDER_STAT_CARDS, WORK_TRACKER_STAT_CARDS } from '../lib/statCards';
 import { flattenWorkTrackerRows, groupMechanicRowsByTicket, groupWorkTrackerByTicket, ticketAwaiting, ticketRepairProgress, ticketWorkflowStage, workTrackerBucket, workTrackerNeedsAction, workTrackerOutcome } from '../lib/workflow';
 import { LatestIssueCard } from '../issues/issues';
 import { TicketVerificationForm } from './VerificationForm';
@@ -191,8 +191,9 @@ export function TicketModule({
   onViewVehicle,
 }) {
   const [ticketViewMode, setTicketViewMode] = useState(
-    () => localStorage.getItem('vms_ticket_view') || 'card'
+    () => localStorage.getItem('vms_ticket_view') || 'table'
   );
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const changeTicketViewMode = (mode) => {
     setTicketViewMode(mode);
@@ -249,24 +250,96 @@ export function TicketModule({
     return counts;
   }, [statSourceTickets]);
 
+  const actionableTickets = useMemo(() => statSourceTickets.filter((ticket) => (
+    ticket.status === 'Pending Approval'
+    || (ticket.sub_issues ?? []).some((issue) => issue.status === 'Pending Approval')
+  )), [statSourceTickets]);
+
+  const activeFilterCount = filterCategory.length + filterCapacity.length + filterVehicle.length
+    + filterMechanic.length + filterCustodian.length + filterStatus.length + filterPriority.length
+    + (filterDateStart ? 1 : 0) + (filterDateEnd ? 1 : 0);
+
+  const clearTicketFilters = () => {
+    setFilterCategory([]);
+    setFilterCapacity([]);
+    setFilterVehicle([]);
+    setFilterMechanic([]);
+    setFilterCustodian([]);
+    setFilterStatus([]);
+    setFilterPriority([]);
+    setFilterDateStart('');
+    setFilterDateEnd('');
+  };
+
   const ticketColumnDefs =useMemo(() => ticketTableColumns(unreadByTicket), [unreadByTicket]);
   const ticketColumnChooser = useColumnChooser('vms_ticket_columns', ticketColumnDefs);
 
   return (
-    <div className="module-grid">
-      <DismissibleHint description="Central Ticket Ledger — review Custodian proposals, approve and assign a mechanic, then let the mechanic's submission and the Custodian's verification carry the ticket through to Closed." />
-      <ModuleStatCards
-        totalLabel="Total Tickets"
-        total={ticketStats.total}
-        cards={TICKET_STAT_CARDS}
-        counts={ticketStats}
-        activeFilter={filterStatus}
-        onFilterChange={setFilterStatus}
-      />
+    <div className="module-grid p24-ticket-page">
+      <header className="p24-ticket-header">
+        <div>
+          <span className="p24-eyebrow">Operations</span>
+          <h2>Maintenance Tickets</h2>
+          <p>Manage vehicle maintenance, repairs, and approvals.</p>
+        </div>
+        <button type="button" className="primary-button p24-create-ticket" onClick={onCreateNew}>
+          <Icon name="plus" size={16} /> Create Ticket
+        </button>
+      </header>
+
+      <section className="p24-ticket-metrics" aria-label="Ticket summary">
+        {[
+          { label: 'Total Tickets', value: ticketStats.total, icon: 'ticket', status: null },
+          { label: 'Pending Approval', value: ticketStats['Pending Approval'], icon: 'alert', status: 'Pending Approval' },
+          { label: 'Active Repairs', value: ticketStats.Active, icon: 'wrench', status: 'Active' },
+          { label: 'Completed', value: ticketStats.Closed, icon: 'checkCircle', status: 'Closed' },
+        ].map((metric) => {
+          const active = metric.status ? filterStatus.length === 1 && filterStatus[0] === metric.status : filterStatus.length === 0;
+          return (
+            <button type="button" key={metric.label} className={`p24-ticket-metric${active ? ' is-active' : ''}`} onClick={() => metric.status ? setFilterStatus(active ? [] : [metric.status]) : clearTicketFilters()}>
+              <span className="p24-ticket-metric-icon"><Icon name={metric.icon} size={17} /></span>
+              <span><small>{metric.label}</small><strong>{metric.value ?? 0}</strong></span>
+            </button>
+          );
+        })}
+      </section>
+
+      <section className="panel p24-action-panel">
+        <div className="p24-section-head">
+          <div><span className="p24-eyebrow">Action Required</span><h3>Tickets needing an Admin decision</h3></div>
+          <span className="p24-action-count">{actionableTickets.length}</span>
+        </div>
+        {actionableTickets.length === 0 ? (
+          <p className="p24-action-empty"><Icon name="checkCircle" size={16} /> No ticket currently requires your approval.</p>
+        ) : (
+          <div className="p24-action-list">
+            {actionableTickets.slice(0, 5).map((ticket) => (
+              <button type="button" className="p24-action-row" key={ticket.ticket_id} onClick={() => onViewTicket(ticket)}>
+                <span className="p24-action-id">#{ticket.ticket_id}</span>
+                <span className="p24-action-copy">
+                  <strong>{ticket.ticket_title}</strong>
+                  <small>{ticket.vehicle?.vehicle_name ?? 'Vehicle unavailable'} · {ticket.status === 'Pending Approval' ? 'Review proposal' : 'Review cannibalized repair'}</small>
+                </span>
+                <TicketStatusBadge value={ticket.priority} />
+                <Icon name="chevronRight" size={15} />
+              </button>
+            ))}
+          </div>
+        )}
+        {actionableTickets.length > 5 && <p className="p24-action-note">Showing 5 of {actionableTickets.length} actionable tickets. Use the table below to review all.</p>}
+      </section>
+
+      <div className="p24-ticket-tools">
+        <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search ticket ID, issue, vehicle, or personnel..." />
+        <button type="button" className={`ghost-button p24-filter-toggle${showAdvancedFilters ? ' is-active' : ''}`} onClick={() => setShowAdvancedFilters((open) => !open)} aria-expanded={showAdvancedFilters}>
+          <Icon name="search" size={14} /> Advanced Filters {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
+        </button>
+        {activeFilterCount > 0 && <button type="button" className="p24-clear-filters" onClick={clearTicketFilters}>Clear filters</button>}
+      </div>
       {/* Same layout as the Issue Reports page: the priority bar and the
           filters stack on the left, Latest Reports spans both on the right.
           The bar counts the same full list as the stat cards above. */}
-      <div className={`ticket-summary-grid${recentIssues && recentIssues.length > 0 ? '' : ' no-side'}`}>
+      {showAdvancedFilters && <div className={`ticket-summary-grid p24-advanced-area${recentIssues && recentIssues.length > 0 ? '' : ' no-side'}`}>
         <div className="ticket-summary-chart">
           <StackedBarChart
             title="Maintenance Tickets"
@@ -311,11 +384,11 @@ export function TicketModule({
         {recentIssues && recentIssues.length > 0 && (
           <LatestIssueCard issues={recentIssues} onRowClick={(row) => row.vehicle && onViewVehicle?.(row.vehicle)} />
         )}
-      </div>
+      </div>}
 
       <TicketsReadyToClosePanel tickets={readyToCloseTickets} onViewTicket={onViewTicket} />
 
-      <section className="panel" style={{ width: '100%' }}>
+      <section className="panel p24-ticket-management" style={{ width: '100%' }}>
         {/* Alert banners */}
         {pendingCannibalizationCount > 0 && (
           <div className="ticket-alert-banner formaint">
@@ -323,8 +396,8 @@ export function TicketModule({
           </div>
         )}
 
-        <div className="panel-header-bar" style={{ marginBottom: '8px' }}>
-          <h3>All Tickets <span className="count-badge">{tickets.length}</span></h3>
+        <div className="panel-header-bar p24-management-head">
+          <div><span className="p24-eyebrow">Ticket Management</span><h3>All Tickets <span className="count-badge">{tickets.length}</span></h3></div>
           <div className="ticket-list-toolbar-actions">
             {onViewArchives && (
               <button type="button" className="ghost-button" onClick={onViewArchives}>
@@ -332,21 +405,12 @@ export function TicketModule({
               </button>
             )}
             <ViewModeDropdown value={ticketViewMode} onChange={changeTicketViewMode} />
-            <LocalSearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search tickets..."
-              onAdd={onCreateNew}
-              addLabel="Create Ticket"
-              columnChooser={ticketViewMode === 'table' ? ticketColumnChooser : undefined}
-            />
+            {ticketViewMode === 'table' && <ColumnChooserButton {...ticketColumnChooser} />}
           </div>
         </div>
 
-        <div style={{ height: '12px' }} />
-
         {tickets.length === 0
-          ? <p className="empty-state">No tickets yet. Create one to begin the workflow.</p>
+          ? <p className="empty-state">No tickets match the current search and filters.</p>
           : ticketViewMode === 'table'
             ? <PaginatedTable columns={ticketColumnChooser.visibleColumns} onReorderColumn={ticketColumnChooser.reorderColumn} rows={tickets} onRowClick={onViewTicket} />
             : (

@@ -12,10 +12,8 @@ export const ISSUE_STATUS_COLORS = {
 export const VEHICLE_STAT_CARDS = [
   { key: 'Available', label: 'Available', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
   { key: 'Under Maintenance', label: 'Under Maintenance', icon: 'wrench', bg: '#fef3c7', color: '#b45309' },
-  { key: 'Inactive', label: 'Inactive', icon: 'archive', bg: '#fee2e2', color: '#b91c1c' },
   // Distinct from "Available" — a vehicle can be Available yet never (or no
   // longer) proven ready by an actual readiness check. See responseReadinessState().
-  { key: 'ReadyToRespond', label: 'Ready to Respond', icon: 'checkCircle', bg: '#dcfce7', color: '#15803d' },
   { key: 'NotReady', label: 'Not Ready to Respond', icon: 'alert', bg: '#fee2e2', color: '#b91c1c' },
 ];
 

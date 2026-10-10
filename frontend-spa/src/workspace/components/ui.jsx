@@ -564,14 +564,11 @@ export function TicketStageBadge({ ticket, variant = 'flag' }) {
     </div>
   );
 }
-export function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add", onImport, columnChooser }) {
+export function LocalSearchInput({ value, onChange, placeholder = "Search...", onExport, onAdd, addLabel = "Add", onImport, columnChooser, showActionLabels = false }) {
   return (
     <div className="local-search-bar">
       <div className="local-search-container">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="local-search-icon">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
+        <Icon name="search" size={18} strokeWidth={2.2} className="local-search-icon" />
         <input
           type="text"
           value={value}
@@ -593,13 +590,15 @@ export function LocalSearchInput({ value, onChange, placeholder = "Search...", o
         </button>
       )}
       {onImport && (
-        <button className="export-btn" onClick={onImport} type="button" title="Import vehicles from a spreadsheet" aria-label="Import vehicles from a spreadsheet">
+        <button className={`export-btn${showActionLabels ? ' has-label' : ''}`} onClick={onImport} type="button" title="Import vehicles from a spreadsheet" aria-label="Import vehicles from a spreadsheet">
           <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="download" size={15} /></span>
+          {showActionLabels && <span>Import</span>}
         </button>
       )}
       {onExport && (
-        <button className="export-btn" onClick={onExport} type="button" title="Export to CSV" aria-label="Export to CSV">
+        <button className={`export-btn${showActionLabels ? ' has-label' : ''}`} onClick={onExport} type="button" title="Export to CSV" aria-label="Export to CSV">
           <Icon name="download" size={15} />
+          {showActionLabels && <span>Export</span>}
         </button>
       )}
     </div>

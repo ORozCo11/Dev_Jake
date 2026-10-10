@@ -7,7 +7,7 @@ import { ColumnChart, DonutChart, HorizontalBarChart } from '../../components/la
 import Modal from '../components/Modal';
 import { ChartLegend } from '../components/ui';
 import { ACTION_QUEUE_META, buildLocalGreeting, dashboardMetricValue, dashboardRoleLabel } from '../lib/dashboard';
-import { clampPercent, formatForecastDate } from '../lib/format';
+import { clampPercent, formatDate, formatForecastDate } from '../lib/format';
 import { hasRole } from '../lib/permissions';
 import { CAPABILITY_STATE_LABEL, CONDITION_STAT_CARDS } from '../lib/statCards';
 import { READINESS_BADGE, isScheduleOverdue } from '../lib/workflow';
@@ -55,6 +55,31 @@ export function MyScheduledWorkRow({ item, onClick }) {
       <span className="action-queue-row-severity">{overdue ? 'OVERDUE' : item.scheduled_date}</span>
       <Icon name="chevronRight" size={14} className="action-queue-row-chevron" />
     </button>
+  );
+}
+
+function MaintenanceWorkOrderCard({ row, basePath, onNavigate }) {
+  const isActive = row.status === 'Under Repair';
+  const statusLabel = isActive ? 'Ready for repair work'
+    : row.status === 'For Inspection' ? 'Awaiting verification'
+      : row.status === 'Done' ? 'Completed'
+        : row.status;
+  return (
+    <article className="mp-work-card">
+      <div className="mp-work-card-main">
+        <span className="mp-work-vehicle">{row.vehicle?.vehicle_name ?? 'Vehicle not recorded'}</span>
+        <h4>{row.title || row.ticket_title || 'Maintenance work'}</h4>
+        <div className="mp-work-meta">
+          <span>Ticket #{row.ticket_id}</span>
+          {row.priority && <span className={`mp-priority is-${String(row.priority).toLowerCase()}`}>{row.priority} priority</span>}
+          <span className={`mp-work-status is-${isActive ? 'active' : 'waiting'}`}>{statusLabel}</span>
+        </div>
+      </div>
+      <div className="mp-work-actions">
+        {isActive && <button type="button" className="primary-button" onClick={() => onNavigate(`${basePath}/work-orders/${row.ticket_id}/${row.sub_issue_id}/log-repairs`)}>Log Repair</button>}
+        <button type="button" className="ghost-button" onClick={() => onNavigate(`${basePath}/tickets/${row.ticket_id}`)}>Open Work Order</button>
+      </div>
+    </article>
   );
 }
 
@@ -189,7 +214,7 @@ function NoReadyUnitAlert({ available, total, onReview }) {
   );
 }
 
-export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedules, onGoToModule, updatedAt = null }) {
+export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedules, onGoToModule, updatedAt = null, issues = [], verificationTickets = [] }) {
   const [weather, setWeather] = useState(null);
   const [greeting, setGreeting] = useState(() => buildLocalGreeting(user?.name));
   const [greetingRole, setGreetingRole] = useState(() => dashboardRoleLabel(user?.role));
@@ -199,6 +224,18 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
   // card; tapping one opens its full list in a popup instead of the list
   // living permanently on the page. null = no modal open.
   const [openDashboardModal, setOpenDashboardModal] = useState(null);
+  const [maintenanceTickets, setMaintenanceTickets] = useState([]);
+  const [maintenanceTicketsLoading, setMaintenanceTicketsLoading] = useState(() => hasRole(user, 'Maintenance Personnel') && !hasRole(user, 'Admin'));
+
+  useEffect(() => {
+    if (!hasRole(user, 'Maintenance Personnel') || hasRole(user, 'Admin')) return undefined;
+    let cancelled = false;
+    api.get('/tickets')
+      .then((response) => { if (!cancelled) setMaintenanceTickets(Array.isArray(response.data) ? response.data : []); })
+      .catch(() => { if (!cancelled) setMaintenanceTickets([]); })
+      .finally(() => { if (!cancelled) setMaintenanceTicketsLoading(false); });
+    return () => { cancelled = true; };
+  }, [user]);
 
   useEffect(() => {
     // Displayed time is minute-precision (no seconds), so a 1s tick would
@@ -347,6 +384,16 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
   const visibleTypeRows = (data.vehicles_by_type ?? []).slice(0, 5);
   const isAdminDashboard = hasRole(user, 'Admin');
   const isMaintenanceDashboard = hasRole(user, 'Maintenance Personnel') && !isAdminDashboard;
+  const myWorkOrders = maintenanceTickets.flatMap((ticket) => (ticket.sub_issues ?? [])
+    .filter((item) => String(item.assigned_mechanic_id) === String(user?.id))
+    .map((item) => ({ ...item, ticket_id: ticket.ticket_id, ticket_title: ticket.ticket_title, priority: ticket.priority, vehicle: ticket.vehicle })))
+    .sort((a, b) => {
+      const rank = (status) => status === 'Under Repair' ? 0 : status === 'For Inspection' ? 1 : status === 'Open' ? 2 : 3;
+      return rank(a.status) - rank(b.status) || Number(b.sub_issue_id) - Number(a.sub_issue_id);
+    });
+  const assignedWorkOrders = myWorkOrders.filter((row) => !['Done', 'Deferred'].includes(row.status));
+  const activeRepairCount = assignedWorkOrders.filter((row) => row.status === 'Under Repair').length;
+  const overduePersonalSchedules = myScheduledWork.filter(isScheduleOverdue);
   // Phase A4 — one departure away from an orphaned barangay (nobody left
   // who can manage users, vehicles, or approvals). GuardsLastAdmin blocks
   // that departure from happening through deactivate/role-change, but not
@@ -367,7 +414,179 @@ export function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoT
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
-  // Custodian / Maintenance Personnel get their own, leaner dashboard: their
+  if (isMaintenanceDashboard) {
+    return (
+      <main className="mp-dashboard" aria-labelledby="mp-dashboard-title">
+        <header className="mp-dashboard-header">
+          <div><span className="mp-dashboard-eyebrow">Maintenance Personnel</span><h2 id="mp-dashboard-title">My Maintenance Dashboard</h2><p>Your assigned repairs and upcoming maintenance.</p></div>
+          <button type="button" className="ghost-button" onClick={() => onGoToModule('ticketWorkOrders', [])}>View All Work Orders <Icon name="chevronRight" size={14} /></button>
+        </header>
+
+        {noVerifiedReady && (
+          <section className="mp-readiness-alert" role="alert">
+            <Icon name="alert" size={18} />
+            <div><strong>No vehicle is currently verified ready</strong><p>{availableVehicles > 0 ? `${availableVehicles} vehicle${availableVehicles === 1 ? ' is' : 's are'} available, but none has a readiness check from the last 24 hours.` : 'No fleet vehicle is available right now.'} This is a fleet-wide safety alert; readiness certification is handled through the authorized readiness process.</p></div>
+            <button type="button" className="ghost-button" onClick={() => onGoToModule('vehicles', [])}>View Fleet</button>
+          </section>
+        )}
+
+        <section className="mp-metrics" aria-label="Personal maintenance summary">
+          <button type="button" onClick={() => onGoToModule('ticketWorkOrders', [])}><Icon name="clipboard" size={17} /><span>Assigned Work Orders</span><strong>{assignedWorkOrders.length}</strong></button>
+          <button type="button" onClick={() => onGoToModule('ticketWorkOrders', [])}><Icon name="wrench" size={17} /><span>Active Repairs</span><strong>{activeRepairCount}</strong></button>
+          <button type="button" onClick={onGoToSchedules}><Icon name="calendar" size={17} /><span>Scheduled Maintenance</span><strong>{myScheduledWork.length}</strong></button>
+          <button type="button" className={overduePersonalSchedules.length ? 'is-alert' : ''} onClick={onGoToSchedules}><Icon name="alert" size={17} /><span>Overdue Tasks</span><strong>{overduePersonalSchedules.length}</strong></button>
+        </section>
+
+        <div className="mp-primary-grid">
+          <section className="panel mp-work-orders">
+            <div className="mp-section-head"><div><h3>My Work Orders</h3><p>Assigned repair work, ordered by what needs action first.</p></div>{activeRepairCount > 0 && <span>{activeRepairCount} ready to work</span>}</div>
+            {maintenanceTicketsLoading ? <p className="mp-empty">Loading your assigned work…</p>
+              : assignedWorkOrders.length === 0 ? <p className="mp-empty"><Icon name="checkCircle" size={17} /> You have no assigned repair work right now.</p>
+                : <div className="mp-work-list">{assignedWorkOrders.slice(0, 6).map((row) => <MaintenanceWorkOrderCard key={`${row.ticket_id}-${row.sub_issue_id}`} row={row} basePath={basePath} onNavigate={onNavigate} />)}</div>}
+            {assignedWorkOrders.length > 6 && <button type="button" className="mp-view-all" onClick={() => onGoToModule('ticketWorkOrders', [])}>View all {assignedWorkOrders.length} work orders <Icon name="chevronRight" size={13} /></button>}
+          </section>
+
+          <section className="panel mp-scheduled-work">
+            <div className="mp-section-head"><div><h3>My Scheduled Maintenance</h3><p>Overdue work appears first.</p></div><button type="button" onClick={onGoToSchedules}>View All</button></div>
+            {myScheduledWork.length === 0 ? <p className="mp-empty"><Icon name="calendar" size={17} /> Nothing is scheduled for you right now.</p>
+              : <div className="mp-schedule-list">{[...myScheduledWork].sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date))).slice(0, 6).map((item) => <MyScheduledWorkRow key={item.schedule_id} item={item} onClick={onGoToSchedules} />)}</div>}
+          </section>
+        </div>
+
+        <section className="mp-fleet-note">
+          <div><Icon name="vehicle" size={17} /><span><strong>Fleet context</strong>{metricValue('Vehicles Needing Attention')} vehicle{metricValue('Vehicles Needing Attention') === 1 ? '' : 's'} currently need inspection or repair.</span></div>
+          <button type="button" onClick={() => onGoToModule('vehicles', [])}>View Vehicles <Icon name="chevronRight" size={13} /></button>
+        </section>
+      </main>
+    );
+  }
+
+  if (hasRole(user, 'Custodian') && !isAdminDashboard) {
+    const badges = data.badge_counts ?? {};
+    const checks = readinessWatch.slice(0, 5);
+    const pendingVerifications = verificationTickets
+      .filter((ticket) => String(ticket.assigned_custodian_id) === String(user?.id) && ticket.status === 'For Verification')
+      .slice(0, 4);
+    const openIssues = issues
+      .filter((issue) => issue.status !== 'Resolved')
+      .sort((a, b) => new Date(b.updated_at ?? b.created_at) - new Date(a.updated_at ?? a.created_at))
+      .slice(0, 4);
+
+    return (
+      <main className="cust-dashboard" aria-labelledby="cust-dashboard-title">
+        <header className="cust-dashboard-header">
+          <div>
+            <span className="cust-dashboard-eyebrow">Custodian workspace</span>
+            <h2 id="cust-dashboard-title">My Dashboard</h2>
+            <p>Vehicle checks, assigned tasks, and reported issues.</p>
+          </div>
+          <button type="button" className="primary-button" onClick={() => onGoToModule('issues', [])}>
+            <Icon name="plus" size={15} /> Report an Issue
+          </button>
+        </header>
+
+        {noVerifiedReady && (
+          <section className="cust-readiness-alert" role="alert">
+            <span className="cust-readiness-alert-icon"><Icon name="alert" size={19} /></span>
+            <div>
+              <strong>No vehicle is currently verified ready</strong>
+              <p>{availableVehicles > 0 ? `${availableVehicles} vehicle${availableVehicles === 1 ? ' is' : 's are'} marked available, but none has passed an authorized readiness check in the last 24 hours.` : 'No fleet vehicle is currently available.'} Availability alone does not establish verified readiness.</p>
+            </div>
+            <button type="button" className="ghost-button" onClick={() => onGoToModule('vehicles', [])}>Review Fleet <Icon name="chevronRight" size={14} /></button>
+          </section>
+        )}
+
+        <section className="cust-task-metrics" aria-label="Custodian task summary">
+          <button type="button" onClick={() => onGoToModule('vehicles', [])}>
+            <span className="cust-metric-icon is-warning"><Icon name="checkCircle" size={18} /></span>
+            <span><small>Fleet Vehicles Needing Checks</small><strong>{readinessWatch.length}</strong><em>Fleet-wide queue</em></span>
+          </button>
+          <button type="button" onClick={() => onGoToModule('ticketVerifications', [])}>
+            <span className="cust-metric-icon is-info"><Icon name="clipboard" size={18} /></span>
+            <span><small>Repairs Awaiting My Verification</small><strong>{badges.ticketVerifications ?? 0}</strong><em>Assigned to you</em></span>
+          </button>
+          <button type="button" onClick={() => onGoToModule('issues', [])}>
+            <span className="cust-metric-icon is-danger"><Icon name="alert" size={18} /></span>
+            <span><small>My Open Issue Reports</small><strong>{badges.issues ?? 0}</strong><em>Unresolved reports</em></span>
+          </button>
+        </section>
+
+        <div className="cust-dashboard-grid">
+          <section className="panel cust-dashboard-panel cust-checks-panel">
+            <div className="cust-panel-head">
+              <div><h3>Fleet Vehicles Needing Checks</h3><p>Available vehicles without a current verified readiness result.</p></div>
+              <button type="button" onClick={() => onGoToModule('vehicles', [])}>View All <Icon name="chevronRight" size={13} /></button>
+            </div>
+            {checks.length === 0 ? (
+              <div className="cust-empty"><Icon name="checkCircle" size={20} /><div><strong>Readiness checks are current</strong><p>Every available vehicle has a current verified check.</p></div></div>
+            ) : (
+              <div className="cust-task-list">
+                {checks.map((row) => (
+                  <article className="cust-task-row" key={row.vehicle_id}>
+                    <span className={`cust-task-marker${row.state === 'not_ready' ? ' is-danger' : ''}`} />
+                    <div className="cust-task-copy">
+                      <div><strong>{row.vehicle_name}</strong><span className={`cust-status${row.state === 'not_ready' ? ' is-danger' : ' is-warning'}`}>{READINESS_BADGE[row.state]?.label ?? 'Check needed'}</span></div>
+                      <p>{row.plate_number ? `${row.plate_number} · ` : ''}{row.category ?? 'Uncategorized vehicle'}</p>
+                      <small>{row.state === 'not_ready' ? 'Latest readiness result did not clear this vehicle for response.' : 'No verified readiness check is recorded within the current 24-hour window.'}</small>
+                    </div>
+                    <button type="button" className="ghost-button" onClick={() => onNavigate(`${basePath}/vehicles/${row.vehicle_id}`)}>Review</button>
+                  </article>
+                ))}
+              </div>
+            )}
+            {readinessWatch.length > checks.length && <p className="cust-list-more">+{readinessWatch.length - checks.length} more fleet vehicle{readinessWatch.length - checks.length === 1 ? '' : 's'} need review.</p>}
+          </section>
+
+          <section className="panel cust-dashboard-panel cust-verification-panel">
+            <div className="cust-panel-head">
+              <div><h3>Repair Verification</h3><p>Completed repair work assigned to you for review.</p></div>
+              <button type="button" onClick={() => onGoToModule('ticketVerifications', [])}>View All <Icon name="chevronRight" size={13} /></button>
+            </div>
+            {pendingVerifications.length === 0 ? (
+              <div className="cust-empty"><Icon name="checkCircle" size={20} /><div><strong>No repairs waiting</strong><p>You have no assigned verification tasks right now.</p></div></div>
+            ) : (
+              <div className="cust-compact-list">
+                {pendingVerifications.map((ticket) => (
+                  <button type="button" key={ticket.ticket_id} onClick={() => onNavigate(`${basePath}/tickets/${ticket.ticket_id}`)}>
+                    <span className="cust-list-icon"><Icon name="wrench" size={16} /></span>
+                    <span><strong>{ticket.vehicle?.vehicle_name ?? 'Vehicle'}</strong><small>Ticket #{ticket.ticket_id} · {ticket.ticket_title ?? ticket.sub_issues?.[0]?.title ?? 'Repair verification'}</small></span>
+                    <span className="cust-status is-info">For verification</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="panel cust-dashboard-panel cust-issues-panel">
+            <div className="cust-panel-head">
+              <div><h3>My Reported Issues</h3><p>Recent unresolved reports and their current status.</p></div>
+              <button type="button" onClick={() => onGoToModule('issues', [])}>View All <Icon name="chevronRight" size={13} /></button>
+            </div>
+            {openIssues.length === 0 ? (
+              <div className="cust-empty"><Icon name="checkCircle" size={20} /><div><strong>No open issue reports</strong><p>Your reported issues are resolved or no reports have been filed.</p></div></div>
+            ) : (
+              <div className="cust-compact-list">
+                {openIssues.map((issue) => (
+                  <button type="button" key={issue.issue_report_id} onClick={() => onNavigate(`${basePath}/issues/${issue.issue_report_id}`)}>
+                    <span className="cust-list-icon"><Icon name="alert" size={16} /></span>
+                    <span><strong>{issue.issue_type ?? 'Vehicle issue'}</strong><small>{issue.vehicle?.vehicle_name ?? 'Vehicle'} · {formatDate(issue.created_at)}</small></span>
+                    <span className={`cust-status${issue.status === 'In Maintenance' ? ' is-info' : ' is-warning'}`}>{issue.status}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <section className="cust-fleet-context" aria-label="Fleet context">
+          <div><Icon name="vehicle" size={17} /><span><strong>{availableVehicles} of {operationalTotal}</strong> operational vehicles are currently marked available.</span></div>
+          <div><Icon name="info" size={16} /><span>Availability, condition, readiness, and priority classification are separate fleet signals.</span></div>
+        </section>
+      </main>
+    );
+  }
+
+  // Custodian gets a lean dashboard; fleet-wide analytics remain Admin-only.
   // own queues first, then only the fleet context their job actually uses.
   // The fleet-wide analytics (expenses, risk watch, sites/types, maintenance
   // load) are Admin's — the backend doesn't even send those numbers to these

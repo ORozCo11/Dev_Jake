@@ -11,16 +11,15 @@ import { geoJsonToRings } from '../utils/boundary';
 import { PAKNAAN_POLYGON } from '../data/paknaanLocationDensity';
 import WorkspaceFooter from '../components/WorkspaceFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { DonutChart, StackedBarChart } from '../components/lazy';
+import { DonutChart } from '../components/lazy';
 import { LocationDensityMap } from '../components/lazy';
-import { categoryColumns, conditionColumns, historyColumns, issueColumns, locationColumns, logColumns, maintenanceColumns, maintenanceStatusColumns, scheduleColumns, ticketArchiveColumns, userColumns, vehicleColumns } from '../workspace/columns';
-import { FilterBar, IssueFilterPanel } from '../workspace/components/filters';
+import { categoryColumns, historyColumns, issueColumns, locationColumns, logColumns, maintenanceStatusColumns, scheduleColumns, ticketArchiveColumns, userColumns, vehicleColumns } from '../workspace/columns';
+import { FilterBar, IssueFilterPanel, VehicleFilterPanel } from '../workspace/components/filters';
 import { DateFilterInput, MultiSelectDropdown } from '../workspace/components/inputs';
 import { DataTable, ModuleStatCards, PaginatedCardGrid, PaginatedTable, ViewModeDropdown } from '../workspace/components/tables';
-import { ChartLegend, FormModal, LocalSearchInput, ModuleLoader, ModulePanel, SegmentedBar } from '../workspace/components/ui';
-import { ExpandableText } from '../workspace/components/ui';
-import { IssueFilteredEmpty, IssueReportsIntro } from '../workspace/issues/issueBadges';
-import { ConditionFilteredEmpty, ConditionMonitoringIntro } from '../workspace/conditions/conditions';
+import { ChartLegend, DateBadge, FormModal, LocalSearchInput, ModuleLoader, ModulePanel, SegmentedBar, TicketStatusBadge } from '../workspace/components/ui';
+import { IssueFilteredEmpty } from '../workspace/issues/issueBadges';
+import { ConditionFilteredEmpty, ConditionMonitoringIntro, ConditionResultBadge, ConditionTicketCell } from '../workspace/conditions/conditions';
 import { ErrorState } from '../workspace/components/states';
 import { FormNoticeContext, RowActionsContext } from '../workspace/contexts';
 import { FormPage, OpenItemsWarning } from '../workspace/forms/FormPage';
@@ -29,12 +28,12 @@ import { useColumnChooser } from '../workspace/hooks/useColumnChooser';
 import { cleanPayload, emptyLookups, emptyTicketLookups, fetchHubs, fetchLookups, fetchModuleData, fetchNotifications, fetchTicketLookups, moduleRequest, sendPayload, showError } from '../workspace/lib/data';
 import { applyPerformedBy, applyRepairType, categoryFields, conditionFields, issueFields, maintenanceFields, scheduleFields, userFields, verificationFields, withPerformedBy, withRepairType } from '../workspace/lib/fields';
 import { subRowFields } from '../workspace/lib/formHelpers';
-import { EMPTY_OBJ, formatDate, issueDescription, moduleLabel, options, sameSelection } from '../workspace/lib/format';
+import { EMPTY_OBJ, formatDate, formatTime, issueDescription, moduleLabel, options, sameSelection } from '../workspace/lib/format';
 import { getNotificationStyle } from '../workspace/lib/notifications';
 import { canDo, canRegisterVehicles, hasRole, resolveModuleGroups, roleRoutes } from '../workspace/lib/permissions';
 import { SCHEDULE_EXPORT_COLUMNS, USER_EXPORT_COLUMNS, VEHICLE_EXPORT_COLUMNS, VEHICLE_HISTORY_EXPORT_COLUMNS, exportRowsToCsv } from '../workspace/lib/reports';
-import { CONDITION_STAT_CARDS, ISSUE_STAT_CARDS, MAINTENANCE_RECORD_STAT_CARDS, MY_ASSIGNED_SCHEDULE_CARD, SCHEDULE_STAT_CARDS, VEHICLE_STAT_CARDS } from '../workspace/lib/statCards';
-import { RECURRENCE_LABEL, SCHEDULE_URGENCY_KEYS, flattenSubIssueRows, scheduleUrgencyBucket, verifyOutcomeMessage, issueIsPreTicket } from '../workspace/lib/workflow';
+import { MY_ASSIGNED_SCHEDULE_CARD, SCHEDULE_STAT_CARDS, VEHICLE_STAT_CARDS } from '../workspace/lib/statCards';
+import { RECURRENCE_LABEL, SCHEDULE_URGENCY_KEYS, flattenSubIssueRows, scheduleDueLabel, scheduleUrgencyBucket, verifyOutcomeMessage } from '../workspace/lib/workflow';
 import { moduleIcons } from '../workspace/moduleIcons';
 import { PendingRegistrations, ProfileMenu, ProfilePage, UserCard, UserFilterChips, UserInfoModal, UserViewPage } from '../workspace/users/users';
 import { isPendingRegistration } from '../workspace/lib/userAccounts';
@@ -49,7 +48,6 @@ const loadDashboard = () => import('../workspace/dashboard/Dashboard');
 const Dashboard = lazyNamed(loadDashboard, 'Dashboard');
 const loadIssues = () => import('../workspace/issues/issues');
 const IssueViewPage = lazyNamed(loadIssues, 'IssueViewPage');
-const LatestIssueCard = lazyNamed(loadIssues, 'LatestIssueCard');
 const loadLocations = () => import('../workspace/locations/locations');
 const EditLocationPage = lazyNamed(loadLocations, 'EditLocationPage');
 const NewLocationPage = lazyNamed(loadLocations, 'NewLocationPage');
@@ -373,18 +371,15 @@ function Workspace() {
   const [maintenanceViewMode, setMaintenanceViewMode] = useState(
     () => localStorage.getItem('vms_maintenance_view') || 'table'
   );
+  const [showMaintenanceFilters, setShowMaintenanceFilters] = useState(false);
   const changeMaintenanceViewMode = (mode) => {
     setMaintenanceViewMode(mode);
     localStorage.setItem('vms_maintenance_view', mode);
   };
-  // Admin's Maintenance Schedule defaults to the card ("ticket") view rather
-  // than the plain table — a schedule reads more like a ticket now that its
-  // row-level actions are ownership-gated (see scheduleColumns). Everyone
-  // else keeps the table default. Still just a default: the stored
-  // preference (and the view-mode toggle itself) override it either way.
   const [scheduleViewMode, setScheduleViewMode] = useState(
-    () => localStorage.getItem('vms_schedule_view') || (hasRole(user, 'Admin') ? 'card' : 'table')
+    () => localStorage.getItem('vms_schedule_view') || 'table'
   );
+  const [showScheduleFilters, setShowScheduleFilters] = useState(false);
   const changeScheduleViewMode = (mode) => {
     setScheduleViewMode(mode);
     localStorage.setItem('vms_schedule_view', mode);
@@ -469,6 +464,7 @@ function Workspace() {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showIssueFilters, setShowIssueFilters] = useState(false);
   const [filterCategory, setFilterCategory] = useState([]);
   const [filterCapacity, setFilterCapacity] = useState([]);
   const [filterStatus, setFilterStatus] = useState([]);
@@ -507,6 +503,9 @@ function Workspace() {
   const [condFilterEndDate, setCondFilterEndDate] = useState('');
   // Draft for the condition filter bar — applied only on "Filter" click.
   const [condDraft, setCondDraft] = useState({ category: [], status: [], capacity: [], checkedBy: [], start: '', end: '' });
+  const [conditionView, setConditionView] = useState('overview');
+  const [showConditionFilters, setShowConditionFilters] = useState(false);
+  const [conditionDetailTarget, setConditionDetailTarget] = useState(null);
   const [prefilledTicketData, setPrefilledTicketData] = useState(null);
   // A form page that finishes by switching module wants its success notice to
   // survive the module-change reset below.
@@ -1514,10 +1513,6 @@ function Workspace() {
 
     // Issue Reports only ever shows pre-ticket reports — once a proposal is
     // approved it graduates into "My Tickets" instead (see issueIsPreTicket).
-    if (activeModule === 'issues') {
-      result = result.filter((row) => issueIsPreTicket(row));
-    }
-
     if (activeModule === 'maintenance') {
       if (filterMaintType.length) {
         result = result.filter((row) => filterMaintType.includes(row.maintenance_type));
@@ -1705,10 +1700,6 @@ function Workspace() {
     () => countByValues(records.issues ?? [], (r) => r.status, ['Pending', 'Under Review', 'In Maintenance', 'Resolved']),
     [records.issues]
   );
-  const issueSeverityStats = useMemo(
-    () => countByValues(records.issues ?? [], (r) => r.severity_level, ['High', 'Medium', 'Low']),
-    [records.issues]
-  );
 
   const scheduleStats = useMemo(() => {
     const base = countByValues(records.schedules ?? [], (r) => r.status, ['Pending Approval', 'Declined', 'Scheduled', 'Completed', 'Cancelled']);
@@ -1733,23 +1724,6 @@ function Workspace() {
     });
     return { ...base, ...urgency, AwaitingVerification: awaitingVerification, MyAssigned: myAssigned };
   }, [records.schedules, user.id]);
-
-  // A vehicle with no check on file yet is its own bucket ("Not Checked"),
-  // not just an absence from the list — so the stat cards (and the list
-  // below) reflect the whole fleet's coverage, not only vehicles someone
-  // has gotten around to inspecting.
-  const conditionRowsForStats = useMemo(() => {
-    const vehiclesWithRecord = new Set((records.conditions ?? []).map((r) => r.vehicle_id));
-    const uncheckedRows = (lookups.vehicles ?? [])
-      .filter((vehicle) => !vehiclesWithRecord.has(vehicle.vehicle_id))
-      .map(() => ({ condition_result: 'Not Checked' }));
-    return [...(records.conditions ?? []), ...uncheckedRows];
-  }, [records.conditions, lookups.vehicles]);
-
-  const conditionStats = useMemo(
-    () => countByValues(conditionRowsForStats, (r) => r.condition_result, ['Good', 'Needs Inspection', 'Needs Repair', 'Not Checked']),
-    [conditionRowsForStats]
-  );
 
   const maintenanceRecordStats = useMemo(
     () => countByValues(records.maintenance ?? [], (r) => r.progress_status, ['Assigned', 'Under Repair', 'For Verification', 'Completed']),
@@ -1886,17 +1860,6 @@ function Workspace() {
     return [...visibleRows, ...syntheticRows];
   }, [activeModule, visibleRows, records.conditions, lookups.vehicles, searchQuery, filterCategory, filterCapacity, filterCheckedBy, filterStatus, condFilterStartDate, condFilterEndDate]);
 
-  // Each vehicle's most recent condition check (highest id), so the table
-  // can tag it "Latest" and it stands out from that vehicle's older history.
-  const latestConditionCheckIds = useMemo(() => {
-    const latestByVehicle = new Map();
-    (records.conditions ?? []).forEach((r) => {
-      const prev = latestByVehicle.get(r.vehicle_id);
-      if (prev == null || r.condition_check_id > prev) latestByVehicle.set(r.vehicle_id, r.condition_check_id);
-    });
-    return new Set(latestByVehicle.values());
-  }, [records.conditions]);
-
   const viewVehicleOnMap = useCallback((row) => {
     const vehicleId = row.vehicle_id ?? row.vehicle?.vehicle_id;
     if (!vehicleId) return;
@@ -1913,7 +1876,7 @@ function Workspace() {
   // (show/hide + drag to reorder, persisted per browser) — see
   // ColumnChooserButton/useColumnChooser below.
   const vehicleColumnDefs = useMemo(
-    () => vehicleColumns(user, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile, (row) => setReadinessPromptTarget(row)),
+    () => vehicleColumns(user, (row) => openVehicleProfile(row, 'edit'), deleteRecord, restoreRecord, filterStatus, openTicketProfile, (row) => setReadinessPromptTarget(row), openVehicleProfile),
     [user, openVehicleProfile, deleteRecord, restoreRecord, filterStatus, openTicketProfile],
   );
   const vehicleColumnChooser = useColumnChooser('vms_vehicle_columns', vehicleColumnDefs);
@@ -1937,35 +1900,11 @@ function Workspace() {
 
   const locationColumnChooser = useColumnChooser('vms_location_columns', locationTableColumns);
 
-  const conditionColumnDefs = useMemo(
-    () => conditionColumns(
-      user,
-      (row) => navigate(`${roleRoutes[user.role]}/conditions/${row.condition_check_id}/edit`),
-      deleteRecord,
-      handleCreateTicketFromCondition,
-      handleSuggestScheduleFromCondition,
-      canDo(user, 'condition.create') ? (row) => {
-        setPrefilledConditionVehicleId(row.vehicle_id);
-        navigate(`${roleRoutes[user.role]}/conditions/new`);
-      } : undefined,
-      openTicketProfile,
-      latestConditionCheckIds,
-    ),
-    [user, navigate, deleteRecord, handleCreateTicketFromCondition, handleSuggestScheduleFromCondition, openTicketProfile, latestConditionCheckIds],
-  );
-  const conditionColumnChooser = useColumnChooser('vms_condition_columns', conditionColumnDefs);
-
   const issueColumnDefs = useMemo(
     () => issueColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}/edit`), handleCreateTicketFromIssue, setUserInfoTarget, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`), deleteRecord, user, openTicketProfile, setDismissIssueTarget),
     [user, navigate, handleCreateTicketFromIssue, deleteRecord, openTicketProfile],
   );
   const issueColumnChooser = useColumnChooser('vms_issue_columns', issueColumnDefs);
-
-  const maintenanceColumnDefs = useMemo(
-    () => maintenanceColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}/edit`), updateRecord, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}`), user),
-    [user, navigate, updateRecord],
-  );
-  const maintenanceColumnChooser = useColumnChooser('vms_maintenance_columns', maintenanceColumnDefs);
 
   const maintenanceStatusColumnDefs = useMemo(
     () => maintenanceStatusColumns(setEditTarget, user.id),
@@ -1977,8 +1916,6 @@ function Workspace() {
     () => scheduleColumns((row) => navigate(`${roleRoutes[user.role]}/schedules/${row.schedule_id}/edit`), deleteRecord, openCompleteSchedule, user, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`), restoreRecord, setReassignScheduleTarget, openTicketProfile, approveSchedule, setDeclineScheduleTarget, records.schedules),
     [navigate, user, deleteRecord, restoreRecord, openTicketProfile, records.schedules],
   );
-  const scheduleColumnChooser = useColumnChooser('vms_schedule_columns', scheduleColumnDefs);
-
   const vehicleHistoryColumnChooser = useColumnChooser('vms_vehicle_history_columns', historyColumns);
 
   const logColumnDefs = useMemo(
@@ -2429,16 +2366,7 @@ function Workspace() {
           aria-label="Toggle light and dark mode"
           onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         >
-          {theme === 'dark' ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-          )}
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} />
         </button>
 
         <div className="profile-menu-container" ref={profileMenuRef}>
@@ -2538,7 +2466,7 @@ function Workspace() {
           {/* Dashboard has its own greeting banner right below (name, role,
               date) — this generic icon+title bar would just repeat "Dashboard"
               redundantly above it, so it's skipped for that one page only. */}
-          {(activeModule !== 'dashboard' || isOnSpecialPage) && (
+          {(activeModule !== 'dashboard' || isOnSpecialPage) && (activeModule !== 'issues' || isOnSpecialPage) && (
             <div className="page-heading-row">
               <span className="page-heading-icon">{moduleIcons[breadcrumbModule]}</span>
               <div className="page-heading-text">
@@ -2552,6 +2480,7 @@ function Workspace() {
                     couldn't resolve it; breadcrumbModule already maps those
                     to the merged entry's own key/label for exactly this. */}
                 <h2>{subPageTitle ?? moduleLabel(modules, breadcrumbModule)}</h2>
+                {activeModule === 'vehicles' && !subPageTitle && <p className="page-heading-subtitle">Manage fleet assets and monitor vehicle availability.</p>}
               </div>
             </div>
           )}
@@ -2796,6 +2725,8 @@ function Workspace() {
                 : (location.state?.prefillVehicleId ? { vehicle_id: location.state.prefillVehicleId } : EMPTY_OBJ)}
               onSubmit={(payload) => submitFormPage('issues', editIssueId ? { issue_report_id: editIssueId } : null, payload)}
               submitLabel={editIssueId ? 'Update Issue' : 'Submit Issue'}
+              formTitle={editIssueId ? 'Update report information' : 'Tell us what happened'}
+              reviewStep={!editIssueId}
               contextVehicles={lookups.vehicles}
               hubs={allHubs}
               warnEndpoint={editIssueId ? undefined : (vid) => `/vehicles/${vid}/open-issues`}
@@ -3128,11 +3059,24 @@ function Workspace() {
           onGoToSchedules={() => returnToModule('schedules')}
           onGoToModule={returnToModule}
           updatedAt={dashboardUpdatedAt}
+          issues={records.issues ?? []}
+          verificationTickets={records.ticketVerifications ?? []}
         />
       );
     }
 
     if (activeModule === 'vehicles') {
+      const resetVehicleFilters = () => {
+        setFilterCategory([]); setFilterCapacity([]); setFilterStatus([]);
+        setFilterPriority([]); setFilterLocation([]); setFilterDomain([]); setFilterReadiness([]);
+      };
+      const showAllVehicles = () => {
+        resetVehicleFilters();
+        setFilterStatus(['Available', 'Under Maintenance', 'Inactive', 'Decommissioned']);
+      };
+      const showNeedsAttention = () => { resetVehicleFilters(); setFilterPriority(['Needs Inspection', 'Needs Repair']); };
+      const showUnderMaintenance = () => { resetVehicleFilters(); setFilterStatus(['Under Maintenance']); };
+      const showReadyVehicles = () => { resetVehicleFilters(); setFilterReadiness(['Ready']); };
       return (
         <ModulePanel
           description={((hasRole(user, 'Custodian') && !hasRole(user, 'Admin')) ? 'View-only fleet information.' : 'Register, edit, and archive vehicle records.') + ' Status = availability (can it be dispatched right now?). Condition = physical state (does it need repair or inspection?). Click a row to see full vehicle details.'}
@@ -3144,10 +3088,12 @@ function Workspace() {
               counts={vehicleStats}
               activeFilter={filterStatus}
               onFilterChange={setFilterStatus}
+              onTotalClick={showAllVehicles}
+              gridClassName="fleet-summary-grid"
             />
           }
           filterBar={
-            <FilterBar
+            <VehicleFilterPanel
               categories={lookups.categories}
               vehicles={lookups.vehicles}
               filterCategory={filterCategory}
@@ -3160,32 +3106,38 @@ function Workspace() {
               setFilterPriority={setFilterPriority}
               statusOptions={lookups.vehicle_statuses}
               priorityOptions={lookups.condition_results}
-              priorityLabel="Condition"
               filterLocation={filterLocation}
               setFilterLocation={setFilterLocation}
               filterDomain={filterDomain}
               setFilterDomain={setFilterDomain}
-              extraFilters={[{
-                key: 'readiness',
-                label: 'Ready to Respond',
-                options: ['Ready', 'Not Ready'],
-                selected: filterReadiness,
-                setSelected: setFilterReadiness,
-              }]}
+              filterReadiness={filterReadiness}
+              setFilterReadiness={setFilterReadiness}
             />
           }
         >
-          <div className="panel-header-bar schedule-list-toolbar">
-            <h3>All Vehicles <span className="count-badge">{visibleRows.length}</span></h3>
+          <div className="fleet-context" role="note" aria-label="How fleet states are determined">
+            <Icon name="clipboard" size={16} />
+            <p><strong>Three separate checks protect deployment decisions.</strong> Operational status shows availability, condition records physical findings, and response readiness requires a current authorized assessment.</p>
+          </div>
+          <div className="fleet-quick-filters" aria-label="Quick fleet filters">
+            <span>Quick filters</span>
+            <button type="button" onClick={showAllVehicles}>All Vehicles</button>
+            <button type="button" onClick={showNeedsAttention}>Needs Attention</button>
+            <button type="button" onClick={showUnderMaintenance}>Under Maintenance</button>
+            <button type="button" onClick={showReadyVehicles}>Ready to Respond</button>
+          </div>
+          <div className="panel-header-bar schedule-list-toolbar fleet-list-header">
+            <div><h3>Fleet Vehicles <span className="count-badge">{visibleRows.length}</span></h3><p className="fleet-list-caption">Select a vehicle to view its full profile, history, and operational records.</p></div>
             <LocalSearchInput
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search vehicles..."
+              placeholder="Search by vehicle name or plate number"
               columnChooser={vehicleColumnChooser}
               onAdd={canRegisterVehicles(user) ? () => navigate(`${roleRoutes[user.role]}/vehicles/new`) : undefined}
               addLabel="Add Vehicle"
               onImport={canDo(user, 'vehicle.import') && canRegisterVehicles(user) ? () => setVehicleImportOpen(true) : undefined}
               onExport={() => exportRowsToCsv('vehicles.csv', VEHICLE_EXPORT_COLUMNS, visibleRows)}
+              showActionLabels
             />
           </div>
           <PaginatedTable
@@ -3395,11 +3347,7 @@ function Workspace() {
                 className={`locations-tab-button ${locationsTab === 'map' ? 'active' : ''}`}
                 onClick={() => setLocationsTab('map')}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
-                  <line x1="9" y1="3" x2="9" y2="18" />
-                  <line x1="15" y1="6" x2="15" y2="21" />
-                </svg>
+                <Icon name="map" size={16} />
                 Vehicles Map
               </button>
               <button
@@ -3408,13 +3356,7 @@ function Workspace() {
                 className={`locations-tab-button ${locationsTab === 'records' ? 'active' : ''}`}
                 onClick={() => setLocationsTab('records')}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
-                  <polyline points="10 9 9 9 8 9" />
-                </svg>
+                <Icon name="document" size={16} />
                 Vehicle Location Record
               </button>
             </div>
@@ -3495,26 +3437,105 @@ function Workspace() {
     }
 
     if (activeModule === 'conditions') {
-      return (
-        <ModulePanel
-          description="Periodic inspection log — a Custodian's routine check-in on a vehicle's physical condition (e.g. a monthly walkaround), separate from Maintenance Records (which logs actual repair work already performed). Each entry here can update the vehicle's Condition field on the fleet list."
-          statCards={
-            <ModuleStatCards
-              totalLabel="Total Records"
-              total={conditionStats.total}
-              cards={CONDITION_STAT_CARDS}
-              counts={conditionStats}
-              activeFilter={filterStatus}
-              onFilterChange={setFilterStatus}
-            />
-          }
-          filterBar={
-            <div className="filter-bar-container">
-              <div className="filter-label">
-                <span>FILTERS:</span>
-              </div>
+      const compareConditionRecords = (a, b) => {
+        const dateDiff = new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        return dateDiff || Number(b.condition_check_id || 0) - Number(a.condition_check_id || 0);
+      };
+      const latestByVehicle = new Map();
+      [...(records.conditions ?? [])].sort(compareConditionRecords).forEach((row) => {
+        if (!latestByVehicle.has(String(row.vehicle_id))) latestByVehicle.set(String(row.vehicle_id), row);
+      });
+      const fleetOverview = (lookups.vehicles ?? []).map((vehicle) => latestByVehicle.get(String(vehicle.vehicle_id)) ?? ({
+        condition_check_id: null,
+        vehicle_id: vehicle.vehicle_id,
+        vehicle,
+        condition_result: 'Not Checked',
+        checked_by: null,
+        observations: null,
+        created_at: null,
+      }));
+      const matchesConditionScope = (row) => {
+        if (filterCategory.length && !filterCategory.includes(String(row.vehicle?.category_id))) return false;
+        if (filterCapacity.length && !filterCapacity.includes(row.vehicle?.capacity)) return false;
+        if (filterStatus.length && !filterStatus.includes(row.condition_result)) return false;
+        if (filterCheckedBy.length && !filterCheckedBy.includes(row.checked_by?.name)) return false;
+        const date = row.created_at?.substring(0, 10) ?? '';
+        if (condFilterStartDate && (!date || date < condFilterStartDate)) return false;
+        if (condFilterEndDate && (!date || date > condFilterEndDate)) return false;
+        const query = searchQuery.trim().toLowerCase();
+        if (query && ![row.vehicle?.vehicle_name, row.vehicle?.plate_number, row.condition_result, row.checked_by?.name, row.condition_check_id]
+          .some((value) => String(value ?? '').toLowerCase().includes(query))) return false;
+        return true;
+      };
+      const overviewRows = fleetOverview.filter(matchesConditionScope);
+      const historyRows = conditionRows.filter((row) => row.condition_check_id);
+      const displayedConditionRows = conditionView === 'overview' ? overviewRows : historyRows;
+      const overviewCounts = fleetOverview.reduce((counts, row) => ({ ...counts, [row.condition_result]: (counts[row.condition_result] ?? 0) + 1 }), {});
+      const activeConditionFilterCount = filterCategory.length + filterCapacity.length + filterCheckedBy.length
+        + Number(Boolean(condFilterStartDate)) + Number(Boolean(condFilterEndDate));
+      const clearConditionFilters = () => {
+        setFilterCategory([]); setFilterStatus([]); setFilterCapacity([]); setFilterCheckedBy([]);
+        setCondFilterStartDate(''); setCondFilterEndDate(''); setSearchQuery('');
+        setCondDraft({ category: [], status: [], capacity: [], checkedBy: [], start: '', end: '' });
+      };
+      const conditionColumnsSimple = [
+        {
+          key: 'vehicle', label: 'Vehicle', locked: true, render: (row) => (
+            <span className="p24-maint-primary-cell"><strong>{row.vehicle?.vehicle_name ?? 'Vehicle not recorded'}</strong><span>{row.vehicle?.plate_number ?? 'No plate number'}</span></span>
+          ),
+        },
+        { key: 'condition', label: 'Latest Condition', className: 'cell-center', render: (row) => <ConditionResultBadge value={row.condition_result} /> },
+        { key: 'date', label: 'Last Checked', className: 'cell-center', render: (row) => row.created_at ? <DateBadge value={row.created_at} /> : <span className="muted">No check recorded</span> },
+        ...(conditionView === 'history' ? [{ key: 'checked', label: 'Checked By', render: (row) => row.checked_by?.name ?? <span className="muted">Not recorded</span> }] : []),
+        {
+          key: 'action', label: '', locked: true, className: 'cell-center', render: (row) => (
+            <button className="p24-view-link" type="button" onClick={(event) => { event.stopPropagation(); setConditionDetailTarget(row); }}>
+              {row.condition_check_id ? 'View details' : 'View vehicle'} <Icon name="chevronRight" size={14} />
+            </button>
+          ),
+        },
+      ];
 
-              {/* Category Dropdown */}
+      return (
+        <>
+        <ModulePanel>
+          <header className="p24-condition-header">
+            <div><p className="p24-maint-eyebrow">Fleet oversight</p><h2>Vehicle Condition Monitoring</h2><p>Review vehicle checks and identify maintenance concerns.</p></div>
+            {canDo(user, 'condition.create') && <button className="primary-button" type="button" onClick={() => { setPrefilledConditionVehicleId(null); navigate(`${roleRoutes[user.role]}/conditions/new`); }}><Icon name="plus" size={16} /> Add Condition Check</button>}
+          </header>
+
+          <section className="p24-condition-metrics" aria-label="Latest vehicle condition summary">
+            {[
+              ['Vehicles Reviewed', fleetOverview.length - (overviewCounts['Not Checked'] ?? 0), [], 'neutral'],
+              ['Good', overviewCounts.Good ?? 0, ['Good'], 'success'],
+              ['Needs Inspection', overviewCounts['Needs Inspection'] ?? 0, ['Needs Inspection'], 'warning'],
+              ['Needs Repair', overviewCounts['Needs Repair'] ?? 0, ['Needs Repair'], 'danger'],
+            ].map(([label, count, value, tone]) => <button key={label} type="button" className={`p24-condition-metric tone-${tone}${JSON.stringify(filterStatus) === JSON.stringify(value) ? ' is-active' : ''}`} onClick={() => setFilterStatus(value)}><span>{label}</span><strong>{count}</strong></button>)}
+          </section>
+
+          <ConditionMonitoringIntro />
+
+          <div className="p24-condition-view-tabs" role="tablist" aria-label="Condition records view">
+            <button type="button" role="tab" aria-selected={conditionView === 'overview'} className={conditionView === 'overview' ? 'is-active' : ''} onClick={() => setConditionView('overview')}>Latest Vehicle Conditions</button>
+            <button type="button" role="tab" aria-selected={conditionView === 'history'} className={conditionView === 'history' ? 'is-active' : ''} onClick={() => setConditionView('history')}>All Condition History <span>{records.conditions?.length ?? 0}</span></button>
+          </div>
+
+          <div className="p24-condition-toolbar">
+            <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search by vehicle, plate number, or condition..." />
+            <button className={`ghost-button p24-filter-toggle${showConditionFilters ? ' is-active' : ''}`} type="button" aria-expanded={showConditionFilters} onClick={() => setShowConditionFilters((value) => !value)}><Icon name="filter" size={16} /> Filters{activeConditionFilterCount ? ` (${activeConditionFilterCount})` : ''}</button>
+            {(filterCategory.length || filterStatus.length || filterCapacity.length || filterCheckedBy.length || condFilterStartDate || condFilterEndDate || searchQuery) && <button className="ghost-button" type="button" onClick={clearConditionFilters}>Reset</button>}
+          </div>
+
+          <div className="p24-maint-tabs" role="tablist" aria-label="Filter by condition">
+            {[['All', []], ['Good', ['Good']], ['Needs Inspection', ['Needs Inspection']], ['Needs Repair', ['Needs Repair']], ['Not Checked', ['Not Checked']]].map(([label, value]) => (
+              <button key={label} type="button" role="tab" aria-selected={JSON.stringify(filterStatus) === JSON.stringify(value)} className={JSON.stringify(filterStatus) === JSON.stringify(value) ? 'is-active' : ''} onClick={() => setFilterStatus(value)}>{label}</button>
+            ))}
+          </div>
+
+          {showConditionFilters && (
+            <div className="p24-condition-advanced">
+              <div className="p24-maint-advanced-head"><h3>More filters</h3><p>Narrow checks by vehicle details, inspector, or date.</p></div>
+            <div className="filter-bar-container">
               <div className="filter-date-group">
                 <span>Category</span>
                 <MultiSelectDropdown
@@ -3525,18 +3546,6 @@ function Workspace() {
                 />
               </div>
 
-              {/* Condition Dropdown */}
-              <div className="filter-date-group">
-                <span>Condition</span>
-                <MultiSelectDropdown
-                  placeholder="All Conditions"
-                  options={['Good', 'Needs Inspection', 'Needs Repair', 'Not Checked']}
-                  selected={condDraft.status}
-                  onChange={(vals) => setCondDraft((d) => ({ ...d, status: vals }))}
-                />
-              </div>
-
-              {/* Capacity Dropdown */}
               <div className="filter-date-group">
                 <span>Capacity</span>
                 <MultiSelectDropdown
@@ -3547,8 +3556,6 @@ function Workspace() {
                 />
               </div>
 
-              {/* Checked By Dropdown — derived from who's actually logged a
-                  check, not a fixed lookup. */}
               <div className="filter-date-group">
                 <span>Checked By</span>
                 <MultiSelectDropdown
@@ -3559,7 +3566,6 @@ function Workspace() {
                 />
               </div>
 
-              {/* From Date */}
               <div className="filter-date-group">
                 <span>From Date</span>
                 <DateFilterInput
@@ -3568,7 +3574,6 @@ function Workspace() {
                 />
               </div>
 
-              {/* To Date */}
               <div className="filter-date-group">
                 <span>To Date</span>
                 <DateFilterInput
@@ -3577,13 +3582,11 @@ function Workspace() {
                 />
               </div>
 
-              {/* Apply Filter */}
               <button
                 type="button"
                 className="filter-apply-btn"
                 disabled={
                   sameSelection(condDraft.category, filterCategory)
-                  && sameSelection(condDraft.status, filterStatus)
                   && sameSelection(condDraft.capacity, filterCapacity)
                   && sameSelection(condDraft.checkedBy, filterCheckedBy)
                   && condDraft.start === condFilterStartDate
@@ -3591,7 +3594,6 @@ function Workspace() {
                 }
                 onClick={() => {
                   setFilterCategory(condDraft.category);
-                  setFilterStatus(condDraft.status);
                   setFilterCapacity(condDraft.capacity);
                   setFilterCheckedBy(condDraft.checkedBy);
                   setCondFilterStartDate(condDraft.start);
@@ -3601,24 +3603,13 @@ function Workspace() {
                 Filter
               </button>
             </div>
-          }
-        >
-            <ConditionMonitoringIntro />
-            <div className="panel-header-bar">
-              <h3>Condition Records <span className="count-badge">{conditionRows.length}</span></h3>
-              <LocalSearchInput
-                value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder="Search conditions..."
-                columnChooser={conditionColumnChooser}
-                onAdd={canDo(user, 'condition.create') ? () => { setPrefilledConditionVehicleId(null); navigate(`${roleRoutes[user.role]}/conditions/new`); } : undefined}
-                addLabel="Add Condition Check"
-              />
             </div>
+          )}
 
+            <div className="p24-maint-results-head"><h3>{conditionView === 'overview' ? 'Latest Vehicle Conditions' : 'Condition History'}</h3><span>{displayedConditionRows.length} shown</span></div>
+            <div className="p24-condition-table">
             <PaginatedTable
-              columns={conditionColumnChooser.visibleColumns}
-              onReorderColumn={conditionColumnChooser.reorderColumn}
+              columns={conditionColumnsSimple}
               emptyMessage={(filterCategory.length || filterStatus.length || filterCapacity.length || filterCheckedBy.length || condFilterStartDate || condFilterEndDate || searchQuery)
                 ? (
                   <ConditionFilteredEmpty
@@ -3637,13 +3628,31 @@ function Workspace() {
                   />
                 )
                 : 'No condition checks logged yet — click the + button to record one.'}
-              rows={conditionRows}
-              onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
-              renderSubRow={(row) => row.observations && (
-                <span className="p23-subrow"><strong>Observations:</strong> <ExpandableText text={row.observations} lines={3} className="p23-prewrap" /></span>
-              )}
+              rows={displayedConditionRows}
+              onRowClick={(row) => setConditionDetailTarget(row)}
             />
+            </div>
         </ModulePanel>
+        <FormModal open={!!conditionDetailTarget} title={conditionDetailTarget?.condition_check_id ? `Condition Check #${conditionDetailTarget.condition_check_id}` : 'Vehicle Condition'} onClose={() => setConditionDetailTarget(null)}>
+          {conditionDetailTarget && (
+            <div className="p24-condition-detail">
+              <div className="p24-condition-detail-vehicle"><div><span>Vehicle</span><strong>{conditionDetailTarget.vehicle?.vehicle_name ?? 'Vehicle not recorded'}</strong><small>{conditionDetailTarget.vehicle?.plate_number ?? 'No plate number'}</small></div><ConditionResultBadge value={conditionDetailTarget.condition_result} /></div>
+              {conditionDetailTarget.condition_check_id ? <>
+                <dl><div><dt>Checked by</dt><dd>{conditionDetailTarget.checked_by?.name ?? 'Not recorded'}</dd></div><div><dt>Date and time</dt><dd>{formatDate(conditionDetailTarget.created_at)} · {formatTime(conditionDetailTarget.created_at)}</dd></div></dl>
+                <section><h3>Inspector Observations</h3><p>{conditionDetailTarget.observations || 'No observations recorded.'}</p></section>
+                {conditionDetailTarget.resulting_ticket && <section><h3>Related Maintenance Ticket</h3><ConditionTicketCell row={conditionDetailTarget} onViewTicket={openTicketProfile} /></section>}
+                <div className="p24-condition-detail-actions">
+                  {canDo(user, 'ticket.create') && conditionDetailTarget.condition_result !== 'Good' && !conditionDetailTarget.resulting_ticket && <button className="primary-button" type="button" onClick={() => { setConditionDetailTarget(null); handleCreateTicketFromCondition(conditionDetailTarget); }}>Create Ticket</button>}
+                  {canDo(user, 'ticket.propose') && conditionDetailTarget.condition_result !== 'Good' && !conditionDetailTarget.resulting_ticket && <button className="primary-button" type="button" onClick={() => { setConditionDetailTarget(null); handleCreateTicketFromCondition(conditionDetailTarget); }}>Propose Ticket</button>}
+                  {canDo(user, 'schedule.suggest') && <button className="ghost-button" type="button" onClick={() => { setConditionDetailTarget(null); handleSuggestScheduleFromCondition(conditionDetailTarget); }}>Suggest Schedule</button>}
+                  {canDo(user, 'condition.edit') && String(conditionDetailTarget.checked_by?.id) === String(user.id) && <button className="ghost-button" type="button" onClick={() => navigate(`${roleRoutes[user.role]}/conditions/${conditionDetailTarget.condition_check_id}/edit`)}>Edit Check</button>}
+                </div>
+              </> : <div className="p24-condition-unchecked"><p>No condition check has been recorded for this vehicle.</p>{canDo(user, 'condition.create') && <button className="primary-button" type="button" onClick={() => { setPrefilledConditionVehicleId(conditionDetailTarget.vehicle_id); navigate(`${roleRoutes[user.role]}/conditions/new`); }}>Record Condition</button>}</div>}
+              <p className="p24-condition-readiness-note"><Icon name="info" size={14} /> Condition checks describe physical condition. Readiness for emergency deployment is assessed separately.</p>
+            </div>
+          )}
+        </FormModal>
+        </>
       );
     }
 
@@ -3664,73 +3673,35 @@ function Workspace() {
       }
 
       return (
-        <ModulePanel
-          description={issueDescription(user.role)}
-          statCards={
-            <div className="issue-summary-grid">
-              <div className="issue-summary-stats">
-                <ModuleStatCards
-                  totalLabel="Total Issues"
-                  total={issueStats.total}
-                  cards={ISSUE_STAT_CARDS}
-                  counts={issueStats}
-                  activeFilter={filterStatus}
-                  onFilterChange={setFilterStatus}
-                />
-              </div>
-              <div className="issue-summary-chart">
-                <StackedBarChart
-                  title="Issue Reports"
-                  segments={[
-                    { label: 'High', value: issueSeverityStats.High, color: '#dc2626' },
-                    { label: 'Medium', value: issueSeverityStats.Medium, color: '#f59e0b' },
-                    { label: 'Low', value: issueSeverityStats.Low, color: '#0ea5e9' },
-                  ]}
-                />
-              </div>
-              <LatestIssueCard issues={records.issues ?? []} onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)} />
-              <section className="panel module-filter-panel issue-summary-filters">
-                <IssueFilterPanel
-                  categories={lookups.categories}
-                  vehicles={lookups.vehicles}
-                  issueTypes={lookups.issue_types ?? []}
-                  severityLevels={lookups.severity_levels ?? []}
-                  statusOptions={lookups.issue_statuses ?? []}
-                  filterCategory={filterCategory}
-                  setFilterCategory={setFilterCategory}
-                  filterCapacity={filterCapacity}
-                  setFilterCapacity={setFilterCapacity}
-                  filterIssueType={filterIssueType}
-                  setFilterIssueType={setFilterIssueType}
-                  filterStatus={filterStatus}
-                  setFilterStatus={setFilterStatus}
-                  filterPriority={filterPriority}
-                  setFilterPriority={setFilterPriority}
-                  filterDateStart={filterDateStart}
-                  setFilterDateStart={setFilterDateStart}
-                  filterDateEnd={filterDateEnd}
-                  setFilterDateEnd={setFilterDateEnd}
-                />
-              </section>
+        <ModulePanel description={null}>
+          <header className="issue-page-header">
+            <div><h2>Vehicle Issue Reports</h2><p>Report problems and track their progress.</p></div>
+            <div className="issue-header-actions">
+              {canDo(user, 'issue.create') && <button className="primary-button" type="button" onClick={() => navigate(`${roleRoutes[user.role]}/issues/new`)}><Icon name="add" size={15} /> Report an Issue</button>}
+              {canDo(user, 'ticket.propose') && <button className="ghost-button" type="button" onClick={() => { setPrefilledTicketData(null); navigate(`${roleRoutes[user.role]}/tickets/new`); }}><Icon name="ticket" size={15} /> Propose Repair Work</button>}
             </div>
-          }
-        >
-          <IssueReportsIntro canPropose={canDo(user, 'ticket.propose')} />
-          <div className="panel-header-bar">
-            <h3>Issue Reports <span className="count-badge">{visibleRows.length}</span></h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <LocalSearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search issues..."
-              columnChooser={issueColumnChooser}
-              onAdd={canDo(user, 'ticket.propose') ? () => { setPrefilledTicketData(null); navigate(`${roleRoutes[user.role]}/tickets/new`); } : undefined}
-              addLabel="Propose Ticket"
-            />
-          </div>
-          </div>
+          </header>
+          {canDo(user, 'ticket.propose') && <p className="issue-action-help"><Icon name="info" size={14} /> Reporting records a problem. Proposing repair work creates a maintenance request that still needs Admin approval.</p>}
+          <section className="issue-compact-metrics" aria-label="Issue report summary">
+            <button type="button" className={!filterStatus.length ? 'is-active' : ''} onClick={() => setFilterStatus([])}><span>Total Reports</span><strong>{issueStats.total}</strong></button>
+            <button type="button" className={sameSelection(filterStatus, ['Pending', 'Under Review']) ? 'is-active' : ''} onClick={() => setFilterStatus(['Pending', 'Under Review'])}><span>Awaiting Action</span><strong>{(issueStats.Pending ?? 0) + (issueStats['Under Review'] ?? 0)}</strong><small>Waiting or being reviewed</small></button>
+            <button type="button" className={sameSelection(filterStatus, ['Resolved']) ? 'is-active' : ''} onClick={() => setFilterStatus(['Resolved'])}><span>Resolved</span><strong>{issueStats.Resolved ?? 0}</strong></button>
+          </section>
+          <section className="issue-list-section">
+            <div className="issue-list-heading"><h3>My Issue Reports</h3><p>{visibleRows.length} report{visibleRows.length === 1 ? '' : 's'} shown</p></div>
+            <div className="issue-toolbar">
+              <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search issue, vehicle, or plate..." />
+              <button className="ghost-button issue-filter-toggle" type="button" onClick={() => setShowIssueFilters((open) => !open)} aria-expanded={showIssueFilters} aria-controls="issue-advanced-filters"><Icon name="filter" size={15} /> Advanced Filters</button>
+            </div>
+            {showIssueFilters && <div id="issue-advanced-filters" className="issue-advanced-filters"><IssueFilterPanel
+              categories={lookups.categories} vehicles={lookups.vehicles} issueTypes={lookups.issue_types ?? []} severityLevels={lookups.severity_levels ?? []} statusOptions={lookups.issue_statuses ?? []}
+              filterCategory={filterCategory} setFilterCategory={setFilterCategory} filterCapacity={filterCapacity} setFilterCapacity={setFilterCapacity}
+              filterIssueType={filterIssueType} setFilterIssueType={setFilterIssueType} filterStatus={filterStatus} setFilterStatus={setFilterStatus}
+              filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterDateStart={filterDateStart} setFilterDateStart={setFilterDateStart}
+              filterDateEnd={filterDateEnd} setFilterDateEnd={setFilterDateEnd}
+            /></div>}
           {renderDismissIssueModal()}
-          <PaginatedTable
+          <div className="issue-report-table"><PaginatedTable
             columns={issueColumnChooser.visibleColumns}
             onReorderColumn={issueColumnChooser.reorderColumn}
             emptyMessage={(filterCategory.length || filterCapacity.length || filterIssueType.length || filterStatus.length || filterPriority.length || filterDateStart || filterDateEnd || searchQuery)
@@ -3753,11 +3724,9 @@ function Workspace() {
               )
               : 'No issue reports waiting — every reported problem already has an approved ticket or has been closed.'}
             rows={visibleRows}
-            onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
-            renderSubRow={(row) => row.issue_description && (
-              <span className="p23-subrow"><strong>Description:</strong> <ExpandableText text={row.issue_description} lines={2} className="p23-prewrap" /></span>
-            )}
-          />
+            onRowClick={(row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`)}
+          /></div>
+          </section>
         </ModulePanel>
       );
     }
@@ -3772,22 +3741,124 @@ function Workspace() {
         : filterStatus.length === 1
           ? `No records are at "${filterStatus[0]}" with the current search and filters.`
           : 'No maintenance records match the current search or filters — clear them to see every record.';
+      const statusLabel = (status) => ({
+        'For Verification': 'Needs Verification',
+        'Under Repair': 'Repair in Progress',
+      }[status] ?? status ?? 'Not recorded');
+      const statusTone = (status) => ({
+        Assigned: 'neutral',
+        'Under Repair': 'info',
+        'For Verification': 'warning',
+        Completed: 'success',
+      }[status] ?? 'neutral');
+      const recordPath = (row) => `${roleRoutes[user.role]}/maintenance/${row.maintenance_id}`;
+      const actionableRecords = (records.maintenance ?? []).filter((row) => (
+        (canDo(user, 'record.verify')
+          && row.progress_status === 'For Verification'
+          && String(row.maintenance_personnel_id) !== String(user.id))
+        || (canDo(user, 'record.confirm')
+          && row.verification_result === 'Passed'
+          && row.progress_status !== 'Completed')
+      ));
+      const advancedFilterCount = filterCategory.length + filterCapacity.length + filterPriority.length
+        + filterMaintType.length + filterSource.length + Number(Boolean(filterDateStart)) + Number(Boolean(filterDateEnd));
+      const simpleColumns = [
+        {
+          key: 'maintenance', label: 'Maintenance', locked: true, render: (row) => (
+            <span className="p24-maint-primary-cell">
+              <strong>{row.maintenance_type || 'Maintenance work'}</strong>
+              <span>Record #{row.maintenance_id}</span>
+            </span>
+          ),
+        },
+        {
+          key: 'vehicle', label: 'Vehicle', render: (row) => (
+            <span className="p24-maint-primary-cell">
+              <strong>{row.vehicle?.vehicle_name ?? 'Vehicle not recorded'}</strong>
+              {row.vehicle?.plate_number && <span>{row.vehicle.plate_number}</span>}
+            </span>
+          ),
+        },
+        { key: 'status', label: 'Current Status', className: 'cell-center', render: (row) => <span className={`p24-maint-status tone-${statusTone(row.progress_status)}`}>{statusLabel(row.progress_status)}</span> },
+        {
+          key: 'date', label: 'Relevant Date', className: 'cell-center', render: (row) => (
+            <span className="p24-maint-date">
+              <DateBadge value={row.date_completed || row.date_started} />
+              <small>{row.date_completed ? 'Completed' : 'Started'}</small>
+            </span>
+          ),
+        },
+        {
+          key: 'action', label: '', locked: true, className: 'cell-center', render: (row) => (
+            <button className="p24-view-link" type="button" onClick={(event) => { event.stopPropagation(); navigate(recordPath(row)); }}>
+              View details <Icon name="chevronRight" size={14} />
+            </button>
+          ),
+        },
+      ];
       return (
         <>
-        <ModulePanel
-          tabBar={maintenanceLedgerTabBar}
-          description="Directly log external, historical, or third-party vehicle maintenance records and expenses without running the full ticket workflow."
-          statCards={
-            <ModuleStatCards
-              totalLabel="Total Records"
-              total={maintenanceRecordStats.total}
-              cards={MAINTENANCE_RECORD_STAT_CARDS}
-              counts={maintenanceRecordStats}
-              activeFilter={filterStatus}
-              onFilterChange={setFilterStatus}
-            />
-          }
-          filterBar={
+        <ModulePanel tabBar={maintenanceLedgerTabBar}>
+          <header className="p24-maint-header">
+            <div>
+              <p className="p24-maint-eyebrow">Vehicle operations</p>
+              <h2>Maintenance Records</h2>
+              <p>Find completed work, review records needing attention, and open full repair details.</p>
+            </div>
+          </header>
+
+          <section className="p24-maint-metrics" aria-label="Maintenance record summary">
+            {[
+              ['All Records', maintenanceRecordStats.total, []],
+              ['Needs Verification', maintenanceRecordStats['For Verification'] ?? 0, ['For Verification']],
+              ['Completed', maintenanceRecordStats.Completed ?? 0, ['Completed']],
+            ].map(([label, count, value]) => (
+              <button key={label} type="button" className={`p24-maint-metric${JSON.stringify(filterStatus) === JSON.stringify(value) ? ' is-active' : ''}`} onClick={() => setFilterStatus(value)}>
+                <span>{label}</span><strong>{count}</strong>
+              </button>
+            ))}
+          </section>
+
+          {actionableRecords.length > 0 && (
+            <section className="p24-maint-actions" aria-labelledby="maintenance-actions-title">
+              <div className="p24-maint-actions-copy">
+                <span className="p24-maint-action-icon"><Icon name="alert" size={18} /></span>
+                <div><h3 id="maintenance-actions-title">Action Required</h3><p>{actionableRecords.length} {actionableRecords.length === 1 ? 'record needs' : 'records need'} your attention.</p></div>
+              </div>
+              <div className="p24-maint-action-items">
+                {actionableRecords.slice(0, 3).map((row) => (
+                  <button key={row.maintenance_id} type="button" onClick={() => {
+                    if (canDo(user, 'record.verify') && row.progress_status === 'For Verification') setEditTarget({ ...row, __verify: true });
+                    else navigate(recordPath(row));
+                  }}>
+                    <span><strong>{row.maintenance_type}</strong><small>{row.vehicle?.vehicle_name ?? `Record #${row.maintenance_id}`}</small></span>
+                    <span>{canDo(user, 'record.verify') && row.progress_status === 'For Verification' ? 'Review' : 'Confirm'} <Icon name="chevronRight" size={14} /></span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <div className="p24-maint-toolbar">
+            <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search by maintenance, vehicle, or record ID..." />
+            <button className={`ghost-button p24-filter-toggle${showMaintenanceFilters ? ' is-active' : ''}`} type="button" aria-expanded={showMaintenanceFilters} onClick={() => setShowMaintenanceFilters((value) => !value)}>
+              <Icon name="filter" size={16} /> Filters{advancedFilterCount ? ` (${advancedFilterCount})` : ''}
+            </button>
+            <ViewModeDropdown value={maintenanceViewMode} onChange={changeMaintenanceViewMode} />
+          </div>
+
+          <div className="p24-maint-tabs" role="tablist" aria-label="Filter by maintenance status">
+            {[
+              ['All', []], ['Assigned', ['Assigned']], ['Repair in Progress', ['Under Repair']],
+              ['Needs Verification', ['For Verification']], ['Completed', ['Completed']],
+            ].map(([label, value]) => (
+              <button key={label} type="button" role="tab" aria-selected={JSON.stringify(filterStatus) === JSON.stringify(value)} className={JSON.stringify(filterStatus) === JSON.stringify(value) ? 'is-active' : ''} onClick={() => setFilterStatus(value)}>{label}</button>
+            ))}
+          </div>
+
+          {showMaintenanceFilters && (
+            <div className="p24-maint-advanced">
+              <div className="p24-maint-advanced-head"><div><h3>More filters</h3><p>Narrow records by vehicle details, personnel, source, or date.</p></div></div>
             <FilterBar
               categories={lookups.categories}
               vehicles={lookups.vehicles}
@@ -3826,23 +3897,10 @@ function Workspace() {
                 setEnd: setFilterDateEnd,
               }}
             />
-          }
-        >
-          <div className="panel-header-bar">
-            <h3>Maintenance Records <span className="count-badge">{visibleRows.length}</span></h3>
-            <div className="schedule-list-toolbar-actions">
-              <ViewModeDropdown value={maintenanceViewMode} onChange={changeMaintenanceViewMode} />
-              {/* No general "+ Add" entry point here anymore — repair data
-                  is now entered through Tickets; Maintenance Schedule
-                  completions create records through their own path. */}
-              <LocalSearchInput
-                value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder="Search maintenance..."
-                columnChooser={maintenanceViewMode === 'card' ? undefined : maintenanceColumnChooser}
-              />
             </div>
-          </div>
+          )}
+
+          <div className="p24-maint-results-head"><h3>Records</h3><span>{visibleRows.length} shown</span></div>
           {maintenanceViewMode === 'card' ? (
             <PaginatedCardGrid
               items={visibleRows}
@@ -3857,13 +3915,11 @@ function Workspace() {
             />
           ) : (
             <PaginatedTable
-              columns={maintenanceColumnChooser.visibleColumns}
-              onReorderColumn={maintenanceColumnChooser.reorderColumn}
+              columns={simpleColumns}
               emptyMessage={maintenanceEmptyMessage}
               rows={visibleRows}
               compact
-              onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
-              renderSubRow={(row) => row.problem_reason}
+              onRowClick={(row) => navigate(recordPath(row))}
             />
           )}
         </ModulePanel>
@@ -3964,21 +4020,108 @@ function Workspace() {
           ? `No "${scheduleFilterLabel}" schedules with the current search and filters.`
           : 'No schedules match the current search or filters — clear them to see every schedule.';
 
+      const scheduledRows = records.schedules ?? [];
+      const upcomingCount = scheduledRows.filter((row) => row.status === 'Scheduled' && scheduleUrgencyBucket(row) !== 'Overdue').length;
+      const attentionRows = scheduledRows.filter((row) => (
+        (canDo(user, 'schedule.approve') && row.status === 'Pending Approval')
+        || (hasRole(user, 'Maintenance Personnel') && row.status === 'Scheduled' && String(row.assigned_to) === String(user.id))
+        || (canDo(user, 'record.verify') && row.status === 'Completed' && row.resulting_maintenance?.progress_status === 'For Verification')
+      )).sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date));
+      const advancedFilterCount = filterCategory.length + filterCapacity.length + filterAssignedTo.length + filterLocation.length;
+      const formatScheduleTime = (value) => {
+        if (!value) return '';
+        const [hours, minutes] = String(value).split(':').map(Number);
+        if (!Number.isFinite(hours)) return value;
+        return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(2000, 0, 1, hours, minutes || 0));
+      };
+      const scheduleActionColumn = scheduleColumnDefs.find((column) => column.key === 'action');
+      const simpleScheduleColumns = [
+        {
+          key: 'when', label: 'Schedule', locked: true, render: (row) => (
+            <span className="p24-schedule-when">
+              <strong>{formatDate(row.scheduled_date)}</strong>
+              <span>{formatScheduleTime(row.scheduled_time) || 'Time not set'}</span>
+            </span>
+          ),
+        },
+        {
+          key: 'vehicle', label: 'Vehicle', render: (row) => (
+            <span className="p24-maint-primary-cell"><strong>{row.vehicle?.vehicle_name ?? 'Vehicle not recorded'}</strong><span>{row.vehicle?.plate_number ?? 'No plate number'}</span></span>
+          ),
+        },
+        { key: 'type', label: 'Maintenance', render: (row) => <span className="p24-schedule-type"><strong>{row.maintenance_type}</strong><span>Schedule #{row.schedule_id}</span></span> },
+        { key: 'assigned', label: 'Assigned To', render: (row) => row.assigned_to_user?.name ?? <span className="muted">Unassigned</span> },
+        {
+          key: 'status', label: 'Status', className: 'cell-center', render: (row) => (
+            <span className="p24-schedule-state"><TicketStatusBadge value={row.status} />{row.status === 'Scheduled' && <small>{scheduleDueLabel(row)}</small>}</span>
+          ),
+        },
+        scheduleActionColumn,
+      ].filter(Boolean);
+
       return (
-        <ModulePanel
-          description="Plan preventative maintenance and track schedule status."
-          statCards={
-            <ModuleStatCards
-              totalLabel="Total Schedules"
-              total={scheduleStats.total}
-              cards={(hasRole(user, 'Maintenance Personnel') && !hasRole(user, 'Admin')) ? [...SCHEDULE_STAT_CARDS, MY_ASSIGNED_SCHEDULE_CARD] : SCHEDULE_STAT_CARDS}
-              counts={scheduleStats}
-              activeFilter={filterStatus}
-              onFilterChange={setFilterStatus}
-              gridClassName="schedule-stat-grid"
-            />
-          }
-          filterBar={
+        <ModulePanel>
+          <header className="p24-schedule-header">
+            <div><p className="p24-maint-eyebrow">Maintenance planning</p><h2>Maintenance Schedule</h2><p>Track upcoming maintenance and overdue work.</p></div>
+            {(canDo(user, 'schedule.create') || canDo(user, 'schedule.suggest')) && (
+              <button className="primary-button" type="button" onClick={() => navigate(`${roleRoutes[user.role]}/schedules/new`)}>
+                <Icon name="plus" size={16} /> {canDo(user, 'schedule.create') ? 'Add Schedule' : 'Suggest Schedule'}
+              </button>
+            )}
+          </header>
+
+          <section className="p24-schedule-metrics" aria-label="Schedule summary">
+            {[
+              ['Total Schedules', scheduleStats.total, null, 'neutral'],
+              ['Overdue', scheduleStats.Overdue ?? 0, ['Overdue'], 'danger'],
+              ['Pending Approval', scheduleStats['Pending Approval'] ?? 0, ['Pending Approval'], 'warning'],
+              ['Upcoming', upcomingCount, ['Due1to3', 'Due4to7', 'Due8plus'], 'info'],
+            ].map(([label, count, value, tone]) => (
+              <button key={label} type="button" className={`p24-schedule-metric tone-${tone}${value && value.every((item) => filterStatus.includes(item)) ? ' is-active' : ''}`} onClick={() => value && setFilterStatus(value)} aria-label={value ? `Show ${label}` : `${label}: ${count}`}>
+                <span>{label}</span><strong>{count}</strong>
+              </button>
+            ))}
+          </section>
+
+          {attentionRows.length > 0 && (
+            <section className="p24-schedule-attention" aria-labelledby="schedule-attention-title">
+              <div className="p24-schedule-attention-head"><span><Icon name="alert" size={17} /></span><div><h3 id="schedule-attention-title">Needs Attention</h3><p>{attentionRows.length} {attentionRows.length === 1 ? 'schedule is' : 'schedules are'} ready for your action.</p></div></div>
+              <div className="p24-schedule-attention-list">
+                {attentionRows.slice(0, 4).map((row) => (
+                  <div key={row.schedule_id}>
+                    <span><strong>{row.maintenance_type}</strong><small>{row.vehicle?.vehicle_name} · {formatDate(row.scheduled_date)}</small></span>
+                    {canDo(user, 'schedule.approve') && row.status === 'Pending Approval' ? (
+                      <button type="button" onClick={() => approveSchedule(row)}>Approve</button>
+                    ) : row.status === 'Completed' && row.resulting_maintenance_id ? (
+                      <button type="button" onClick={() => navigate(`${roleRoutes[user.role]}/maintenance/${row.resulting_maintenance_id}`)}>Review</button>
+                    ) : (
+                      <button type="button" onClick={() => openVehicleProfile(row.vehicle)}>View vehicle</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <div className="p24-schedule-toolbar">
+            <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search by vehicle, maintenance, or schedule ID..." />
+            <button className={`ghost-button p24-filter-toggle${showScheduleFilters ? ' is-active' : ''}`} type="button" aria-expanded={showScheduleFilters} onClick={() => setShowScheduleFilters((value) => !value)}><Icon name="filter" size={16} /> Filters{advancedFilterCount ? ` (${advancedFilterCount})` : ''}</button>
+            <button className="ghost-button p24-schedule-export" type="button" onClick={() => exportRowsToCsv('maintenance-schedules.csv', SCHEDULE_EXPORT_COLUMNS, visibleRows)}><Icon name="download" size={16} /> Export</button>
+            <ViewModeDropdown value={scheduleViewMode} onChange={changeScheduleViewMode} />
+          </div>
+
+          <div className="p24-maint-tabs" role="tablist" aria-label="Filter schedules">
+            {[
+              ['Current', []], ['Scheduled', ['Scheduled']], ['Pending Approval', ['Pending Approval']],
+              ['Awaiting Verification', ['AwaitingVerification']], ['Completed', ['Completed']], ['Cancelled', ['Cancelled']], ['Declined', ['Declined']],
+            ].map(([label, value]) => (
+              <button key={label} type="button" role="tab" aria-selected={JSON.stringify(filterStatus) === JSON.stringify(value)} className={JSON.stringify(filterStatus) === JSON.stringify(value) ? 'is-active' : ''} onClick={() => setFilterStatus(value)}>{label}</button>
+            ))}
+          </div>
+
+          {showScheduleFilters && (
+            <div className="p24-maint-advanced">
+              <div className="p24-maint-advanced-head"><h3>More filters</h3><p>Narrow schedules by vehicle, assigned personnel, or service location.</p></div>
             <FilterBar
               categories={lookups.categories}
               vehicles={lookups.vehicles}
@@ -3998,29 +4141,10 @@ function Workspace() {
                 setSelected: setFilterLocation,
               }]}
             />
-          }
-        >
-          <div className="panel-header-bar">
-            <h3>Maintenance Schedules <span className="count-badge">{visibleRows.length}</span></h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ViewModeDropdown value={scheduleViewMode} onChange={changeScheduleViewMode} />
-              {/* Custodian books directly (schedule.create) — they have the
-                  day-to-day visibility into a vehicle's condition. Admin keeps
-                  oversight (edit any/reassign/cancel) without originating one;
-                  Maintenance Personnel never booked schedules directly. */}
-              <LocalSearchInput
-                value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder="Search schedules..."
-                onAdd={(canDo(user, 'schedule.create') || canDo(user, 'schedule.suggest'))
-                  ? () => navigate(`${roleRoutes[user.role]}/schedules/new`)
-                  : undefined}
-                addLabel={canDo(user, 'schedule.create') ? 'Add Schedule' : 'Suggest Schedule'}
-                onExport={() => exportRowsToCsv('maintenance-schedules.csv', SCHEDULE_EXPORT_COLUMNS, visibleRows)}
-                columnChooser={scheduleViewMode === 'card' ? undefined : scheduleColumnChooser}
-              />
             </div>
-          </div>
+          )}
+
+          <div className="p24-maint-results-head"><h3>Schedules</h3><span>{scheduleRows.length} shown</span></div>
           {scheduleViewMode === 'card' ? (
             <PaginatedCardGrid
               items={scheduleRows}
@@ -4030,7 +4154,6 @@ function Workspace() {
                 <MaintenanceScheduleCard
                   row={row}
                   currentUser={user}
-                  allSchedules={records.schedules}
                   onComplete={openCompleteSchedule}
                   onEdit={(r) => navigate(`${roleRoutes[user.role]}/schedules/${r.schedule_id}/edit`)}
                   onDelete={(r) => deleteRecord(`/maintenance-schedules/${r.schedule_id}`, 'Schedule cancelled.', `Cancel the ${r.maintenance_type} schedule for ${r.vehicle?.vehicle_name ?? 'this vehicle'}? It can be restored later if needed.`, { title: 'Cancel schedule', confirmLabel: 'Cancel schedule' })}
@@ -4046,8 +4169,7 @@ function Workspace() {
             />
           ) : (
             <PaginatedTable
-              columns={scheduleColumnChooser.visibleColumns}
-              onReorderColumn={scheduleColumnChooser.reorderColumn}
+              columns={simpleScheduleColumns}
               emptyMessage={scheduleEmptyMessage}
               rows={scheduleRows}
               onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}

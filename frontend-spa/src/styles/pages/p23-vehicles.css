@@ -50,6 +50,58 @@
    Vehicle Profile — action groups (routine / maintenance / lifecycle)
    ------------------------------------------------------------------ */
 .vehicle-profile-header { border-bottom-color: var(--border); }
+
+/* Vehicle Management fleet-first landing view. */
+.page-heading-subtitle { margin: 3px 0 0; color: var(--text-muted); font-size: .82rem; font-weight: 500; }
+.fleet-summary-grid { grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; }
+.fleet-summary-grid .metric-card { min-height: 78px; padding: 12px 14px; border-radius: 10px; box-shadow: none; }
+.fleet-summary-grid .metric-card-body strong { font-size: 1.5rem; }
+.fleet-context { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; padding: 11px 13px; border: 1px solid #bfdbfe; border-radius: 9px; background: #eff6ff; color: #1e3a5f; font-size: .82rem; }
+.fleet-context svg { flex: 0 0 auto; margin-top: 2px; color: #2563eb; }
+.fleet-context p { margin: 0; line-height: 1.45; }
+.fleet-quick-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+.fleet-quick-filters > span { margin-right: 3px; color: var(--text-muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.fleet-quick-filters button { min-height: 34px; padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font-size: .78rem; font-weight: 650; cursor: pointer; }
+.fleet-quick-filters button:hover, .fleet-quick-filters button:focus-visible { border-color: #2563eb; color: #1d4ed8; outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, .15); }
+.vehicle-filter-toggle { display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: space-between; padding: 7px 10px; border: 0; background: transparent; color: var(--text-strong); font-weight: 700; cursor: pointer; }
+.vehicle-filter-toggle > span { display: inline-flex; align-items: center; gap: 7px; }
+.vehicle-filter-toggle strong { min-width: 20px; padding: 2px 6px; border-radius: 99px; background: #dbeafe; color: #1d4ed8; font-size: .72rem; }
+.vehicle-filter-toggle > svg { transition: transform .18s ease; }
+.vehicle-filter-toggle > svg.is-expanded { transform: rotate(180deg); }
+.vehicle-filter-summary { margin: -3px 10px 8px; color: var(--text-muted); font-size: .76rem; }
+.vehicle-filter-panel .filter-bar-container { padding-top: 10px; border-top: 1px solid var(--border); }
+.fleet-list-header { align-items: center; }
+.fleet-list-caption { margin: 4px 0 0; color: var(--text-muted); font-size: .78rem; }
+.fleet-list-header .export-btn.has-label { width: auto; padding: 0 12px; gap: 6px; }
+.fleet-list-header .export-btn.has-label > span:last-child { font-size: .74rem; font-weight: 700; }
+.fleet-vehicle-cell { display: inline-flex; align-items: center; gap: 9px; min-width: 170px; }
+.fleet-vehicle-cell > span { display: flex; flex-direction: column; gap: 2px; }
+.fleet-vehicle-cell small { color: var(--text-muted); font-size: .71rem; }
+.plate-number { font-weight: 750; letter-spacing: .035em; white-space: nowrap; }
+.vehicle-actions-menu { position: relative; display: inline-block; text-align: left; }
+.vehicle-actions-menu summary { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font-size: .76rem; font-weight: 700; cursor: pointer; list-style: none; }
+.vehicle-actions-menu summary::-webkit-details-marker { display: none; }
+.vehicle-actions-menu summary:focus-visible { outline: 3px solid rgba(37, 99, 235, .25); border-color: #2563eb; }
+.vehicle-actions-popover { position: absolute; z-index: 30; top: calc(100% + 5px); right: 0; width: 210px; padding: 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 12px 28px rgba(15, 23, 42, .16); }
+.vehicle-actions-popover button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 9px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font-size: .78rem; text-align: left; cursor: pointer; }
+.vehicle-actions-popover button:hover, .vehicle-actions-popover button:focus-visible { background: var(--surface-hover); outline: none; }
+.vehicle-actions-popover button.is-danger { color: #b91c1c; }
+
+@media (max-width: 900px) {
+  .fleet-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fleet-list-header { align-items: stretch; flex-direction: column; }
+  .fleet-list-header .local-search-bar { width: 100%; }
+}
+@media (max-width: 640px) {
+  .fleet-summary-grid { grid-template-columns: 1fr 1fr; }
+  .fleet-summary-grid .metric-card { min-height: 70px; padding: 10px; }
+  .fleet-summary-grid .metric-card-icon { display: none; }
+  .fleet-quick-filters > span { flex-basis: 100%; }
+  .fleet-quick-filters button { flex: 1 1 calc(50% - 7px); }
+  .vehicle-actions-menu, .vehicle-actions-menu summary { width: 100%; }
+  .vehicle-actions-menu summary { justify-content: center; }
+  .vehicle-actions-popover { position: static; width: 100%; margin-top: 5px; box-shadow: none; }
+}
 .p23-action-groups {
   display: flex;
   flex-wrap: wrap;

@@ -2,34 +2,14 @@ import AuthHeader from '../components/AuthHeader';
 import AuthFooter from '../components/AuthFooter';
 import Icon from '../components/Icon';
 
-function ClockIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 8v4l3 3" />
-      <circle cx="12" cy="12" r="9" />
-    </svg>
-  );
-}
-
-function UsersIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  );
-}
-
 const FEATURES = [
   { icon: <Icon name="vehicle" size={22} />, title: 'Fleet Management', desc: "Track every vehicle's availability, condition, and status in real time." },
   { icon: <Icon name="wrench" size={22} />, title: 'Maintenance Workflow', desc: 'From a reported issue, through inspection and repair, to a verified return to service.' },
   { icon: <Icon name="calendar" size={22} />, title: 'Scheduling', desc: 'Plan preventive maintenance ahead of time, including recurring service.' },
   { icon: <Icon name="pin" size={22} />, title: 'Vehicle Location', desc: 'See exactly where every vehicle is stationed on an interactive map.' },
   { icon: <Icon name="alert" size={22} />, title: 'Issue Reports', desc: 'Log and track problems from the moment they are reported to resolution.' },
-  { icon: <UsersIcon />, title: 'Role-Based Access', desc: 'Admin, Custodian, and Maintenance Personnel each see only what they need.' },
-  { icon: <ClockIcon />, title: 'Activity History', desc: 'A complete, automatic timeline of every action taken across the fleet.' },
+  { icon: <Icon name="users" size={22} />, title: 'Role-Based Access', desc: 'Admin, Custodian, and Maintenance Personnel each see only what they need.' },
+  { icon: <Icon name="clock" size={22} />, title: 'Activity History', desc: 'A complete, automatic timeline of every action taken across the fleet.' },
   { icon: <Icon name="clipboard" size={22} />, title: 'Reports', desc: 'Printable summaries for oversight, audits, and planning ahead.' },
 ];
 

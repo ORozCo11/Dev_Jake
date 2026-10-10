@@ -226,7 +226,7 @@ export function issueFields(lookups, editTarget, role, onAddVehicle) {
 
   return [
     {
-      label: 'Vehicle', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select',
+      label: 'Which vehicle has a problem?', name: 'vehicle_id', options: vehicleOptions(lookups), required: true, type: 'select', group: '1. Select Vehicle',
       // Only offered to whoever actually holds vehicle.create (Admin and
       // Custodian) — anyone else would just hit a permissions wall.
       action: onAddVehicle ? { label: '+ Add Vehicle', onClick: onAddVehicle } : undefined,
@@ -235,11 +235,11 @@ export function issueFields(lookups, editTarget, role, onAddVehicle) {
     // anyone else (a Custodian filing a fresh report) gets "Other" + a note
     // folded into Remarks instead, same as the edit-own path above.
     (role === 'Admin'
-      ? { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'creatable-select', newItemLabel: 'issue type', catalogEndpoint: '/fault-categories' }
-      : { label: 'Issue Type', name: 'issue_type', options: lookups.issue_types, required: true, type: 'catalog-or-other', otherNoteField: 'remarks', otherNoteLabel: 'Describe the issue/type' }),
-    { label: 'Issue Description', name: 'issue_description', required: true, type: 'textarea' },
-    { label: 'Severity Level', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select', extra: (values) => <SeverityGuide levels={lookups.severity_levels} selected={values.severity_level} /> },
-    { label: 'Files', name: 'attachments', type: 'multi-file' },
+      ? { label: 'Type of problem', name: 'issue_type', options: lookups.issue_types, required: true, type: 'creatable-select', newItemLabel: 'issue type', catalogEndpoint: '/fault-categories', group: '2. Describe the Problem' }
+      : { label: 'Type of problem', name: 'issue_type', options: lookups.issue_types, required: true, type: 'catalog-or-other', otherNoteField: 'remarks', otherNoteLabel: 'Describe the issue/type', group: '2. Describe the Problem' }),
+    { label: 'What did you notice?', name: 'issue_description', required: true, type: 'textarea', placeholder: 'Describe the problem, when it happens, and anything the reviewer should know.', group: '2. Describe the Problem' },
+    { label: 'How urgent is it?', name: 'severity_level', options: lookups.severity_levels, required: true, type: 'select', group: '3. Additional Information', extra: (values) => <SeverityGuide levels={lookups.severity_levels} selected={values.severity_level} /> },
+    { label: 'Photos or files (optional)', name: 'attachments', type: 'multi-file', group: '3. Additional Information', hint: 'Add evidence only if it helps explain the problem.' },
   ];
 }
 

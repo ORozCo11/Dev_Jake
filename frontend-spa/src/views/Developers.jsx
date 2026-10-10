@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import AuthHeader from '../components/AuthHeader';
 import AuthFooter from '../components/AuthFooter';
+import Icon from '../components/Icon';
 
 // TODO: replace the placeholder team info below with your actual capstone
 // group's names, roles, and (optionally) contact/GitHub links.
@@ -65,7 +66,7 @@ export default function Developers() {
                 onClick={() => setPage((p) => (p - 1 + totalPages) % totalPages)}
                 aria-label="Previous team members"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+                <Icon name="chevronRight" size={22} style={{ transform: 'rotate(180deg)' }} />
               </button>
             )}
 
@@ -94,7 +95,7 @@ export default function Developers() {
                 onClick={() => setPage((p) => (p + 1) % totalPages)}
                 aria-label="Next team members"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+                <Icon name="chevronRight" size={22} />
               </button>
             )}
           </div>

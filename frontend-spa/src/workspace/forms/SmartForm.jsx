@@ -472,11 +472,7 @@ export function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelL
                 <img alt={field.label} className="photo-box-fill" src={resolvePhotoUrl(field.existingUrl)} />
               ) : (
                 <div className="photo-box-empty">
-                  <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="4" width="18" height="15" rx="2" />
-                    <circle cx="9" cy="10" r="1.8" />
-                    <path d="M4.5 17.5 9 13l3 3 4-4.5 3.5 4" />
-                  </svg>
+                  <Icon name="photo" size={38} strokeWidth={1.5} />
                   <span>No image available</span>
                 </div>
               )}
@@ -549,11 +545,7 @@ export function SmartForm({ fields, initialValues = EMPTY_OBJ, onCancel, cancelL
                       onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
                       type="file"
                     />
-                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M7 18a4.5 4.5 0 0 1-1-8.9A5.5 5.5 0 0 1 16.7 7 4.5 4.5 0 0 1 18 18" />
-                      <path d="M12 12v7" />
-                      <path d="M9.5 14.5 12 12l2.5 2.5" />
-                    </svg>
+                    <Icon name="upload" size={30} strokeWidth={1.6} />
                     <span>Drag file here</span>
                   </label>
                 </div>

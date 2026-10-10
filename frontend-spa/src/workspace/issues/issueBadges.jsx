@@ -36,6 +36,21 @@ export function IssueTicketStateBadge({ issue, onViewTicket, showSub = true }) {
   );
 }
 
+const ISSUE_STATUS_LABELS = {
+  Pending: 'Waiting for review',
+  'Under Review': 'Being reviewed',
+  'In Maintenance': 'Repair in progress',
+  Resolved: 'Issue resolved',
+};
+
+export function IssueStatusBadge({ value }) {
+  const tone = value === 'Resolved' ? 'success'
+    : value === 'In Maintenance' ? 'warning'
+      : value === 'Under Review' ? 'info'
+        : 'neutral';
+  return <span className={`p23-pill is-${tone}`} title={`System status: ${value ?? 'Unknown'}`}>{ISSUE_STATUS_LABELS[value] ?? value ?? 'Status unavailable'}</span>;
+}
+
 // High / Medium / Low with its own icon and distinct colour (the shared
 // priority-high/-medium badge classes render High and Medium identically),
 // so severity is readable from the word and the icon, not just the hue.

@@ -433,6 +433,10 @@
 .profile-menu-item:hover {
   background: #f1f5f9;
 }
+a.profile-menu-item {
+  text-decoration: none;
+  box-sizing: border-box;
+}
 .profile-menu-item-danger {
   color: #dc2626;
 }
