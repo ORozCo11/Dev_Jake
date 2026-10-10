@@ -231,7 +231,7 @@ export function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCr
           full-width dropdowns — same reasoning as Inspect Ticket's own
           hand-built form. Reuses the .smart-form input/label styling so
           every field still looks consistent with the rest of the app. */}
-      <form className="smart-form ticket-create-form" onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form className="smart-form ticket-create-form ticket-create-surface" onSubmit={handleSubmit} noValidate>
         <FormErrorSummary errors={validationLines} onDismiss={() => setValidationLines(null)} />
 
         {/* Entry mode comes first, not last — it decides what the rest of
@@ -240,9 +240,9 @@ export function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCr
             form; it's folded in here now instead of asking for it twice —
             "Pre-Diagnosed" as a generic option is gone, since picking a
             specific repair type already implies the issue is diagnosed. */}
-        <section className="veh-card">
-          <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>How Is This Being Reported?</h4></div>
-          <div style={{ padding: 18 }}>
+        <section className="ticket-create-section">
+          <div className="ticket-create-section-head"><h3>Reporting Method</h3></div>
+          <div className="ticket-create-section-body">
             <div className="entry-mode-toggle" role="radiogroup" aria-label="Entry mode">
               {ENTRY_MODE_OPTIONS.map((opt) => {
                 const checked = liveValues.entry_mode === opt.value;
@@ -252,10 +252,11 @@ export function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCr
                     type="button"
                     role="radio"
                     aria-checked={checked}
-                    className={`entry-mode-btn entry-mode-btn--${opt.value} ${checked ? 'primary-button' : 'ghost-button'}`}
+                    className={`entry-mode-btn${checked ? ' is-selected' : ''}`}
                     onClick={() => selectEntryMode(opt.value)}
                   >
-                    {opt.label}
+                    <span><strong>{opt.label}</strong><small>{opt.description}</small></span>
+                    {checked && <Icon name="checkCircle" size={17} aria-hidden="true" />}
                   </button>
                 );
               })}
@@ -307,8 +308,8 @@ export function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCr
           </div>
         </section>
 
-        <section className="veh-card">
-          <div className="veh-card-head"><Icon name="vehicle" size={16} /><h4>Vehicle & Assignment</h4></div>
+        <section className="ticket-create-section">
+          <div className="ticket-create-section-head"><h3>Vehicle &amp; Assignment</h3></div>
           <div className="ticket-form-grid-2">
             <label>
               <span>Vehicle <span className="required-asterisk">*</span></span>
@@ -356,9 +357,9 @@ export function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCr
           )}
         </section>
 
-        <section className="veh-card veh-card-form">
-          <div className="veh-card-head"><Icon name="alert" size={16} /><h4>Issue Details</h4></div>
-          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <section className="ticket-create-section">
+          <div className="ticket-create-section-head"><h3>Issue Details</h3></div>
+          <div className="ticket-create-section-body ticket-issue-fields">
             <div className="ticket-form-grid-2" style={{ padding: 0 }}>
               <label style={{ gridColumn: '1 / -1' }}>
                 <span>Ticket Title <span className="required-asterisk">*</span></span>
@@ -380,12 +381,9 @@ export function NewTicketPage({ onBack, ticketLookups, prefilledTicketData, onCr
         </section>
 
         {preDiagnosed && (
-          <section className="veh-card veh-card-form">
-            <div className="veh-card-head">
-              <Icon name="wrench" size={16} />
-              <h4>{isSingleIssueMode ? 'Known Issue' : 'Known Sub-Issues'}</h4>
-            </div>
-            <div style={{ padding: 18 }}>
+          <section className="ticket-create-section">
+            <div className="ticket-create-section-head"><h3>{isSingleIssueMode ? 'Known Issue' : 'Known Sub-Issues'}</h3></div>
+            <div className="ticket-create-section-body">
               <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
                 {isCannibalized
                   ? 'Describe the specific problem this cannibalized part fixes — one donor vehicle can only be tied to one problem here.'

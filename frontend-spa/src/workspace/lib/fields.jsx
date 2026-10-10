@@ -521,10 +521,10 @@ export const confirmTicketFields = [
 // instead so it isn't asked for twice. Shared with the Log Repairs step,
 // where the same repair type gets confirmed/corrected once work starts.
 export const ENTRY_MODE_OPTIONS = [
-  { value: 'inspection', label: 'Needs Inspection' },
-  { value: 'in_house', label: 'In-House Repair' },
-  { value: 'cannibalized', label: 'Used Cannibalized Part' },
-  { value: 'external', label: 'Sent to External Shop' },
+  { value: 'inspection', label: 'Needs Inspection', description: 'A custodian must inspect and confirm the required work.' },
+  { value: 'in_house', label: 'In-House Repair', description: 'The issue is known and will be repaired by barangay personnel.' },
+  { value: 'cannibalized', label: 'Used Cannibalized Part', description: 'Use a compatible part sourced from another fleet vehicle.' },
+  { value: 'external', label: 'Sent to External Shop', description: 'Send the vehicle to an outside repair provider.' },
 ];
 
 // =========================================================================

@@ -223,6 +223,19 @@
 
 /* Create Ticket form — sectioned card layout instead of one long vertical
    list of full-width fields. */
+.ticket-create-surface { width:100%; max-width:960px; margin:0 auto; gap:0 !important; }
+.ticket-create-section { padding:24px 0; border-bottom:1px solid var(--border-subtle); }
+.ticket-create-section:first-of-type { padding-top:0; }
+.ticket-create-section-head { margin-bottom:14px; }
+.ticket-create-section-head h3 { margin:0; padding:0; border:0; color:var(--text-strong); font-size:1rem; font-family:inherit; }
+.ticket-create-section-body { display:flex; flex-direction:column; gap:16px; }
+.ticket-create-surface .entry-mode-toggle { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.ticket-create-surface .ticket-form-grid-2 { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; padding:0; }
+.ticket-create-surface input:not([type="file"]), .ticket-create-surface select { width:100%; min-width:0; min-height:44px; }
+.ticket-create-surface textarea { width:100%; min-height:96px; }
+.ticket-create-surface .ticket-selection-preview { padding:16px 0 0; }
+.ticket-create-surface > .form-actions { justify-content:flex-end; padding-top:20px; }
+@media(max-width:720px){.ticket-create-surface .entry-mode-toggle,.ticket-create-surface .ticket-form-grid-2{grid-template-columns:1fr}.ticket-create-surface>.form-actions{display:grid;grid-template-columns:1fr}.ticket-create-surface>.form-actions button{width:100%}}
 .ticket-form-grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -381,10 +394,7 @@
   flex-wrap: wrap;
   gap: 10px;
 }
-.entry-mode-toggle button {
-  flex: 1 1 160px;
-  padding: 10px 16px;
-}
+.entry-mode-toggle button { flex:1 1 210px; padding:13px 14px; }
 /* Each of the four "How Is This Being Reported?" options gets its own
    solid color, always — not just when selected — same visual language as
    the app's solid stat cards (.metric-card-solid / .stat-filter-card):
@@ -393,34 +403,21 @@
    .ghost-button/.primary-button's own background/border with !important
    too, at both plain and light-theme specificity — see the light-theme
    duplicate of the "selected" rule further below in this file. */
-.entry-mode-btn.ghost-button,
-.entry-mode-btn.primary-button {
-  background: var(--entry-mode-color, #2563eb) !important;
-  border: none !important;
-  color: #ffffff !important;
-}
-.entry-mode-btn.ghost-button:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 4px 14px var(--entry-mode-shadow, rgba(37, 99, 235, 0.35)) !important;
-}
+.entry-mode-btn { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:76px; border:1px solid var(--border); border-radius:8px; color:var(--text); background:var(--surface); text-align:left; cursor:pointer; }
+.entry-mode-btn:hover { border-color:var(--primary); background:var(--surface-hover); }
+.entry-mode-btn > span { display:flex; min-width:0; flex-direction:column; gap:3px; }
+.entry-mode-btn strong { color:var(--text-strong); font-size:.88rem; }
+.entry-mode-btn small { color:var(--text-muted); font-size:.75rem; line-height:1.35; }
+.entry-mode-btn > svg { flex:0 0 auto; color:var(--primary); }
 /* The selected tab's ring — a white gap + a ring in its own color, exactly
    like .stat-filter-card.is-active's inline box-shadow recipe elsewhere in
    the app. The .entry-mode-toggle ancestor class pushes this rule's
    specificity above the generic .primary-button one (and its light-theme
    duplicate below) so it wins regardless of position in the file. */
-.entry-mode-toggle .entry-mode-btn.primary-button {
-  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--entry-mode-color, #2563eb), 0 10px 20px var(--entry-mode-shadow, rgba(37, 99, 235, 0.35)) !important;
-}
+.entry-mode-toggle .entry-mode-btn.is-selected { border-color:var(--primary); background:var(--status-info-bg); box-shadow:0 0 0 1px var(--primary); }
 /* Hovering the already-selected tab: keep the ring (dropping it here would
    make it flicker off on hover), just deepen the glow underneath it. */
-.entry-mode-toggle .entry-mode-btn.primary-button:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--entry-mode-color, #2563eb), 0 14px 28px var(--entry-mode-shadow, rgba(37, 99, 235, 0.45)) !important;
-}
-.entry-mode-btn--inspection { --entry-mode-color: #2563eb; --entry-mode-shadow: rgba(37, 99, 235, 0.35); }
-.entry-mode-btn--in_house { --entry-mode-color: #16a34a; --entry-mode-shadow: rgba(22, 163, 74, 0.35); }
-.entry-mode-btn--cannibalized { --entry-mode-color: #d97706; --entry-mode-shadow: rgba(217, 119, 6, 0.35); }
-.entry-mode-btn--external { --entry-mode-color: #7c3aed; --entry-mode-shadow: rgba(124, 58, 237, 0.35); }
+.entry-mode-toggle .entry-mode-btn.is-selected:hover { background:var(--status-info-bg); }
 
 /* Photo on top, spec info stacked below it — the left-column "report photo"
    convention, and a much bigger photo than the old side-by-side thumbnail. */
