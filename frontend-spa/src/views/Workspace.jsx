@@ -450,6 +450,7 @@ function Workspace() {
   // The Staff Registration Code the barangay office hands to real staff —
   // Admin-only, fetched once so it's ready whenever they open Users.
   const [registrationCode, setRegistrationCode] = useState(null);
+  const [registrationCodeVisible, setRegistrationCodeVisible] = useState(false);
   useEffect(() => {
     if (!hasRole(user, 'Admin')) return;
     api.get('/registration-settings').then((res) => setRegistrationCode(res.data.staff_code)).catch(() => {});
@@ -3225,19 +3226,17 @@ function Workspace() {
           onClear={() => { setFilterStatus([]); setFilterActive([]); setSearchQuery(''); }}
         />
       );
-      const userRoleSegments = [
-        { label: 'Admin', value: userStats.Admin, color: '#7c3aed' },
-        { label: 'Custodian', value: userStats.Custodian, color: '#0284c7' },
-        { label: 'Maintenance Personnel', value: userStats['Maintenance Personnel'], color: '#d97706' },
-      ];
-      const userStatusSegments = [
-        { label: 'Active', value: userStatusStats.Active, color: '#2563eb' },
-        { label: 'Inactive', value: userStatusStats.Inactive, color: '#cbd5e1' },
-      ];
       return (
         <ModulePanel
           description="Create and manage user accounts — Admin, Custodian, and Maintenance Personnel. New staff sign-ups wait under Pending Registrations until you approve them; deactivating an account blocks sign-in but keeps everything they did attributed to them."
           statCards={
+            <div className="user-summary-metrics" aria-label="User account summary">
+              <div><span>Total Users</span><strong>{accountRows.length}</strong></div>
+              <div><span>Active Users</span><strong>{accountRows.filter((row) => row.is_active).length}</strong></div>
+              <div><span>Inactive Users</span><strong>{accountRows.filter((row) => !row.is_active).length}</strong></div>
+              <div><span>Pending Registrations</span><strong>{pendingRegistrations.length}</strong></div>
+            </div>
+            /*
             <div className="user-analytics-grid">
               <div className="panel user-analytics-card">
                 <h4 className="user-analytics-title">Users by Status</h4>
@@ -3253,7 +3252,7 @@ function Workspace() {
                 <SegmentedBar segments={userRoleSegments} />
                 <ChartLegend rows={userRoleSegments} />
               </div>
-            </div>
+            </div> */
           }
           filterBar={
             <UserFilterChips
