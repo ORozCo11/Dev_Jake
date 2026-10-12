@@ -731,12 +731,14 @@ class TicketController extends Controller
     {
         $this->requireAbility($request, 'ticket.approve');
 
-        // A previously Declined proposal can be approved directly — Admin
-        // doesn't have to undecline it first.
+        // A Declined proposal has to be undeclined first (back to Pending
+        // Approval) — only then can it be approved and assigned.
         abort_unless(
-            in_array($ticket->status, ['Pending Approval', 'Declined'], true),
+            $ticket->status === 'Pending Approval',
             422,
-            "Only a Pending Approval or Declined ticket can be approved. Current: {$ticket->status}."
+            $ticket->status === 'Declined'
+                ? 'This proposal was declined — undecline it first, then approve and assign it.'
+                : "Only a Pending Approval ticket can be approved. Current: {$ticket->status}."
         );
 
         $data = $request->validate([
@@ -771,7 +773,7 @@ class TicketController extends Controller
         $ticket = DB::transaction(function () use ($ticket, $data, $request, $assignedMechanic) {
             // Serialize against a concurrent approve/decline of the same proposal.
             $locked = MaintenanceTicket::where('ticket_id', $ticket->ticket_id)->lockForUpdate()->first();
-            abort_unless($locked && in_array($locked->status, ['Pending Approval', 'Declined'], true), 422, 'This proposal was already approved.');
+            abort_unless($locked && $locked->status === 'Pending Approval', 422, 'This proposal is no longer awaiting approval.');
 
             $ticket->update(array_intersect_key($data, array_flip([
                 'ticket_description', 'priority', 'assigned_custodian_id', 'assigned_mechanic_id',

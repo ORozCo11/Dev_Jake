@@ -1719,7 +1719,8 @@ function Workspace() {
   // this "My Tickets" queue so the Custodian can trace its progress —
   // Active tickets are included here too, not just the verification stage.
   const rawRows = activeModule === 'ticketWorkOrders'
-    ? flattenSubIssueRows(records[activeModule], user.id)
+    // Cancelled tickets aren't work orders — they'd sit in Total but in no bucket.
+    ? flattenSubIssueRows(records[activeModule], user.id).filter((r) => r.ticket_status !== 'Cancelled')
     : activeModule === 'ticketVerifications'
       ? (records[activeModule] ?? []).filter((t) => (
           String(t.assigned_custodian_id) === String(user.id)
@@ -1800,9 +1801,9 @@ function Workspace() {
         filterStatus.includes('Inspected') ? row.status !== 'Open' : row.status === 'Open'
       ));
     } else if (activeModule === 'ticketWorkOrders') {
-      result = result.filter((row) => (
-        filterStatus.includes('Submitted') ? row.status !== 'Under Repair' : row.status === 'Under Repair'
-      ));
+      // Total (no card picked) shows every ticket; a card narrows to its bucket.
+      const picked = Object.keys(WORK_ORDER_BUCKET_STATUS).find((k) => filterStatus.includes(k));
+      if (picked) result = result.filter((row) => row.ticket_status === WORK_ORDER_BUCKET_STATUS[picked]);
     } else if (activeModule === 'ticketVerifications') {
       // Rows are now tickets, not sub-issues — Active means still being
       // repaired, Pending means waiting at For Verification, Verified means
@@ -2137,9 +2138,11 @@ function Workspace() {
   }, [records.ticketInspections]);
 
   const workOrderStats = useMemo(() => {
-    const rows = flattenSubIssueRows(records.ticketWorkOrders, user.id);
-    const pending = rows.filter((r) => r.status === 'Under Repair').length;
-    return { total: rows.length, Pending: pending, Submitted: rows.length - pending };
+    const tickets = (records.ticketWorkOrders ?? []).filter((t) => (
+      t.status !== 'Cancelled' && (t.sub_issues ?? []).some((si) => si.assigned_mechanic_id === user.id)
+    ));
+    const count = (status) => tickets.filter((t) => t.status === status).length;
+    return { total: tickets.length, Pending: count('Active'), Submitted: count('For Verification'), Completed: count('Closed') };
   }, [records.ticketWorkOrders, user.id]);
 
   const verificationStats = useMemo(() => {
@@ -2318,7 +2321,7 @@ function Workspace() {
     () => maintenanceColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}/edit`), updateRecord, (row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}`), user),
     [user, navigate, updateRecord],
   );
-  const maintenanceColumnDefsWithNote = useMemo(() => withNoteColumn(maintenanceColumnDefs, (r) => r.problem_reason, { label: 'Problem / Reason' }), [maintenanceColumnDefs]);
+  const maintenanceColumnDefsWithNote = useMemo(() => withNoteColumn(maintenanceColumnDefs, (r) => r.problem_reason, { label: 'Problem' }), [maintenanceColumnDefs]);
   const maintenanceColumnChooser = useColumnChooser('vms_maintenance_columns', maintenanceColumnDefsWithNote);
 
   const maintenanceStatusColumnDefs = useMemo(
@@ -2326,7 +2329,7 @@ function Workspace() {
     [user.id],
   );
   const maintenanceStatusColumnDefsWithNote = useMemo(
-    () => withNoteColumn(maintenanceStatusColumnDefs, (r) => [r.problem_reason, r.action_taken && `Action: ${r.action_taken}`].filter(Boolean).join(' — '), { label: 'Problem / Action' }),
+    () => withNoteColumn(maintenanceStatusColumnDefs, (r) => [r.problem_reason, r.action_taken].filter(Boolean).join(' — '), { label: 'Details' }),
     [maintenanceStatusColumnDefs],
   );
   const maintenanceStatusColumnChooser = useColumnChooser('vms_maintenance_status_columns', maintenanceStatusColumnDefsWithNote);
@@ -4116,7 +4119,7 @@ function Workspace() {
               emptyMessage="No maintenance records yet — click the + button to log one."
               rows={visibleRows}
               compact
-              onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
+              onRowClick={(row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}`)}
             />
           )}
         </ModulePanel>
@@ -4147,7 +4150,7 @@ function Workspace() {
               onReorderColumn={maintenanceStatusColumnChooser.reorderColumn}
               emptyMessage="Nothing awaiting your verification right now."
               rows={visibleRows}
-              onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
+              onRowClick={(row) => navigate(`${roleRoutes[user.role]}/maintenance/${row.maintenance_id}`)}
             />
           </ModulePanel>
           <FormModal open={!!editTarget} title={`Verify Maintenance #${editTarget?.maintenance_id}`} onClose={() => setEditTarget(null)}>
@@ -9194,9 +9197,15 @@ const TICKET_INSPECTION_STAT_CARDS = [
   { key: 'Inspected', label: 'Diagnosed', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
 ];
 
+// Work orders are counted per TICKET (not per sub-issue), by where the ticket
+// stands for this mechanic: Pending = still being repaired (Active),
+// Submitted = repair logged, waiting on the Custodian (For Verification),
+// Completed = verified and closed. Total is every ticket assigned to them.
+const WORK_ORDER_BUCKET_STATUS = { Pending: 'Active', Submitted: 'For Verification', Completed: 'Closed' };
 const TICKET_WORK_ORDER_STAT_CARDS = [
   { key: 'Pending', label: 'Pending', icon: 'wrench', bg: '#fef3c7', color: '#d97706' },
-  { key: 'Submitted', label: 'Submitted', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
+  { key: 'Submitted', label: 'Submitted', icon: 'search', bg: '#ede9fe', color: '#7c3aed' },
+  { key: 'Completed', label: 'Completed', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
 ];
 
 // 'Pending' relabeled 'To Verify' — this is the Custodian's verification
@@ -12273,7 +12282,6 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
 
   return (
     <div className="module-grid">
-      {tabBar}
       <ModuleStatCards
         totalLabel="Total"
         total={allRows.length}
@@ -12282,6 +12290,7 @@ function WorkTrackerModule({ tickets, user, categories = [], vehicles = [], onVi
         activeFilter={activeFilter}
         onFilterChange={setActiveFilter}
       />
+      {tabBar}
       <section className="panel module-filter-panel">
         <FilterBar
           categories={categories}
@@ -12688,7 +12697,7 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline, onUnd
 
       {isDeclined && (
         <div className="notice danger" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 12px' }}>
-          <Icon name="alert" size={15} /> You declined this proposal{ticket.decline_reason ? `: ${ticket.decline_reason}` : '.'} Undecline to send it back to the Custodian, or approve it as-is below.
+          <Icon name="alert" size={15} /> You declined this proposal{ticket.decline_reason ? `: ${ticket.decline_reason}` : '.'} Undecline it first to send it back to Pending Approval, then approve and assign.
         </div>
       )}
 
@@ -12769,7 +12778,7 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline, onUnd
         <div className="proposal-review-actions">
           <p className="proposal-review-hint">
             {isDeclined
-              ? 'Undecline to send this back to the Custodian as-is, or approve it directly below.'
+              ? 'Undecline this proposal first — Approve & Assign appears once it is back to Pending Approval.'
               : 'Edit anything above before approving or declining.'}
           </p>
           <div className="proposal-review-buttons">
@@ -12782,9 +12791,11 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline, onUnd
                 <Icon name="close" size={14} /> Decline
               </button>
             )}
-            <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
-              <Icon name="checkCircle" size={14} /> Approve & Assign
-            </button>
+            {!isDeclined && (
+              <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
+                <Icon name="checkCircle" size={14} /> Approve & Assign
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -12975,7 +12986,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
   const nextSignal = (() => {
     if (ticket.status === 'Cancelled') return { tone: 'alert', label: 'Ticket cancelled', detail: 'Restore it only if work needs to resume.' };
     if (ticket.status === 'Closed') return { tone: 'ok', label: 'Closed', detail: 'All recorded work is complete.' };
-    if (ticket.status === 'Declined') return { tone: 'alert', label: 'Declined', detail: 'Undecline to revise and resubmit it, or approve it as-is below.' };
+    if (ticket.status === 'Declined') return { tone: 'alert', label: 'Declined', detail: 'Undecline it first — then you can approve and assign it.' };
     if (ticket.status === 'Pending Approval') return { tone: 'warn', label: 'Review proposal', detail: 'A Custodian proposed this ticket — review and approve or decline it below.' };
     if (ticket.status === 'For Verification') return isAssignedCustodian
       ? { tone: 'warn', label: 'Verify repair', detail: 'The mechanic says this is done — confirm it before the ticket closes.' }
@@ -14274,8 +14285,11 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
   // checkbox under In-House — it keeps its own mode behind the scenes, which is
   // what triggers the Admin approval and the donor-vehicle report.
   const modeOptions = ENTRY_MODE_OPTIONS.filter((o) => o.value === 'in_house' || o.value === 'external');
-  const entryMode = ['in_house', 'cannibalized', 'external'].includes(liveValues.entry_mode) ? liveValues.entry_mode : null;
-  const pickerValue = entryMode === 'cannibalized' ? 'in_house' : entryMode;
+  // Using a part from another vehicle is NOT declared here: the mechanic
+  // records the donor part when logging the repair (the Admin then approves
+  // it). A proposal is just In-House or External.
+  const entryMode = ['in_house', 'external'].includes(liveValues.entry_mode) ? liveValues.entry_mode : null;
+  const pickerValue = entryMode;
   const isInHouse = entryMode === 'in_house';
   const isCannibalized = entryMode === 'cannibalized';
   const isExternal = entryMode === 'external';
@@ -14447,33 +14461,10 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
                 );
               })}
             </div>
-            {pickerValue === 'in_house' && (
-              // A div, not a <label>: the form's label styles (small caps,
-              // stacked layout) fight a checkbox row.
-              <div
-                role="checkbox"
-                aria-checked={isCannibalized}
-                tabIndex={0}
-                onClick={() => toggleDonorPart(!isCannibalized)}
-                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleDonorPart(!isCannibalized); } }}
-                style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 18, padding: '12px 14px', background: isCannibalized ? '#f0fdf4' : '#f8fafc', border: `1px solid ${isCannibalized ? '#86efac' : '#e2e8f0'}`, borderRadius: 8, cursor: 'pointer' }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{ flexShrink: 0, width: 20, height: 20, marginTop: 1, borderRadius: 5, border: `2px solid ${isCannibalized ? '#16a34a' : '#94a3b8'}`, background: isCannibalized ? '#16a34a' : '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
-                >
-                  {isCannibalized && <Icon name="checkCircle" size={13} />}
-                </span>
-                <div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>This repair uses a part taken from another vehicle</div>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>An Admin approves it before any part is removed from the other (donor) vehicle.</div>
-                </div>
-              </div>
-            )}
             <p className="muted" style={{ margin: '10px 0 0', fontSize: '0.82rem' }}>
               {entryMode == null
                 ? 'Pick how this repair will be done.'
-                : 'Once an Admin approves, it goes straight to repair — a mechanic gets assigned to each sub-issue.'}
+                : 'Once an Admin approves and assigns a mechanic, it goes straight to repair.'}
             </p>
           </div>
         </section>
@@ -14560,63 +14551,6 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
           </div>
         </section>
 
-        {isCannibalized && (
-        <section className="veh-card veh-card-form">
-          <div className="veh-card-head"><Icon name="wrench" size={16} /><h4>Cannibalization Details</h4></div>
-          <div style={{ padding: 18 }}>
-            <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
-              Identify what this vehicle is missing and which part will be taken off the donor to fix it — add a row per part. The Admin reviews this before any part is removed.
-            </p>
-            <label style={{ maxWidth: 420, marginBottom: 14 }}>
-              <span>Donor Vehicle <span className="required-asterisk">*</span></span>
-              <select required value={liveValues.source_vehicle_id ?? ''} onChange={(e) => setField('source_vehicle_id', e.target.value)}>
-                <option value="">{' '}</option>
-                {sourceVehicleOptions.map((v) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.vehicle_name} ({v.plate_number})</option>)}
-              </select>
-            </label>
-            <div className="sub-issue-rows sub-issue-rows-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 10, alignItems: 'start' }}>
-              {partRows.map((row, index) => (
-                <div key={index} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <span className="sub-issue-row-index" style={{ marginTop: 12 }}>{index + 1}</span>
-                  <div className="ticket-form-grid-2" style={{ padding: 0, flex: 1 }}>
-                    <label>
-                      <span>Missing / Faulty Part (on this vehicle) <span className="required-asterisk">*</span></span>
-                      <input type="text" placeholder="e.g. Alternator" value={row.part_missing} onChange={(e) => updatePartRow(index, { part_missing: e.target.value })} />
-                    </label>
-                    <label>
-                      <span>Part to Take From Donor <span className="required-asterisk">*</span></span>
-                      <input type="text" placeholder="e.g. Alternator (12V, 90A)" value={row.part_needed} onChange={(e) => updatePartRow(index, { part_needed: e.target.value })} />
-                    </label>
-                    <label>
-                      <span>Maintenance Type</span>
-                      <CreatableSelect
-                        value={row.maintenance_type ?? ''}
-                        onChange={(v) => updatePartRow(index, { maintenance_type: v })}
-                        options={ticketLookups?.maintenance_types ?? []}
-                        placeholder="Select a category or type to add new"
-                        newItemLabel="maintenance type"
-                        catalogEndpoint="/maintenance-types"
-                      />
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-delete-action icon-btn"
-                    style={{ marginTop: 10 }}
-                    onClick={() => removePartRow(index)}
-                    disabled={partRows.length === 1}
-                    title="Remove part"
-                    aria-label="Remove part"
-                  >
-                    <Icon name="close" size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button type="button" className="primary-button" style={{ marginTop: 10 }} onClick={addPartRow}><Icon name="plus" size={14} /> Add another part</button>
-          </div>
-        </section>
-        )}
 
         {isExternal && (
         <section className="veh-card veh-card-form">
@@ -16027,7 +15961,6 @@ function CustodianInspectionModule({
   return (
     <div className="module-grid">
       <DismissibleHint description="Phase 2 — Vehicle Evaluation. Review tickets assigned to you, submit physical inspection findings, and check back here for anything already diagnosed — either by your own inspection, or pre-diagnosed by an Admin (e.g. reassigned to you mid-repair)." />
-      {tabBar}
       <ModuleStatCards
         totalLabel="Total Assigned"
         total={stats.total}
@@ -16036,6 +15969,7 @@ function CustodianInspectionModule({
         activeFilter={activeFilter}
         onFilterChange={onFilterChange}
       />
+      {tabBar}
       <section className="panel module-filter-panel">
         <FilterBar
           categories={categories}
@@ -16305,7 +16239,6 @@ function CustodianVerificationModule({
   onFilterChange,
   tabBar
 }) {
-  const [viewLogsTarget, setViewLogsTarget] = useState(null);
   const panelTitle = activeFilter.includes('Active')
     ? 'Active Tickets'
     : activeFilter.includes('Verified')
@@ -16313,7 +16246,6 @@ function CustodianVerificationModule({
       : activeFilter.includes('Pending')
         ? 'Pending Verifications'
         : 'My Tickets';
-  const isMyTicketsView = panelTitle === 'My Tickets';
   const emptyStateText = activeFilter.includes('Active')
     ? 'No tickets currently active.'
     : activeFilter.includes('Verified')
@@ -16322,83 +16254,6 @@ function CustodianVerificationModule({
         ? 'No repairs pending your verification.'
         : 'No tickets yet — once the Admin approves a proposal, it will show up here.';
 
-  const verificationColumnDefs = useMemo(() => [
-    { key: 'ticket_id', label: 'Ticket ID', locked: true, className: 'cell-center', render: (r) => r.ticket_id },
-    { key: 'ticket_title', label: 'Ticket Title', render: (r) => r.ticket_title },
-    { key: 'vehicle', label: 'Vehicle', locked: true, render: (r) => <VehicleCell vehicle={r.vehicle} /> }, { key: 'plate', label: 'Plate Number', className: 'cell-center', render: (r) => r.vehicle?.plate_number ?? '-' },
-    {
-      key: 'sub_issues',
-      label: 'Sub-Issues',
-      render: (r) => {
-        const subs = r.sub_issues ?? [];
-        if (subs.length === 0) return '—';
-        if (subs.length === 1) return subs[0].title;
-        return `${subs.length} sub-issues: ${subs.map((s) => s.title).join(', ')}`;
-      }
-    },
-    // One mechanic per ticket now — the whole job (every sub-issue) is
-    // assigned, logged and submitted together.
-    { key: 'mechanic', label: 'Mechanic', className: 'cell-center', render: (r) => r.assigned_mechanic?.name ?? '—' },
-    {
-      key: 'repair_log',
-      label: 'Repair Log',
-      render: (r) => (r.sub_issues ?? []).some((si) => si.repair_logs) ? (
-        <button
-          type="button"
-          className="link-button"
-          style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline', fontWeight: 500 }}
-          onClick={() => setViewLogsTarget(r)}
-        >
-          View Logs ↗
-        </button>
-      ) : '—'
-    },
-    // parts_used is a comma-separated string per sub-issue (PartsTags splits
-    // it itself) — join every sub-issue's string into one, since a ticket
-    // can now carry several sub-issues, each with its own parts.
-    { key: 'parts_used', label: 'Parts Used', render: (r) => <PartsTags value={(r.sub_issues ?? []).map((si) => si.parts_used).filter(Boolean).join(', ')} /> },
-    {
-      key: 'status',
-      label: 'Status',
-      className: 'cell-center',
-      render: (r) => {
-        const reopenedSub = (r.sub_issues ?? []).find((si) => si.reopened_at && si.status !== 'Done');
-        if (reopenedSub) {
-          return (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600 }} title={`Reopened by ${reopenedSub.reopened_by?.name || 'Admin'}`}>
-              <Icon name="alert" size={12} /> Reopened
-            </span>
-          );
-        }
-        return <TicketStatusBadge value={r.status === 'Closed' ? 'Verified' : r.status} />;
-      }
-    },
-    {
-      key: 'action',
-      label: 'Action',
-      locked: true,
-      render: (r) => {
-        if (r.status !== 'For Verification') {
-          return <span className="muted">{r.status === 'Closed' ? 'Verified' : r.status}</span>;
-        }
-        // Mirrors TicketController::verifyTicket's own guard — a dual-role
-        // (Custodian + Maintenance Personnel) account currently assigned as
-        // this ticket's mechanic can't "grade their own homework" here even
-        // though they're the assigned verifier. The button is hidden
-        // proactively; the backend is what actually enforces it (including
-        // any PRIOR mechanic on the ticket, which this UI hint doesn't check —
-        // see verifyTicket()'s prior_mechanic_ids guard). Fixed by reassigning
-        // the ticket to a different Custodian.
-        const isOwnRepair = r.assigned_mechanic_id != null
-          && (r.assigned_mechanic_id === user.id || String(r.assigned_mechanic_id) === String(user.id));
-        if (isOwnRepair) {
-          return <span className="muted" title="You performed this repair — reassign this ticket to a different Custodian to verify it.">Needs reassignment (you did this repair)</span>;
-        }
-        return <button className="btn-edit-action icon-btn" type="button" onClick={() => setEditTarget(r)} title="Verify Repair" aria-label="Verify Repair"><Icon name="checkCircle" size={14} /></button>;
-      }
-    },
-  ], [user.id, setEditTarget]);
-  const verificationColumnChooser = useColumnChooser('vms_custodian_verification_columns', verificationColumnDefs);
 
   return (
     <div className="module-grid">
@@ -16439,31 +16294,17 @@ function CustodianVerificationModule({
       <section className="panel">
         <div className="panel-header-bar">
           <h3>{panelTitle} <span className="count-badge">{tickets.length}</span></h3>
-          {!isMyTicketsView && <ColumnChooserButton {...verificationColumnChooser} />}
         </div>
         <div style={{ height: '16px' }} />
-        {tickets.length === 0
-          ? <p className="empty-state">{emptyStateText}</p>
-          : isMyTicketsView ? (
-            // The plain "My Tickets" view (no Active/Pending/Verified filter
-            // picked) reads as tickets, same as the Admin's own ticket list —
-            // the verification-focused table (repair log, parts, verify
-            // action) only makes sense once a specific status is picked.
-            <PaginatedCardGrid
-              items={tickets}
-              keyOf={(t) => t.ticket_id}
-              emptyMessage={emptyStateText}
-              renderItem={(t) => <TicketCard ticket={t} onClick={() => (onViewTicket ? onViewTicket(t) : (t.vehicle && onViewVehicle(t.vehicle)))} />}
-            />
-          ) : (
-            <DataTable
-              columns={verificationColumnChooser.visibleColumns}
-              onReorderColumn={verificationColumnChooser.reorderColumn}
-              rows={tickets}
-              onRowClick={(row) => (onViewTicket ? onViewTicket(row) : (row.vehicle && onViewVehicle(row.vehicle)))}
-            />
-          )
-        }
+        {/* Every stat tab (Total / Active / To Verify / Verified) reads as
+            ticket cards — same view as My Tickets — never a table. Opening a
+            card shows the full ticket, where Verify Repair lives. */}
+        <PaginatedCardGrid
+          items={tickets}
+          keyOf={(t) => t.ticket_id}
+          emptyMessage={emptyStateText}
+          renderItem={(t) => <TicketCard ticket={t} onClick={() => (onViewTicket ? onViewTicket(t) : (t.vehicle && onViewVehicle(t.vehicle)))} />}
+        />
       </section>
       {/* The Custodian's one plain attestation for the whole ticket — no
           checklist, no notes, no reject path (see verifyTicket()). Reuses
@@ -16478,75 +16319,6 @@ function CustodianVerificationModule({
         />
       </FormModal>
 
-      <FormModal open={!!viewLogsTarget} title={`Repair Details — Ticket #${viewLogsTarget?.ticket_id}`} onClose={() => setViewLogsTarget(null)}>
-        <div style={{ padding: '8px 0' }}>
-          <div style={{ marginBottom: '16px' }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Vehicle</h4>
-            <div style={{ fontWeight: 600 }}>{viewLogsTarget?.vehicle?.vehicle_name} ({viewLogsTarget?.vehicle?.plate_number})</div>
-          </div>
-          <div style={{ marginBottom: '16px' }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Ticket Title</h4>
-            <div style={{ fontWeight: 600 }}>{viewLogsTarget?.ticket_title}</div>
-          </div>
-          <div style={{ marginBottom: '16px' }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Mechanic</h4>
-            <div>{viewLogsTarget?.assigned_mechanic?.name ?? '—'}</div>
-          </div>
-          {/* One block per sub-issue — a ticket can carry several now, so
-              each gets its own log/parts/dates/cost instead of a single
-              ticket-wide set (the common one-sub-issue ticket just renders
-              one block, same information as before). */}
-          {(viewLogsTarget?.sub_issues ?? []).map((si, idx, arr) => (
-            <div key={si.sub_issue_id} style={{ marginBottom: '20px', paddingBottom: idx < arr.length - 1 ? '16px' : 0, borderBottom: idx < arr.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
-              {arr.length > 1 && (
-                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem' }}>{si.title}</h4>
-              )}
-              <div style={{ marginBottom: '12px' }}>
-                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Log Entry</h4>
-                <pre style={{
-                  whiteSpace: 'pre-wrap',
-                  fontFamily: 'inherit',
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '6px',
-                  padding: '12px',
-                  fontSize: '0.9rem',
-                  lineHeight: '1.5',
-                  margin: '6px 0 0 0'
-                }}>{si.repair_logs ?? 'No logs provided.'}</pre>
-              </div>
-              <div style={{ marginBottom: '12px' }}>
-                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Parts / Materials Used</h4>
-                <div style={{ marginTop: '6px' }}>
-                  <PartsTags value={si.parts_used} />
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '12px' }}>
-                <div>
-                  <h4 style={{ margin: '0 0 4px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Start Date</h4>
-                  <div>{si.repair_started_at ? formatDate(si.repair_started_at) : '—'}</div>
-                </div>
-                <div>
-                  <h4 style={{ margin: '0 0 4px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Completion Date</h4>
-                  <div>{si.repair_completed_at ? formatDate(si.repair_completed_at) : '—'}</div>
-                </div>
-              </div>
-              <div>
-                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Repair Cost / Expenses</h4>
-                <div style={{ fontWeight: 600, color: 'var(--text-success)', fontSize: '1.1rem' }}>
-                  {si.maintenance_cost ? `₱${Number(si.maintenance_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00'}
-                </div>
-              </div>
-            </div>
-          ))}
-          {!(viewLogsTarget?.sub_issues ?? []).length && (
-            <p className="empty-state">No sub-issues on this ticket.</p>
-          )}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-          <button className="primary-button" onClick={() => setViewLogsTarget(null)} type="button">Close</button>
-        </div>
-      </FormModal>
     </div>
   );
 }
@@ -16582,7 +16354,13 @@ function MechanicWorkOrderModule({
   onFilterChange,
   currentUser,
 }) {
-  const isPendingView = activeFilter !== 'Submitted';
+  const view = ['Pending', 'Submitted', 'Completed'].find((k) => [].concat(activeFilter ?? []).includes(k)) ?? 'All';
+  const viewCopy = {
+    Pending: { title: 'Pending Work Orders', note: 'Open a work order and record the repair — it goes to the Custodian once every repair is logged.', empty: 'No active work orders assigned to you.', icon: 'wrench' },
+    Submitted: { title: 'Submitted Work Orders', note: 'Repairs you logged, waiting on the Custodian to verify them.', empty: 'Nothing is waiting on a Custodian right now.', icon: 'search' },
+    Completed: { title: 'Completed Work Orders', note: 'Repairs the Custodian verified — these tickets are closed.', empty: 'No verified repairs yet.', icon: 'checkCircle' },
+    All: { title: 'All Work Orders', note: 'Every ticket assigned to you, from repair through verification.', empty: 'No work orders assigned to you yet.', icon: 'wrench' },
+  }[view];
   // Merge 2 — "Work Tracker" is no longer its own sidebar entry; it's this
   // Archive toggle over the same page, mirroring Admin's Maintenance Tickets
   // "Archives" button (see TicketModule's onViewArchives). Admin's version
@@ -16695,8 +16473,8 @@ function MechanicWorkOrderModule({
             <div className="operations-board-head">
               <div>
                 <span className="operations-kicker">Mechanic queue</span>
-                <h3>{isPendingView ? 'Pending Work Orders' : 'Submitted Work Orders'} <span className="count-badge">{tickets.length}</span></h3>
-                <p>{isPendingView ? 'Open a work order, record the repair, then send it for verification.' : 'Review work already submitted for Custodian verification.'}</p>
+                <h3>{viewCopy.title} <span className="count-badge">{activeTicketCards.length}</span></h3>
+                <p>{viewCopy.note}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <button type="button" className="ghost-button" onClick={() => setShowArchive(true)}>
@@ -16705,11 +16483,10 @@ function MechanicWorkOrderModule({
                 <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search work orders..." />
               </div>
             </div>
-            <div className="operations-board-note"><Icon name={isPendingView ? 'wrench' : 'checkCircle'} size={14} /> {isPendingView ? 'Repair logs are due for the highlighted work orders.' : 'Submitted items remain here until their next workflow update.'}</div>
             <PaginatedCardGrid
               items={activeTicketCards}
               keyOf={(t) => t.ticket_id}
-              emptyMessage={isPendingView ? 'No active work orders assigned to you.' : 'No repair logs submitted yet.'}
+              emptyMessage={viewCopy.empty}
               renderItem={(t) => <TicketCard ticket={t} onClick={() => onViewTicket(t)} />}
             />
           </section>
@@ -16901,10 +16678,26 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
                   and never changed here — shown as a value, not a disabled
                   dropdown that looks clickable. */}
               <p className="lr-readonly" aria-labelledby={`${idBase}-type`}>
-                {REPAIR_TYPE_LABEL[repairType] ?? 'Not set'}
-                <span className="lr-hint"> · set when the ticket was proposed</span>
+                {repairType === 'external' ? REPAIR_TYPE_LABEL.external : REPAIR_TYPE_LABEL.in_house}
+                {repairType === 'external' && <span className="lr-hint"> · set when the ticket was proposed</span>}
               </p>
             </div>
+            {/* The mechanic — not the Custodian — records when a part is taken
+                from another (donor) vehicle. The Admin approves it before the
+                repair can be submitted. */}
+            {repairType !== 'external' && (
+              <label className="lr-check">
+                <input
+                  type="checkbox"
+                  checked={repairType === 'cannibalized'}
+                  onChange={(e) => { setRepairType(e.target.checked ? 'cannibalized' : 'in_house'); if (!e.target.checked) setSourceVehicleId(''); onDirty?.(); }}
+                />
+                <span>
+                  <strong>This repair uses a part taken from another vehicle</strong>
+                  <small>An Admin approves it before any part is removed from the donor vehicle.</small>
+                </span>
+              </label>
+            )}
 
             {repairType === 'cannibalized' && (
               <div className="lr-field">
@@ -18676,9 +18469,14 @@ function useColumnChooser(storageKey, allColumns) {
   };
 
   const byKey = new Map(allColumns.map((c) => [c.key, c]));
-  const visibleColumns = order.map((k) => byKey.get(k)).filter((c) => c && !hidden.has(c.key));
+  // The Action column always sits at the far end — a saved column order from
+  // before a new column existed (it gets appended) must not leave Action in
+  // the middle of the row.
+  const isActionKey = (k) => k === 'action' || k === 'actions';
+  const orderedKeys = [...order.filter((k) => !isActionKey(k)), ...order.filter(isActionKey)];
+  const visibleColumns = orderedKeys.map((k) => byKey.get(k)).filter((c) => c && !hidden.has(c.key));
 
-  return { allColumns, order, hidden, toggleColumn, reorderColumn, resetColumns, visibleColumns };
+  return { allColumns, order: orderedKeys, hidden, toggleColumn, reorderColumn, resetColumns, visibleColumns };
 }
 
 // Toolbar trigger + popover for picking which columns a table shows and

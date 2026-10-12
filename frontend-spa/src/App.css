@@ -14638,3 +14638,19 @@ html .table-shell .vehicle-cell .vcn-text {
 html .table-shell .vehicle-cell .vehicle-cell-name { min-width: 0; text-align: left; }
 html .table-shell .vehicle-cell .vehicle-cell-name { flex: 1 1 0; min-width: 0; white-space: normal; }
 html .table-shell .vehicle-cell .vehicle-cell-name .vcn-text { width: 100%; }
+
+/* Ticket card grids: every card in a grid is the same size — wrappers
+   stretch to the row, rows share one height, and the status/date footer is
+   pinned to the bottom so cards line up whatever their content. */
+.ticket-card-grid { align-items: stretch; grid-auto-rows: 1fr; }
+.ticket-card-grid > div { display: flex; min-width: 0; }
+.ticket-card-grid > div > .ticket-card { flex: 1 1 auto; width: 100%; box-sizing: border-box; }
+html .ticket-card .ticket-card-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; }
+html .ticket-card .ticket-card-vehicle { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; }
+
+/* Log Repairs: "uses a part from another vehicle" checkbox row. */
+.lr-check { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; cursor: pointer; }
+.lr-check input { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; }
+.lr-check span { display: flex; flex-direction: column; gap: 2px; font-size: 0.88rem; color: #0f172a; }
+.lr-check small { font-size: 0.78rem; color: #64748b; }
+html .table-shell .vehicle-cell { min-width: 160px; }

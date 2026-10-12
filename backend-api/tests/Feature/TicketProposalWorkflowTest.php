@@ -20,8 +20,8 @@ use Tests\TestCase;
  * approves (dispatches any still-valid suggested mechanic, same effect as
  * assignMechanic()) or declines. Declining is a visible, reversible status
  * (not a delete) — the Custodian sees it was declined and why, and Admin can
- * undecline() it back to Pending Approval or approve it directly from
- * Declined without undeclining first. Admin's own createTicket() is
+ * undecline() it back to Pending Approval, and only then approve it (a
+ * Declined proposal cannot be approved directly). Admin's own createTicket() is
  * unaffected — this is an additional path in, not a replacement.
  */
 class TicketProposalWorkflowTest extends TestCase
@@ -369,13 +369,21 @@ class TicketProposalWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_approve_a_declined_proposal_directly_without_undeclining(): void
+    public function a_declined_proposal_must_be_undeclined_before_it_can_be_approved(): void
     {
         $ticket = $this->propose($this->vehicle());
 
         Sanctum::actingAs($this->admin, ['*']);
         $this->putJson("/api/tickets/{$ticket->ticket_id}/decline", ['decline_reason' => 'Reconsidering.'])->assertOk();
 
+        // Approving straight from Declined is refused…
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
+            'assigned_mechanic_id' => $this->mechanic->id,
+        ])->assertStatus(422);
+        $this->assertDatabaseHas('maintenance_tickets', ['ticket_id' => $ticket->ticket_id, 'status' => 'Declined']);
+
+        // …undecline first, then approve and assign.
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/undecline")->assertOk();
         $this->putJson("/api/tickets/{$ticket->ticket_id}/approve", [
             'assigned_mechanic_id' => $this->mechanic->id,
         ])->assertOk();
