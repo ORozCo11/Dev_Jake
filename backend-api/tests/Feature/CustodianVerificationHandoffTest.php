@@ -140,7 +140,7 @@ class CustodianVerificationHandoffTest extends TestCase
     }
 
     #[Test]
-    public function approving_requires_the_attestation_and_a_fully_passing_checklist(): void
+    public function approving_needs_no_checklist_but_a_failed_check_is_never_approved(): void
     {
         $ticket = $this->activeTicket(['Dented door']);
         $this->logRepair($ticket, $ticket->subIssues->first()->sub_issue_id);
@@ -152,21 +152,14 @@ class CustodianVerificationHandoffTest extends TestCase
         $this->putJson("/api/tickets/{$ticket->ticket_id}/verify", [
             'verification_verdict' => 'Approved', 'functional_test' => $failing, 'test_attested' => true,
         ])->assertUnprocessable();
-        // Approving without the attestation is refused.
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/verify", [
-            'verification_verdict' => 'Approved', 'functional_test' => $this->passingChecklist(),
-        ])->assertUnprocessable();
         $this->assertSame('For Verification', $ticket->fresh()->status);
 
-        $this->putJson("/api/tickets/{$ticket->ticket_id}/verify", [
-            'verification_verdict' => 'Approved', 'functional_test' => $this->passingChecklist(), 'test_attested' => true,
-        ])->assertOk();
+        // The Approve button on its own (no checklist, no attestation) closes it.
+        $this->putJson("/api/tickets/{$ticket->ticket_id}/verify", ['verification_verdict' => 'Approved'])->assertOk();
 
         $fresh = $ticket->fresh(['subIssues']);
         $this->assertSame('Closed', $fresh->status);
         $this->assertSame('Approved', $fresh->subIssues->first()->verification_verdict);
-        $this->assertCount(2, $fresh->subIssues->first()->functional_test);
-        $this->assertTrue($fresh->subIssues->first()->test_attested);
     }
 
     #[Test]

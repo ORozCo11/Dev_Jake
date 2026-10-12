@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, createContext, Fragment } from 'react';
+import { Children, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, createContext, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axios';
@@ -3835,7 +3835,6 @@ function Workspace() {
                     columns={locationColumnChooser.visibleColumns}
                     onReorderColumn={locationColumnChooser.reorderColumn}
                     rows={locationRows}
-                    onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
                     emptyMessage="No location records yet."
                   />
                 </div>
@@ -3972,7 +3971,6 @@ function Workspace() {
               onReorderColumn={conditionColumnChooser.reorderColumn}
               emptyMessage="No condition checks logged yet — click the + button to record one."
               rows={conditionRows}
-              onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
             />
         </ModulePanel>
       );
@@ -4019,7 +4017,7 @@ function Workspace() {
                   ]}
                 />
               </div>
-              <LatestIssueCard issues={records.issues ?? []} onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)} />
+              <LatestIssueCard issues={records.issues ?? []} onRowClick={(row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`)} />
               <section className="panel module-filter-panel issue-summary-filters">
                 <IssueFilterPanel
                   categories={lookups.categories}
@@ -4334,7 +4332,6 @@ function Workspace() {
               onReorderColumn={scheduleColumnChooser.reorderColumn}
               emptyMessage="No maintenance scheduled — click the + button to plan one."
               rows={scheduleRows}
-              onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
             />
           )}
 
@@ -4399,7 +4396,7 @@ function Workspace() {
               keyOf={(row) => row.history_id}
               emptyMessage="No vehicle activity recorded yet."
               renderItem={(row) => (
-                <HistoryCard row={row} onClick={() => row.vehicle && openVehicleProfile(row.vehicle)} />
+                <HistoryCard row={row} onClick={() => {}} />
               )}
             />
           ) : (
@@ -4408,7 +4405,6 @@ function Workspace() {
               onReorderColumn={vehicleHistoryColumnChooser.reorderColumn}
               emptyMessage="No vehicle activity recorded yet."
               rows={visibleRows}
-              onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
               pageSizeOptions={[10, 20, 40, 50]}
               initialPageSize={10}
             />
@@ -4494,6 +4490,7 @@ function Workspace() {
           ticketLookups={ticketLookups}
           notifications={notifications}
           onViewTicket={openTicketProfile}
+          onViewIssue={(id) => navigate(`${roleRoutes[user.role]}/issues/${id}`)}
           onCreateNew={canDo(user, 'ticket.create') ? () => navigate(`${roleRoutes[user.role]}/tickets/new`) : undefined}
           onViewArchives={canDo(user, 'ticket.view_archives') ? () => setActiveModule('ticketArchives') : undefined}
           recentIssues={hasRole(user, 'Admin') ? (records.issues ?? []) : undefined}
@@ -4736,7 +4733,6 @@ function Workspace() {
             onReorderColumn={archiveColumnChooser.reorderColumn}
             emptyMessage="No archived tickets yet — completed tickets are stored here automatically."
             rows={visibleRows}
-            onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
           />
         </ModulePanel>
       );
@@ -6441,15 +6437,9 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTi
           </section>
 
           <section className="veh-card issue-view-desc">
-            <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Description &amp; Remarks</h4></div>
+            <div className="veh-card-head"><Icon name="clipboard" size={16} /><h4>Description</h4></div>
             <div className="issue-view-text">
               <p>{issue.issue_description || '-'}</p>
-              {issue.remarks && (
-                <div className="issue-view-remarks">
-                  <span className="issue-view-remarks-label"><Icon name="clipboard" size={12} /> Remarks</span>
-                  <p>{issue.remarks}</p>
-                </div>
-              )}
             </div>
           </section>
 
@@ -6488,14 +6478,6 @@ function IssueViewPage({ issueId, allIssues = [], allHubs = [], user, onCreateTi
             </div>
           </section>
 
-          {historyTotal > 0 && (
-            <section className="veh-card">
-              <div className="veh-card-head"><Icon name="grid" size={16} /><h4>Issue History</h4></div>
-              <p className="solid-pie-subtitle">{issue.vehicle?.vehicle_name ?? 'This vehicle'} — {historyTotal} report{historyTotal === 1 ? '' : 's'} total</p>
-              <SolidPieLegend segments={historySegments} total={historyTotal} />
-              <SolidPieChart segments={historySegments} />
-            </section>
-          )}
         </div>
       </div>
     </ModulePanel>
@@ -10466,6 +10448,9 @@ function withNoteColumn(columns, render, { label = 'Note', width = '16%' } = {})
 // opens a small popover with the icons (rendered in a portal so table
 // overflow never clips it). Keeps narrow Action columns tidy.
 function RowActionsMenu({ children }) {
+  // Only worth hiding behind "…" when there are several actions; one or two
+  // icons fit in the cell, so they just show.
+  const actionCount = Children.toArray(children).length;
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
   const popRef = useRef(null);
@@ -10491,6 +10476,9 @@ function RowActionsMenu({ children }) {
     const r = btnRef.current.getBoundingClientRect();
     setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
   };
+  if (actionCount <= 2) {
+    return <div className="row-actions" style={{ flexWrap: 'nowrap', justifyContent: 'center' }}>{children}</div>;
+  }
   return (
     <>
       <button ref={btnRef} type="button" className="row-actions-trigger" onClick={toggle} title="Actions" aria-label="Actions" aria-haspopup="true" aria-expanded={!!pos}>…</button>
@@ -12897,8 +12885,57 @@ function verifyOutcomeMessage(payload) {
 // ticket) or Return for Repair (any failed check; ticket goes back to the
 // mechanic). POSTs to /tickets/{id}/verify, which re-checks all of it and
 // enforces who may verify (TicketController::verifyTicket).
-function TicketVerificationForm({ vehicle, onCancel, onSubmit }) {
-  return <VerificationForm target={{ vehicle }} onCancel={onCancel} onSubmit={onSubmit} />;
+function TicketVerificationForm({ onCancel, onSubmit }) {
+  const [decision, setDecision] = useState('');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (submitting) return;
+    if (!decision) { setError('Choose Approve or Disapprove.'); return; }
+    if (decision === 'Rejected' && !reason.trim()) { setError('A reason is required so the mechanic knows what to fix.'); return; }
+    setSubmitting(true);
+    try {
+      await onSubmit(decision === 'Rejected'
+        ? { verification_verdict: 'Rejected', verification_notes: reason.trim() }
+        : { verification_verdict: 'Approved', ...(reason.trim() ? { verification_notes: reason.trim() } : {}) });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form className="verify-decision" onSubmit={submit} noValidate>
+      <p className="verify-decision-lead">Has the repair been checked and does the vehicle work as it should?</p>
+      <div className="verify-decision-choices" role="radiogroup" aria-label="Verification decision">
+        <button type="button" role="radio" aria-checked={decision === 'Approved'} className={`verify-choice is-approve${decision === 'Approved' ? ' is-selected' : ''}`} onClick={() => { setDecision('Approved'); setError(''); }}>
+          <Icon name="checkCircle" size={22} />
+          <strong>Approve</strong>
+          <small>Closes the ticket and returns the vehicle to service.</small>
+        </button>
+        <button type="button" role="radio" aria-checked={decision === 'Rejected'} className={`verify-choice is-reject${decision === 'Rejected' ? ' is-selected' : ''}`} onClick={() => { setDecision('Rejected'); setError(''); }}>
+          <Icon name="close" size={22} />
+          <strong>Disapprove</strong>
+          <small>Sends it back to the mechanic to fix.</small>
+        </button>
+      </div>
+      {decision && (
+        <label className="verify-decision-reason">
+          <span>{decision === 'Rejected' ? 'Reason' : 'Note (optional)'}{decision === 'Rejected' && <abbr className="required-asterisk" title="required"> *</abbr>}</span>
+          <textarea rows={3} value={reason} onChange={(e) => { setReason(e.target.value); setError(''); }} placeholder={decision === 'Rejected' ? 'What is still wrong or incomplete?' : 'Anything the Admin or mechanic should know'} />
+        </label>
+      )}
+      {error && <p className="verify-decision-error" role="alert">{error}</p>}
+      <div className="verify-decision-actions">
+        <button type="button" className="ghost-button" onClick={onCancel} disabled={submitting}>Cancel</button>
+        <button type="submit" className={decision === 'Rejected' ? 'danger-button' : 'primary-button'} disabled={submitting || !decision}>
+          {submitting ? 'Saving…' : decision === 'Rejected' ? 'Disapprove' : 'Approve'}
+        </button>
+      </div>
+    </form>
+  );
 }
 
 // =========================================================================
@@ -13158,13 +13195,13 @@ function TicketProposalReviewForm({ ticket, lookups, onApprove, onDecline, onUnd
                 <Icon name="undo" size={14} /> Undecline
               </button>
             ) : (
-              <button className="btn-sm danger-button" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
+              <button className="danger-button proposal-decision-btn" type="button" onClick={() => setDeclining(true)} disabled={submitting}>
                 <Icon name="close" size={14} /> Decline
               </button>
             )}
             {!isDeclined && (
-              <button className="primary-button" type="button" onClick={submitApprove} disabled={submitting}>
-                <Icon name="checkCircle" size={14} /> Approve & Assign
+              <button className="primary-button proposal-decision-btn" type="button" onClick={submitApprove} disabled={submitting}>
+                <Icon name="checkCircle" size={14} /> Approve
               </button>
             )}
           </div>
@@ -13282,8 +13319,8 @@ function TwoColumnSubIssueEditor({ items, onChange, maintenanceTypeOptions, mech
                 <span style={{ flex: 1, fontSize: '0.85rem' }}>
                   {it.title}
                   {it.maintenance_type && <span className="muted"> — {it.maintenance_type}</span>}
-                  {mechanicOptions && it.suggested_mechanic_id && (
-                    <span className="muted"> · suggested: {mechanicOptions.find((m) => String(m.id) === String(it.suggested_mechanic_id))?.name ?? '—'}</span>
+                  {mechanicOptions && (
+                    <span className="muted"> · Personnel: {it.suggested_mechanic_id ? (mechanicOptions.find((m) => String(m.id) === String(it.suggested_mechanic_id))?.name ?? '—') : 'Unassigned'}</span>
                   )}
                 </span>
                 <button type="button" className="icon-btn" title="Edit" aria-label="Edit" onClick={() => startEdit(index)}><Icon name="edit" size={13} /></button>
@@ -13517,7 +13554,7 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
               </div>
               {ticket.issue_report_id && onViewIssue && canDo(user, 'issue.view') && (
                 <button className="ghost-button" type="button" style={{ marginTop: 10 }} onClick={() => onViewIssue(ticket.issue_report_id)}>
-                  <Icon name="alert" size={13} /> From Issue Report #{ticket.issue_report_id}
+                  <Icon name="alert" size={13} /> View Issue Details
                 </button>
               )}
             </section>
@@ -13988,21 +14025,19 @@ function TicketDetailPanel({ user, userId, ticket, lookups, onAddSubIssue, onEdi
           )}
 
           {/* The Custodian's verification for the whole ticket: the vehicle-type
-              functional test, then Approve (closes it) or Return for Repair. */}
+              popup, then Approve (closes it) or Disapprove with a reason. */}
           {canVerifyTicket && (
             <section className="ticket-section">
               <h4><Icon name="checkCircle" size={14} /> Verify Repair</h4>
-              {verifying ? (
+              <button className="primary-button" type="button" onClick={() => setVerifying(true)}>
+                <Icon name="checkCircle" size={14} /> Verify Repair
+              </button>
+              <FormModal open={verifying} title={`Verify Repair — Ticket #${ticket.ticket_id}`} onClose={() => setVerifying(false)}>
                 <TicketVerificationForm
-                  vehicle={ticket.vehicle}
                   onCancel={() => setVerifying(false)}
                   onSubmit={(payload) => onVerifyTicket(ticket, payload).then((ok) => { if (ok !== false) setVerifying(false); })}
                 />
-              ) : (
-                <button className="primary-button" type="button" onClick={() => setVerifying(true)}>
-                  <Icon name="checkCircle" size={14} /> Verify Repair
-                </button>
-              )}
+              </FormModal>
             </section>
           )}
           </div>
@@ -15018,6 +15053,7 @@ function ProposeTicketPage({ onBack, ticketLookups, onProposeTicket, onDirty, pr
 // =========================================================================
 
 function TicketModule({
+  onViewIssue,
   tickets,
   allTickets,
   ticketLookups,
@@ -15169,7 +15205,7 @@ function TicketModule({
             the one thing worth keeping from it, moved here instead of
             dropped. */}
         {recentIssues && recentIssues.length > 0 && (
-          <LatestIssueCard issues={recentIssues} onRowClick={(row) => row.vehicle && onViewVehicle?.(row.vehicle)} />
+          <LatestIssueCard issues={recentIssues} onRowClick={(row) => onViewIssue?.(row.issue_report_id)} />
         )}
       </div>
 
@@ -16373,7 +16409,6 @@ function CustodianInspectionModule({
               columns={inspectionColumnChooser.visibleColumns}
               onReorderColumn={inspectionColumnChooser.reorderColumn}
               rows={tickets}
-              onRowClick={(row) => row.vehicle && onViewVehicle(row.vehicle)}
             />
           )
         }
@@ -16685,7 +16720,6 @@ function CustodianVerificationModule({
       <FormModal open={!!editTarget} title={`Verify Repair — ${editTarget?.ticket_title ?? `Ticket #${editTarget?.ticket_id}`}`} onClose={onCancelEdit}>
         <TicketVerificationForm
           key={editTarget?.ticket_id}
-          vehicle={editTarget?.vehicle}
           onCancel={onCancelEdit}
           onSubmit={(payload) => onVerify(editTarget, payload)}
         />
@@ -17068,7 +17102,7 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
                 />
                 <span>
                   <strong>This repair uses a part taken from another vehicle</strong>
-                  <small>An Admin approves it before any part is removed from the donor vehicle.</small>
+                  <small>The donor vehicle is flagged for inspection automatically. This can be a repair, a donor part, or both.</small>
                 </span>
               </label>
             )}
@@ -17107,13 +17141,13 @@ function LogRepairsPage({ ticket, vehicleOptions = [], onBack, onSubmit, onDirty
             )}
 
             <div className="lr-field">
-              <label className="lr-label" htmlFor={`${idBase}-work`}>Work Performed <abbr className="required-asterisk" title="required">*</abbr></label>
+              <label className="lr-label" htmlFor={`${idBase}-work`}>Work Performed {repairType !== 'cannibalized' && <abbr className="required-asterisk" title="required">*</abbr>}</label>
               <textarea
                 id={`${idBase}-work`}
                 className="lr-textarea"
-                required
+                required={repairType !== 'cannibalized'}
                 rows={4}
-                placeholder="Describe what you repaired, what you found, what you replaced, adjustments made, and testing performed."
+                placeholder={repairType === 'cannibalized' ? 'Optional — add repair details if you also repaired something (a part-only job can leave this blank).' : 'Describe what you repaired, what you found, what you replaced, adjustments made, and testing performed.'}
                 value={repairLogs}
                 onChange={(e) => { setRepairLogs(e.target.value); onDirty?.(); }}
               />

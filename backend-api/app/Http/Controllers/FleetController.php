@@ -185,7 +185,14 @@ class FleetController extends Controller
                         ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
                         ->count()
                     : $activeIssues,
-                'tickets' => MaintenanceTicket::whereNotIn('status', ['Closed', 'Cancelled'])->count(),
+                // Admin: what needs a look — proposals awaiting a decision plus
+                // tickets a Custodian closed in the last 14 days (so a closure
+                // shows up here without anyone telling them). Everyone else
+                // keeps the open-ticket count.
+                'tickets' => $user->hasRole('Admin')
+                    ? MaintenanceTicket::where('status', 'Pending Approval')->count()
+                        + MaintenanceTicket::where('status', 'Closed')->where('closed_at', '>=', now()->subDays(14))->count()
+                    : MaintenanceTicket::whereNotIn('status', ['Closed', 'Cancelled'])->count(),
                 'conditions' => VehicleConditionCheck::whereIn('condition_result', ['Needs Inspection', 'Needs Repair'])
                     ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
                     ->count(),

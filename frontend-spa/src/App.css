@@ -14775,3 +14775,35 @@ html .table-shell .vehicle-cell { min-width: 160px; }
   .fx-actions button { width: 100%; }
 }
 .fx-field > label abbr { text-decoration: none; border: 0; color: #dc2626; cursor: help; }
+
+/* Ticket Details hero: dark blue band with white text (the Next Best Action
+   card stays a white card on top of it). */
+html .ticket-detail-panel.is-page .ticket-process-hero {
+  background: linear-gradient(135deg, #0b2a6f 0%, #1e40af 100%); border-color: #1e3a8a; color: #fff;
+}
+html .ticket-detail-panel.is-page .ticket-process-hero-main,
+html .ticket-detail-panel.is-page .ticket-process-hero-main h2,
+html .ticket-detail-panel.is-page .ticket-process-hero-main h3,
+html .ticket-detail-panel.is-page .ticket-process-kicker,
+html .ticket-detail-panel.is-page .ticket-process-kicker * { color: #fff; }
+html .ticket-detail-panel.is-page .ticket-process-meter-core { background: #fff; }
+
+/* Approve / Decline on a proposal: same size and shape. */
+.proposal-decision-btn { min-width: 124px; height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 18px; border-radius: 10px; font-weight: 700; font-size: 0.88rem; }
+
+/* Verify Repair popup (Approve / Disapprove with a reason). */
+.verify-decision { display: flex; flex-direction: column; gap: 14px; }
+.verify-decision-lead { margin: 0; font-size: 0.92rem; color: #334155; }
+.verify-decision-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.verify-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px; text-align: left; border: 2px solid #e2e8f0; border-radius: 12px; background: #fff; cursor: pointer; transition: border-color .15s, background .15s; }
+.verify-choice strong { font-size: 1rem; color: #0f172a; }
+.verify-choice small { font-size: 0.78rem; color: #64748b; line-height: 1.35; }
+.verify-choice.is-approve svg { color: #16a34a; }
+.verify-choice.is-reject svg { color: #dc2626; }
+.verify-choice.is-approve:hover, .verify-choice.is-approve.is-selected { border-color: #16a34a; background: #f0fdf4; }
+.verify-choice.is-reject:hover, .verify-choice.is-reject.is-selected { border-color: #dc2626; background: #fef2f2; }
+.verify-decision-reason { display: flex; flex-direction: column; gap: 5px; font-size: 0.82rem; font-weight: 700; color: #334155; }
+.verify-decision-reason textarea { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1.5px solid #cbd5e1; border-radius: 9px; font: inherit; font-weight: 400; resize: vertical; }
+.verify-decision-error { margin: 0; color: #dc2626; font-size: 0.82rem; font-weight: 600; }
+.verify-decision-actions { display: flex; justify-content: flex-end; gap: 10px; }
+@media (max-width: 520px) { .verify-decision-choices { grid-template-columns: 1fr; } }
