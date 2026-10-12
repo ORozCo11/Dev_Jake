@@ -2669,11 +2669,40 @@ function Workspace() {
   // entry of its own (it's not a real module), so it's the sum of the two
   // real queues it groups. Shared by each row's own badge and by a
   // collapsed group header's summed badge below.
-  const badgeCountFor = (key) => (
+  const rawBadgeCountFor = (key) => (
     key === 'myTasks'
       ? (dashboard?.badge_counts?.ticketVerifications ?? 0)
       : (dashboard?.badge_counts?.[key] ?? 0)
   );
+  // A badge means "new since you last looked": opening a module marks what is
+  // there as seen, so its badge clears and only comes back when something new
+  // arrives. If the underlying count drops (work gets resolved), the seen mark
+  // drops with it so the next new item shows again. Kept per user in
+  // localStorage; the count itself still comes from the one shared dashboard
+  // payload.
+  const seenStorageKey = `vms_badge_seen_${user?.id ?? 'anon'}`;
+  const [seenBadges, setSeenBadges] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(seenStorageKey) ?? '{}') || {}; } catch { return {}; }
+  });
+  useEffect(() => {
+    if (!dashboard) return;
+    const viewing = new Set([breadcrumbModule]);
+    if (['ticketVerifications', 'ticketInspections', 'workTracker'].includes(breadcrumbModule)) viewing.add('myTasks');
+    setSeenBadges((prev) => {
+      const next = { ...prev };
+      Object.keys(dashboard.badge_counts ?? {}).concat('myTasks').forEach((k) => {
+        const raw = rawBadgeCountFor(k);
+        if (viewing.has(k)) next[k] = raw;
+        else if ((next[k] ?? 0) > raw) next[k] = raw;
+      });
+      const same = Object.keys(next).length === Object.keys(prev).length && Object.keys(next).every((k) => next[k] === prev[k]);
+      if (same) return prev;
+      try { localStorage.setItem(seenStorageKey, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboard, breadcrumbModule, seenStorageKey]);
+  const badgeCountFor = (key) => Math.max(0, rawBadgeCountFor(key) - (seenBadges[key] ?? 0));
 
   return (
     <FormNoticeContext.Provider value={notice}>
