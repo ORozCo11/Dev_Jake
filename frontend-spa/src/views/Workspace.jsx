@@ -1331,6 +1331,16 @@ function Workspace() {
       // Location records nest the vehicle status under `.vehicle`, not on
       // the row itself (the row IS a location snapshot, not a vehicle).
       result = result.filter((row) => filterStatus.includes(row.vehicle?.status));
+    } else if (activeModule === 'issues' && filterStatus.includes(ISSUE_AWAITING_ACTION_KEY)) {
+      // The "Awaiting Action" summary card writes a roll-up key into
+      // filterStatus, and that key is not a real status. Expand it back to the
+      // statuses it stands for; if a real status is selected alongside it, show
+      // the union of the two rather than an empty list.
+      const wantedStatuses = new Set([
+        ...ISSUE_AWAITING_ACTION_STATUSES,
+        ...filterStatus.filter((status) => status !== ISSUE_AWAITING_ACTION_KEY),
+      ]);
+      result = result.filter((row) => wantedStatuses.has(row.status));
     } else if (filterStatus.length) {
       result = result.filter((row) => {
         const statusVal = row.status ?? row.progress_status ?? row.final_status;
@@ -1544,10 +1554,15 @@ function Workspace() {
     return counts;
   };
 
-  const issueStats = useMemo(
-    () => countByValues(records.issues ?? [], (r) => r.status, ['Pending', 'Under Review', 'In Maintenance', 'Resolved']),
-    [records.issues]
-  );
+  const issueStats = useMemo(() => {
+    const base = countByValues(records.issues ?? [], (r) => r.status, ISSUE_STATUS_ORDER);
+    // "Awaiting Action" is a display-only roll-up of the two statuses where
+    // nothing is being repaired yet. The individual counts stay in `base` too,
+    // so the status tabs below can still filter on each real value.
+    const awaiting = ISSUE_AWAITING_ACTION_STATUSES
+      .reduce((sum, status) => sum + (base[status] ?? 0), 0);
+    return { ...base, [ISSUE_AWAITING_ACTION_KEY]: awaiting };
+  }, [records.issues]);
 
   const scheduleStats = useMemo(() => {
     const base = countByValues(records.schedules ?? [], (r) => r.status, ['Scheduled', 'Completed', 'Cancelled']);
@@ -2997,79 +3012,105 @@ function Workspace() {
         );
       }
 
+      // Clears every filter this module can set, including the module-only
+      // issue-type dimension and the date range. Used by both the "Total
+      // Reports" metric and the filter row's own reset control.
+      const resetIssueFilters = () => {
+        setFilterStatus([]);
+        setFilterCategory([]);
+        setFilterCapacity([]);
+        setFilterPriority([]);
+        setFilterIssueType([]);
+        setFilterDateStart('');
+        setFilterDateEnd('');
+        setSearchQuery('');
+      };
+
+      // A Custodian-only account gets the server-scoped "my reports" list
+      // (see loadModule's `mine` param), so the heading says "My" and offers
+      // the report action. Admin/Maintenance see every report and cannot file
+      // one from here — same split the icon-only add button used to make.
+      const seesOwnReportsOnly = hasRole(user, 'Custodian') && !hasRole(user, 'Admin');
+      const canReportIssue = hasRole(user, 'Custodian');
+
       return (
         <ModulePanel
           description={issueDescription(user.role)}
           statCards={
-            <div className="issue-summary-grid">
-              <div className="issue-summary-stats">
-                <ModuleStatCards
-                  totalLabel="Total Issues"
-                  total={issueStats.total}
-                  cards={ISSUE_STAT_CARDS}
-                  counts={issueStats}
-                  activeFilter={filterStatus}
-                  onFilterChange={setFilterStatus}
-                  onTotalClick={() => {
-                    setFilterStatus([]);
-                    setFilterCategory([]);
-                    setFilterCapacity([]);
-                    setFilterPriority([]);
-                    setFilterIssueType([]);
-                    setFilterDateStart('');
-                    setFilterDateEnd('');
-                  }}
-                />
-              </div>
-              <section className="panel module-filter-panel issue-summary-filters">
-                <FilterBar
-                  categories={lookups.categories}
-                  vehicles={lookups.vehicles}
-                  filterCategory={filterCategory}
-                  setFilterCategory={setFilterCategory}
-                  filterCapacity={filterCapacity}
-                  setFilterCapacity={setFilterCapacity}
-                  filterStatus={filterStatus}
-                  setFilterStatus={setFilterStatus}
-                  filterPriority={filterPriority}
-                  setFilterPriority={setFilterPriority}
-                  statusOptions={lookups.issue_statuses}
-                  priorityOptions={lookups.severity_levels}
-                  priorityLabel="Severity"
-                  extraFilters={[{
-                    key: 'issueType',
-                    label: 'Issue Types',
-                    options: lookups.issue_types ?? [],
-                    selected: filterIssueType,
-                    setSelected: setFilterIssueType,
-                  }]}
-                  dateRange={{
-                    start: filterDateStart,
-                    setStart: setFilterDateStart,
-                    end: filterDateEnd,
-                    setEnd: setFilterDateEnd,
-                  }}
-                />
-              </section>
-              <LatestIssueCard issues={records.issues ?? []} onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)} />
+            <div className="issue-metrics">
+              <ModuleStatCards
+                totalLabel="Total Reports"
+                total={issueStats.total}
+                cards={ISSUE_STAT_CARDS}
+                counts={issueStats}
+                activeFilter={filterStatus}
+                onFilterChange={setFilterStatus}
+                onTotalClick={resetIssueFilters}
+                className="issue-metrics-grid"
+              />
+              <p className="issue-metrics-note">
+                <Icon name="flag" size={13} />
+                <span>{ISSUE_AWAITING_ACTION_NOTE}</span>
+              </p>
             </div>
           }
-        >
-          <div className="panel-header-bar">
-            <h3>Issue Reports <span className="count-badge">{visibleRows.length}</span></h3>
-            <LocalSearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search issues..."
-              onAdd={hasRole(user, 'Custodian') ? () => navigate(`${roleRoutes[user.role]}/issues/new`) : undefined}
-              addLabel="Report Issue"
+          filterBar={
+            <IssueFilters
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              statuses={(lookups.issue_statuses ?? []).length ? lookups.issue_statuses : ISSUE_STATUS_ORDER}
+              filterStatus={filterStatus}
+              setFilterStatus={setFilterStatus}
+              severities={lookups.severity_levels ?? []}
+              filterSeverity={filterPriority}
+              setFilterSeverity={setFilterPriority}
+              issueTypes={lookups.issue_types ?? []}
+              filterIssueType={filterIssueType}
+              setFilterIssueType={setFilterIssueType}
+              categories={lookups.categories ?? []}
+              filterCategory={filterCategory}
+              setFilterCategory={setFilterCategory}
+              vehicles={lookups.vehicles ?? []}
+              filterCapacity={filterCapacity}
+              setFilterCapacity={setFilterCapacity}
+              dateStart={filterDateStart}
+              setDateStart={setFilterDateStart}
+              dateEnd={filterDateEnd}
+              setDateEnd={setFilterDateEnd}
+              onReset={resetIssueFilters}
             />
+          }
+        >
+          <div className="panel-header-bar issue-list-header">
+            <div className="panel-header-titles">
+              <h3>
+                {seesOwnReportsOnly ? 'My Issue Reports' : 'Issue Reports'}{' '}
+                <span className="count-badge">{visibleRows.length}</span>
+              </h3>
+              <p className="panel-header-subtitle">Report problems and track their progress.</p>
+            </div>
+            {canReportIssue && (
+              <button
+                type="button"
+                className="primary-button issue-report-btn"
+                onClick={() => navigate(`${roleRoutes[user.role]}/issues/new`)}
+              >
+                <Icon name="plus" size={16} />
+                <span>Report an Issue</span>
+              </button>
+            )}
           </div>
           <PaginatedTable
-            columns={issueColumns(user.role, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}/edit`), handleCreateTicketFromIssue, setUserInfoTarget, (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`), deleteRecord)}
-            emptyMessage="No issues reported — the fleet has no open problems right now."
+            columns={issueColumns(user.role, {
+              onView: (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`),
+              onEdit: (row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}/edit`),
+              onCreateTicketFromIssue: handleCreateTicketFromIssue,
+              onViewReporter: setUserInfoTarget,
+              deleteRecord,
+            })}
+            emptyMessage="No issue reports match your search and filters."
             rows={visibleRows}
-            onRowClick={(row) => row.vehicle && openVehicleProfile(row.vehicle)}
+            onRowClick={(row) => navigate(`${roleRoutes[user.role]}/issues/${row.issue_report_id}`)}
           />
         </ModulePanel>
       );
@@ -5159,6 +5200,70 @@ const ISSUE_STATUS_COLORS = {
   'Resolved': '#22c55e',
 };
 
+// The four statuses the backend actually defines for an issue report
+// (FleetController::formOptions -> 'issue_statuses'). Declared once here so the
+// summary metrics, the status tabs and the detail page can never drift apart.
+const ISSUE_STATUS_ORDER = ['Pending', 'Under Review', 'In Maintenance', 'Resolved'];
+
+// Plain-language wording for those statuses. DISPLAY ONLY - every API payload,
+// filter value and badge CSS class keeps using the real value, so the backend's
+// status transitions are untouched. `label` reads as a sentence, `short` labels
+// the status tabs, `help` explains the status to someone who has never seen the
+// maintenance workflow.
+const ISSUE_STATUS_COPY = {
+  'Pending': {
+    label: 'Waiting for review',
+    short: 'Waiting',
+    help: 'Reported and waiting for an Admin to look at it.',
+  },
+  'Under Review': {
+    label: 'Being reviewed',
+    short: 'Under review',
+    help: 'An Admin is reviewing this report and deciding what to do next.',
+  },
+  'In Maintenance': {
+    label: 'Repair in progress',
+    short: 'In repair',
+    help: 'A maintenance ticket exists and the repair work is under way.',
+  },
+  'Resolved': {
+    label: 'Issue resolved',
+    short: 'Resolved',
+    help: 'The problem has been fixed and this report is closed.',
+  },
+};
+
+// "Awaiting Action" folds together the two statuses where nothing is being
+// repaired yet and an Admin still has to act. Both remain individually
+// selectable in the status tabs; the summary card spells out which two it
+// combines so the number is never a mystery.
+const ISSUE_AWAITING_ACTION_STATUSES = ['Pending', 'Under Review'];
+const ISSUE_AWAITING_ACTION_KEY = 'awaiting-action';
+
+function issueStatusLabel(status) {
+  return ISSUE_STATUS_COPY[status]?.label ?? status ?? 'Unknown';
+}
+
+function issueStatusHelp(status) {
+  return ISSUE_STATUS_COPY[status]?.help ?? null;
+}
+
+/** Issue status pill. Keeps the canonical value's CSS class (so the existing
+ * .status-badge.pending / .under-review / .in-maintenance / .resolved colours
+ * still apply) but displays the plain-language wording. The canonical value and
+ * what the status means are both available on hover. */
+function IssueStatusBadge({ value }) {
+  const copy = ISSUE_STATUS_COPY[value];
+  return (
+    <span
+      className={`status-badge ${String(value ?? '').toLowerCase().replaceAll(' ', '-')}`}
+      title={copy ? `${value} - ${copy.help}` : undefined}
+    >
+      {copy ? copy.label : (value ?? '-')}
+    </span>
+  );
+}
+
 // Full-page issue detail — mirrors the vehicle/ticket profile pages so every
 // "View" action opens its own page rather than a modal, consistently for all roles.
 // Fetches by ID rather than looking the issue up in an already-loaded list —
@@ -7240,12 +7345,18 @@ const VEHICLE_OVERVIEW_CARDS = [
   { key: 'NotReady', label: 'Not Ready to Respond', icon: 'alert', color: '#b91c1c' },
 ];
 
+// Issue Reports summary — three compact, task-oriented metrics instead of the
+// old five-card strip. "Awaiting Action" folds together the two statuses where
+// nothing is being repaired yet and an Admin still has to act; the two
+// remaining statuses stay one click away in the status tabs next to the list.
 const ISSUE_STAT_CARDS = [
-  { key: 'Pending', label: 'Pending', icon: 'alert', bg: '#fef3c7', color: '#d97706' },
-  { key: 'Under Review', label: 'Under Review', icon: 'search', bg: '#e0f2fe', color: '#0284c7' },
-  { key: 'In Maintenance', label: 'In Maintenance', icon: 'wrench', bg: '#fee2e2', color: '#dc2626' },
-  { key: 'Resolved', label: 'Resolved', icon: 'checkCircle', bg: '#dcfce7', color: '#16a34a' },
+  { key: ISSUE_AWAITING_ACTION_KEY, label: 'Awaiting Action', icon: 'alert', bg: '#fffbeb', color: '#d97706' },
+  { key: 'In Maintenance', label: 'Repair in Progress', icon: 'wrench', bg: '#eff6ff', color: '#2563eb' },
+  { key: 'Resolved', label: 'Resolved', icon: 'checkCircle', bg: '#f0fdf4', color: '#16a34a' },
 ];
+
+// Spelled out under the metrics so a combined number is never a mystery.
+const ISSUE_AWAITING_ACTION_NOTE = 'Awaiting Action = Waiting for review + Being reviewed.';
 
 const SCHEDULE_STAT_CARDS = [
   { key: 'Scheduled', label: 'Scheduled', icon: 'calendar', bg: '#e0f2fe', color: '#0284c7' },
@@ -7661,112 +7772,283 @@ function timeAgo(value) {
 // the newest reports (vehicle, issue, reporter), so "what's come in
 // recently" doesn't require scrolling the full table below. Sourced from the
 // unfiltered list, so a search/filter on the main table doesn't empty it out.
-function LatestIssueCard({ issues = [], onRowClick }) {
-  const sorted = useMemo(
-    () => [...issues].sort((a, b) => (b.issue_report_id ?? 0) - (a.issue_report_id ?? 0)),
-    [issues]
-  );
+/**
+ * The whole filter surface for Issue Reports.
+ *
+ * This deliberately does NOT reuse the shared FilterBar: that component renders
+ * every dimension across the top at once (category, capacity, status, severity,
+ * extra filters, date range), which is a large part of why this page read as
+ * dense. Here the everyday controls stay visible and the rest fold into an
+ * accessible "Advanced Filters" panel behind a button.
+ *
+ * Every control writes exactly the same filter state the module already used
+ * (setFilterStatus / setFilterPriority / setFilterIssueType / setFilterCategory
+ * / setFilterCapacity / the date range), and search still feeds `searchQuery`,
+ * so filtering and pagination behave exactly as before.
+ */
+function IssueFilters({
+  searchQuery, setSearchQuery,
+  statuses = [], filterStatus = [], setFilterStatus,
+  severities = [], filterSeverity = [], setFilterSeverity,
+  issueTypes = [], filterIssueType = [], setFilterIssueType,
+  categories = [], filterCategory = [], setFilterCategory,
+  vehicles = [], filterCapacity = [], setFilterCapacity,
+  dateStart, setDateStart, dateEnd, setDateEnd,
+  onReset,
+}) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const advancedPanelId = 'issue-advanced-filters';
+
+  // Same dynamic capacity list the shared FilterBar derives from the fleet.
+  const capacities = useMemo(() => {
+    const found = new Set();
+    vehicles.forEach((vehicle) => {
+      if (vehicle.capacity) found.add(String(vehicle.capacity).trim());
+    });
+    return Array.from(found).sort();
+  }, [vehicles]);
+
+  const categoryOptions = categories.map((category) => ({
+    value: String(category.category_id),
+    label: category.category_name,
+  }));
+
+  // Status tabs behave like the stat cards: one primary status at a time, and
+  // "All" clears the dimension. The roll-up key is offered here too because the
+  // "Awaiting Action" metric above uses it.
+  const statusTabs = [
+    { key: null, label: 'All' },
+    ...statuses.map((status) => ({ key: status, label: ISSUE_STATUS_COPY[status]?.short ?? status })),
+    { key: ISSUE_AWAITING_ACTION_KEY, label: 'Needs action' },
+  ];
+
+  const advancedActiveCount = [
+    filterSeverity, filterIssueType, filterCategory, filterCapacity,
+  ].filter((list) => (list ?? []).length > 0).length + ((dateStart || dateEnd) ? 1 : 0);
+
+  const hasAnyFilter = advancedActiveCount > 0 || (filterStatus ?? []).length > 0 || Boolean(searchQuery);
+
+  const toggleStatus = (key) => {
+    setFilterStatus((current) => (
+      current.includes(key) ? current.filter((status) => status !== key) : [key]
+    ));
+  };
 
   return (
-    <aside className="panel latest-issue-card latest-issue-timeline">
-      <div className="latest-issue-card-head">
-        <span className="latest-issue-card-label">Latest Reports</span>
-        <span className="count-badge">{issues.length}</span>
-      </div>
-      <div className="latest-issue-timeline-list">
-        {sorted.length === 0 ? (
-          <p className="muted">No issues reported yet.</p>
-        ) : (
-          sorted.map((row) => (
-            <button
-              key={row.issue_report_id}
-              type="button"
-              className="latest-issue-timeline-item"
-              onClick={() => onRowClick?.(row)}
-            >
-              <span className="latest-issue-timeline-dot" />
-              <span className="latest-issue-timeline-icon"><Icon name="mail" size={16} /></span>
-              <span className="latest-issue-timeline-body">
-                <strong>{row.vehicle?.vehicle_name ?? 'Unknown vehicle'}</strong>
-                <span className="muted">
-                  {row.issue_type ?? 'Unspecified issue'} reported by {row.reported_by?.name ?? 'Unknown reporter'}.
-                </span>
-              </span>
-              <span className="latest-issue-timeline-time">{timeAgo(row.created_at)}</span>
+    <div className="issue-filters">
+      <div className="issue-filters-top">
+        <div className="local-search-container issue-filters-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="local-search-icon">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            className="local-search-input"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search issue title, vehicle or plate..."
+            aria-label="Search issue reports"
+          />
+          {searchQuery && (
+            <button className="local-search-clear" type="button" title="Clear search" onClick={() => setSearchQuery('')}>
+              <Icon name="close" size={14} />
             </button>
-          ))
+          )}
+        </div>
+
+        <button
+          type="button"
+          className={`issue-advanced-toggle${advancedOpen ? ' is-open' : ''}`}
+          aria-expanded={advancedOpen}
+          aria-controls={advancedPanelId}
+          onClick={() => setAdvancedOpen((open) => !open)}
+        >
+          <Icon name="filter" size={14} />
+          <span>Advanced Filters</span>
+          {advancedActiveCount > 0 && <span className="issue-filter-count">{advancedActiveCount}</span>}
+          <Icon name="chevronDown" size={13} />
+        </button>
+
+        {hasAnyFilter && (
+          <button type="button" className="issue-clear-filters" onClick={onReset}>
+            Reset
+          </button>
         )}
       </div>
-    </aside>
+
+      <div className="issue-status-tabs" role="group" aria-label="Filter issue reports by status">
+        {statusTabs.map((tab) => {
+          const isActive = tab.key === null
+            ? (filterStatus ?? []).length === 0
+            : (filterStatus ?? []).includes(tab.key);
+          return (
+            <button
+              key={tab.key ?? 'all'}
+              type="button"
+              className={`issue-status-tab${isActive ? ' is-active' : ''}`}
+              aria-pressed={isActive}
+              onClick={() => (tab.key === null ? setFilterStatus([]) : toggleStatus(tab.key))}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {advancedOpen && (
+        <div className="issue-advanced-panel" id={advancedPanelId}>
+          <div className="issue-advanced-field">
+            <span className="issue-advanced-label">Severity</span>
+            <MultiSelectDropdown
+              placeholder="All Severities"
+              options={severities}
+              selected={filterSeverity}
+              onChange={setFilterSeverity}
+            />
+          </div>
+          <div className="issue-advanced-field">
+            <span className="issue-advanced-label">Issue Type</span>
+            <MultiSelectDropdown
+              placeholder="All Issue Types"
+              options={issueTypes}
+              selected={filterIssueType}
+              onChange={setFilterIssueType}
+            />
+          </div>
+          <div className="issue-advanced-field">
+            <span className="issue-advanced-label">Vehicle Type</span>
+            <MultiSelectDropdown
+              placeholder="All Vehicle Types"
+              options={categoryOptions}
+              selected={filterCategory}
+              onChange={setFilterCategory}
+            />
+          </div>
+          <div className="issue-advanced-field">
+            <span className="issue-advanced-label">Capacity</span>
+            <MultiSelectDropdown
+              placeholder="All Capacities"
+              options={capacities}
+              selected={filterCapacity}
+              onChange={setFilterCapacity}
+            />
+          </div>
+          <div className="issue-advanced-field issue-advanced-dates">
+            <span className="issue-advanced-label">Date Reported</span>
+            <div className="issue-advanced-date-row">
+              <label className="issue-date-input">
+                <span>From</span>
+                <input type="date" className="filter-select" value={dateStart} onChange={(event) => setDateStart(event.target.value)} />
+              </label>
+              <label className="issue-date-input">
+                <span>To</span>
+                <input type="date" className="filter-select" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
-function issueColumns(role, onEdit, onCreateTicketFromIssue, setUserInfoTarget, onView, deleteRecord) {
+/** Issue Reports list columns — what a Custodian or Admin needs to *find* a
+ * report and see where it stands, and nothing else. The vehicle thumbnail,
+ * description preview, plate column and reporter column were all removed from
+ * the default listing (they made rows tall and repetitive); every one of them
+ * still appears in full on the report's own detail page.
+ *
+ * Row actions are the same permissions as before — View for everyone,
+ * Update/Create Ticket for Admin, Update/Delete for a Custodian while the
+ * report is still Pending (the backend rejects both after review) — but they
+ * now live behind one labelled "Actions" menu instead of a row of unlabelled
+ * icons, and "View Details" is the obvious primary action. */
+function issueColumns(role, handlers = {}) {
+  const { onView, onEdit, onCreateTicketFromIssue, deleteRecord } = handlers;
+
+  // Every role that can reach this list can open a report; the extra actions
+  // behind the menu are narrowed per row below.
+  const canOpenActionsMenu = ['Admin', 'Maintenance Personnel', 'Custodian'].includes(role);
+  const canCreateTicket = role === 'Admin';
+
   const columns = [
-    { label: 'ID', width: '5%', render: (row) => row.issue_report_id },
     {
       label: 'Issue',
-      width: '27%',
+      width: '30%',
       render: (row) => (
         <div className="issue-cell">
-          <div className="issue-cell-top">
-            <span className="issue-type">{row.issue_type}</span>
-          </div>
-          {row.issue_description && (
-            <ExpandableText text={row.issue_description} className="issue-desc" lines={1} />
-          )}
+          <span className="issue-type">{row.issue_type}</span>
+          <span className="issue-cell-sub">Issue #{row.issue_report_id}</span>
         </div>
       ),
     },
-    { label: 'Vehicle', width: '13%', render: (row) => <VehicleCell vehicle={row.vehicle} /> },
-    { label: 'Plate', width: '7%', render: (row) => row.vehicle?.plate_number ?? '-' },
-    { label: 'Severity', width: '9%', render: (row) => <TicketStatusBadge value={row.severity_level} /> },
-    { label: 'Status', width: '9%', render: (row) => <StatusBadge value={row.status} /> },
     {
-      label: 'Reported By',
-      width: '12%',
+      label: 'Vehicle',
+      width: '20%',
       render: (row) => (
-        row.reported_by
-          ? <UserAvatarName user={row.reported_by} />
-          : <span className="issue-reporter">-</span>
+        <div className="issue-vehicle-cell">
+          <span className="issue-vehicle-name">{row.vehicle?.vehicle_name ?? 'Unknown vehicle'}</span>
+          {row.vehicle?.plate_number && <span className="issue-vehicle-plate">{row.vehicle.plate_number}</span>}
+        </div>
       ),
     },
-    { label: 'Date', width: '9%', render: (row) => <DateBadge value={row.created_at} /> },
+    { label: 'Severity', width: '11%', render: (row) => <TicketStatusBadge value={row.severity_level} /> },
+    { label: 'Status', width: '15%', render: (row) => <IssueStatusBadge value={row.status} /> },
+    {
+      label: 'Date Reported',
+      width: '14%',
+      render: (row) => <span className="issue-date">{formatDate(row.created_at)}</span>,
+    },
+    {
+      label: 'Action',
+      width: '10%',
+      render: (row) => {
+        // A Custodian may only edit/delete their own report while it is still
+        // Pending — the same guard the icon buttons used to apply, and the
+        // same one FleetController enforces server-side.
+        const showEditForCustodian = role === 'Custodian' && row.status === 'Pending';
+        const showEdit = ['Admin', 'Maintenance Personnel'].includes(role) || showEditForCustodian;
+        const showDelete = showEditForCustodian;
+
+        return (
+          <div className="row-actions" style={{ flexWrap: 'nowrap' }}>
+            <button type="button" className="issue-view-details-btn" onClick={() => onView?.(row)}>
+              View Details
+            </button>
+            {canOpenActionsMenu && (showEdit || showDelete || canCreateTicket) && (
+              <details className="row-actions-menu" onClick={(event) => event.stopPropagation()}>
+                <summary aria-label={`More actions for issue #${row.issue_report_id}`}>
+                  <Icon name="chevronDown" size={13} />
+                </summary>
+                <div className="row-actions-popover">
+                  {showEdit && (
+                    <button type="button" onClick={() => onEdit?.(row)}>
+                      <Icon name="edit" size={14} /> {role === 'Custodian' ? 'Edit Report' : 'Update Status'}
+                    </button>
+                  )}
+                  {canCreateTicket && (
+                    <button type="button" onClick={() => onCreateTicketFromIssue?.(row)}>
+                      <Icon name="ticket" size={14} /> Create Maintenance Ticket
+                    </button>
+                  )}
+                  {showDelete && (
+                    <button
+                      type="button"
+                      className="is-danger"
+                      onClick={() => deleteRecord?.(`/issues/${row.issue_report_id}`, 'Issue deleted.')}
+                    >
+                      <Icon name="trash" size={14} /> Delete Report
+                    </button>
+                  )}
+                </div>
+              </details>
+            )}
+          </div>
+        );
+      },
+    },
   ];
-
-  if (['Admin', 'Maintenance Personnel'].includes(role)) {
-    columns.push({
-      label: 'Action',
-      width: '10%',
-      render: (row) => (
-        <div className="row-actions" style={{ flexWrap: 'nowrap' }}>
-          <button className="btn-view-action icon-btn" onClick={() => onView(row)} type="button" title="View" aria-label="View"><Icon name="eye" size={14} /></button>
-          <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Update" aria-label="Update"><Icon name="edit" size={14} /></button>
-          {role === 'Admin' && (
-            <button className="btn-confirm-action icon-btn" onClick={() => onCreateTicketFromIssue(row)} type="button" title="Create Ticket" aria-label="Create Ticket"><Icon name="ticket" size={14} /></button>
-          )}
-        </div>
-      ),
-    });
-  }
-
-  if (role === 'Custodian') {
-    columns.push({
-      label: 'Action',
-      width: '10%',
-      render: (row) => (
-        <div className="row-actions" style={{ flexWrap: 'nowrap' }}>
-          <button className="btn-view-action icon-btn" onClick={() => onView(row)} type="button" title="View" aria-label="View"><Icon name="eye" size={14} /></button>
-          {row.status === 'Pending' && (
-            <>
-              <button className="btn-edit-action icon-btn" onClick={() => onEdit(row)} type="button" title="Edit" aria-label="Edit"><Icon name="edit" size={14} /></button>
-              <button className="btn-delete-action icon-btn" onClick={() => deleteRecord(`/issues/${row.issue_report_id}`, 'Issue deleted.')} type="button" title="Delete" aria-label="Delete"><Icon name="trash" size={14} /></button>
-            </>
-          )}
-        </div>
-      ),
-    });
-  }
 
   return columns;
 }
