@@ -17,6 +17,16 @@ class AuthController extends Controller
     use UploadsImages;
 
     /**
+     * Whether this city has a real barangay list to pick from. Cities whose
+     * barangays have been imported (`boundaries:import`) require a selection;
+     * only a city with nothing on file still accepts a free-typed name.
+     */
+    private function cityHasBarangays($cityId): bool
+    {
+        return $cityId && Barangay::where('city_id', $cityId)->exists();
+    }
+
+    /**
      * Public self-registration. Residents/staff sign up naming their own
      * barangay, but the account is created inactive — an Admin must approve
      * (activate) it via the existing Users management screen before it can
@@ -51,12 +61,9 @@ class AuthController extends Controller
             'phone' => ['required', 'regex:/^09[0-9]{9}$/'],
             'address' => ['required', 'string', 'max:255'],
             'city_id' => ['required', 'exists:cities,id'],
-            // Only cities with a real barangay list (Mandaue City today) get
-            // a dropdown (barangay_id); every other city falls back to free
-            // text (barangay_name) — exactly one of the two is required.
             'barangay_id' => [
                 'nullable',
-                'required_without:barangay_name',
+                Rule::requiredIf(fn () => $this->cityHasBarangays($request->input('city_id'))),
                 'exists:barangays,id',
                 function ($attribute, $value, $fail) use ($request) {
                     if ($value && (int) Barangay::find($value)?->city_id !== (int) $request->input('city_id')) {
@@ -64,7 +71,17 @@ class AuthController extends Controller
                     }
                 },
             ],
-            'barangay_name' => ['nullable', 'required_without:barangay_id', 'string', 'max:255'],
+            // A city whose barangays have been imported must be picked from
+            // the list. Free text is *prohibited* rather than merely ignored
+            // there, so a client skipping the dropdown can't mint duplicate,
+            // code-less barangays alongside the real ones. It stays available
+            // only as the fallback for a city with no list yet.
+            'barangay_name' => [
+                'nullable',
+                $this->cityHasBarangays($request->input('city_id')) ? 'prohibited' : 'required_without:barangay_id',
+                'string',
+                'max:255',
+            ],
         ], [
             'name.regex' => 'Name may only contain letters.',
             'phone.regex' => 'Phone number must be 11 digits starting with 09 (e.g. 09171234567).',
@@ -89,7 +106,7 @@ class AuthController extends Controller
             // back with everything else instead of leaving an orphaned
             // Barangay nobody ever actually registered under.
             $barangayId = $barangayId ?: (!empty($data['barangay_name'])
-                ? Barangay::findOrCreateForCity((int) $data['city_id'], $data['barangay_name'])->id
+                ? Barangay::fallbackForCity((int) $data['city_id'], $data['barangay_name'])->id
                 : null);
 
             Barangay::where('id', $barangayId)->lockForUpdate()->first();
