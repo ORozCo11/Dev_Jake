@@ -2732,6 +2732,23 @@ function Workspace() {
                 <option key={province.id} value={province.id}>{province.name}</option>
               ))}
             </select>
+            {/* Province > City > Barangay > Impersonation. Each province carries
+                the one city that has barangay data today, so City is derived
+                from the chosen province (it can't diverge from it). */}
+            <select
+              aria-label="Map boundary city"
+              disabled={!mapProvinces.find((pr) => String(pr.id) === String(mapProvinceId))?.city_with_barangays_name}
+              value={mapProvinces.find((pr) => String(pr.id) === String(mapProvinceId))?.city_with_barangays_id ?? ''}
+              onChange={() => {}}
+            >
+              {mapProvinces.find((pr) => String(pr.id) === String(mapProvinceId))?.city_with_barangays_name
+                ? (
+                  <option value={mapProvinces.find((pr) => String(pr.id) === String(mapProvinceId)).city_with_barangays_id}>
+                    {mapProvinces.find((pr) => String(pr.id) === String(mapProvinceId)).city_with_barangays_name}
+                  </option>
+                )
+                : <option value="">No city</option>}
+            </select>
             <select
               aria-label="Map boundary barangay"
               disabled={barangayOptions.length === 0}
@@ -3151,17 +3168,15 @@ function Workspace() {
             />
           ) : (isNewCategoryPage || editCategoryId) ? (
             <>
-            <FormPage
-              description="Maintain standard vehicle type choices used across dropdowns."
+            <VehicleTypeFormPage
+              key={editCategoryId ?? 'new'}
+              isEditing={Boolean(editCategoryId)}
               onBack={() => returnToModule('categories')}
-              fields={categoryFields}
               initialValues={editCategoryId ? (records.categories ?? []).find((c) => String(c.category_id) === String(editCategoryId)) : EMPTY_OBJ}
               onSubmit={(payload) => submitFormPage('categories', editCategoryId ? { category_id: editCategoryId } : null, payload)}
-              submitLabel={editCategoryId ? 'Update Type' : 'Add Type'}
-              wrapperClassName="category-form-grid"
+              submitLabel={editCategoryId ? 'Update Vehicle Type' : 'Add Vehicle Type'}
               categoryVehicleCount={editCategoryId ? (records.categories ?? []).find((c) => String(c.category_id) === String(editCategoryId))?.vehicles_count : null}
               onDirty={() => setHasUnsavedChanges(true)}
-              showDomainPreview
             />
             {editCategoryId && canDo(user, 'vehicle_type.edit') && (
               <CategoryFieldsManager categoryId={editCategoryId} onChanged={loadLookups} />
@@ -3243,14 +3258,13 @@ function Workspace() {
               onEdit={() => navigate(`${roleRoutes[user.role]}/users/${viewUserId}/edit`)}
             />
           ) : (isNewUserPage || editUserId) ? (
-            <FormPage
-              description="Create and manage user accounts — Admin, Custodian, and Maintenance Personnel."
+            <UserFormPage
+              key={editUserId ?? 'new'}
+              isEditing={Boolean(editUserId)}
               onBack={() => returnToModule('users')}
-              fields={(vals) => userFields(Boolean(editUserId), vals)}
               initialValues={editUserInitialValues}
               onSubmit={(payload) => submitFormPage('users', editUserId ? { id: editUserId } : null, payload)}
-              submitLabel={editUserId ? 'Update User' : 'Add User'}
-              wrapperClassName="user-form-grid"
+              submitLabel="Add User"
               onDirty={() => setHasUnsavedChanges(true)}
             />
           ) : logRepairsTicketId ? (
@@ -8444,6 +8458,368 @@ function OpenItemsWarning({ kind, rows, basePath }) {
 // When `contextVehicles` is provided, the page renders Realcore-style: the form
 // fields sit in a card on the right, and the left side live-previews the
 // selected vehicle (photo, info, location map) as the user picks one.
+// =========================================================================
+// Add / Edit Vehicle Type and Add / Update User — redesigned form pages.
+// Same submit contract as FormPage (submitFormPage(module, ref, payload)),
+// same field names, same validation rules; only the layout changed.
+// =========================================================================
+
+// Shared page frame: breadcrumb, heading, one white panel.
+function FxPage({ icon, crumbs, title, description, children }) {
+  return (
+    <div className="module-grid">
+      <section className="panel fx-panel">
+        <header className="fx-head">
+          <span className="fx-head-icon"><Icon name={icon} size={22} /></span>
+          <div>
+            <nav className="fx-crumbs" aria-label="Breadcrumb">
+              {crumbs.map((c, i) => (
+                <span key={c}>{i > 0 && <span aria-hidden="true"> › </span>}{c}</span>
+              ))}
+            </nav>
+            <h2 className="fx-title">{title}</h2>
+            <p className="fx-desc">{description}</p>
+          </div>
+        </header>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function FxField({ id, label, required, hint, error, children, className = '' }) {
+  return (
+    <div className={`fx-field${error ? ' has-error' : ''}${className ? ` ${className}` : ''}`}>
+      <label htmlFor={id}>{label}{required && <abbr title="required" className="required-asterisk"> *</abbr>}</label>
+      {children}
+      {hint && !error && <small className="fx-hint">{hint}</small>}
+      {error && <small className="fx-error" role="alert">{error}</small>}
+    </div>
+  );
+}
+
+function VehicleTypeFormPage({ initialValues, isEditing, onBack, onSubmit, submitLabel, onDirty, categoryVehicleCount = null }) {
+  const seed = (v) => ({
+    category_name: v?.category_name ?? '',
+    domain: v?.domain ?? '',
+    default_criticality: v?.default_criticality ?? '',
+    description: v?.description ?? '',
+  });
+  const [values, setValues] = useState(() => seed(initialValues));
+  const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const skippedFirst = useRef(false);
+  useEffect(() => {
+    if (!skippedFirst.current) { skippedFirst.current = true; return; }
+    setValues(seed(initialValues));
+  }, [initialValues]);
+
+  const set = (name, value) => {
+    setValues((v) => ({ ...v, [name]: value }));
+    setErrors((e) => ({ ...e, [name]: undefined }));
+    onDirty?.();
+  };
+
+  // Live preview only — nothing is saved until the form is submitted.
+  const previewDomain = values.domain || 'Land';
+  const previewFields = [
+    { label: plateFieldLabel(previewDomain), note: previewDomain === 'Water' ? 'registration / hull number' : 'plate number' },
+    { label: 'Capacity', note: `in ${capacityUnits(previewDomain).join(', ')}` },
+    ...vehicleDomainFields(previewDomain).map((f) => ({
+      label: f.label,
+      note: f.options ? f.options.slice(0, 3).join(', ') + (f.options.length > 3 ? '…' : '') : 'free text',
+    })),
+  ];
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (submitting) return;
+    const next = {};
+    if (!values.category_name.trim()) next.category_name = 'Vehicle Type Name is required.';
+    if (!values.domain) next.domain = 'Domain is required.';
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({ ...values, category_name: values.category_name.trim() });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <FxPage
+      icon="vehicle"
+      crumbs={['Vehicle Types', isEditing ? 'Edit Vehicle Type' : 'Add Vehicle Type']}
+      title={isEditing ? 'Edit Vehicle Type' : 'Add Vehicle Type'}
+      description={isEditing ? 'Update this vehicle type and the default information it uses.' : 'Create a new vehicle type and define the default information it will use.'}
+    >
+      <form className="fx-form fx-cols fx-cols--preview" onSubmit={handleSubmit} noValidate autoComplete="off">
+        <aside className="fx-aside" aria-label="Vehicle type preview">
+          <h3 className="fx-section-title">Vehicle Type Preview</h3>
+          <p className="fx-hint">How this type's domain-specific information will be presented when a vehicle is assigned to it.</p>
+          <div className="fx-preview">
+            <span className="fx-preview-icon"><Icon name={vehicleIconName(previewDomain)} size={40} /></span>
+            <strong className={`fx-preview-name${values.category_name.trim() ? '' : ' is-placeholder'}`}>
+              {values.category_name.trim() || 'Vehicle type name'}
+            </strong>
+            <div className="fx-chips">
+              <span className="fx-chip">{values.domain || 'Domain not set'}</span>
+              <span className="fx-chip fx-chip--muted">{values.default_criticality ? `${values.default_criticality} criticality` : 'Criticality not set'}</span>
+            </div>
+          </div>
+          <h4 className="fx-subtitle">{previewDomain} vehicles also ask for</h4>
+          <dl className="fx-kv">
+            {previewFields.map((f) => (
+              <div key={f.label}><dt>{f.label}</dt><dd>{f.note}</dd></div>
+            ))}
+          </dl>
+          {isEditing && categoryVehicleCount != null && (
+            <p className="fx-note">
+              <strong>{categoryVehicleCount}</strong> vehicle{categoryVehicleCount === 1 ? '' : 's'} use this type.
+              {categoryVehicleCount ? ' Renaming it or switching domain affects every one of them.' : ''}
+            </p>
+          )}
+        </aside>
+
+        <div className="fx-main">
+          <h3 className="fx-section-title">Vehicle Type Details</h3>
+          <div className="fx-grid">
+            <FxField id="vt-name" label="Vehicle Type Name" required error={errors.category_name} className="fx-span-2">
+              <input id="vt-name" type="text" maxLength={255} value={values.category_name} onChange={(e) => set('category_name', e.target.value)} placeholder="Ambulance, Fire Truck, Rescue Boat" />
+            </FxField>
+            <FxField id="vt-domain" label="Domain" required error={errors.domain} hint="Land or Water — decides which vehicle-specific fields a vehicle of this type asks for.">
+              <select id="vt-domain" value={values.domain} onChange={(e) => set('domain', e.target.value)}>
+                <option value="">Select domain</option>
+                <option value="Land">Land</option>
+                <option value="Water">Water</option>
+              </select>
+            </FxField>
+            <FxField id="vt-crit" label="Default Criticality" hint="How much vehicles of this type matter operationally. Critical ones surface first on the readiness watch; Admin can override per vehicle.">
+              <select id="vt-crit" value={values.default_criticality} onChange={(e) => set('default_criticality', e.target.value)}>
+                <option value="">Select criticality</option>
+                {CRITICALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </FxField>
+            <FxField id="vt-desc" label="Description" className="fx-span-2" hint="Optional — when to use this type.">
+              <textarea id="vt-desc" rows={4} value={values.description} onChange={(e) => set('description', e.target.value)} placeholder="Notes about which vehicles belong under this type" />
+            </FxField>
+          </div>
+
+          <div className="fx-info" role="note">
+            <Icon name="info" size={16} />
+            <span>Vehicle fields vary by domain: <strong>Land</strong> vehicles use a plate number and capacity; <strong>Water</strong> vehicles use a registration / hull number, hull material and engine type.</span>
+          </div>
+
+          <div className="fx-actions">
+            <button type="button" className="ghost-button" onClick={onBack} disabled={submitting}>Cancel</button>
+            <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Saving…' : submitLabel}</button>
+          </div>
+        </div>
+      </form>
+    </FxPage>
+  );
+}
+
+const USER_ROLE_CARDS = [
+  { value: 'Admin', icon: 'grid', text: 'Manages barangay fleet information, reviews ticket proposals, assigns mechanics, monitors repairs, and manages users and reports.' },
+  { value: 'Custodian', icon: 'checkCircle', text: 'Reports vehicle issues, proposes maintenance tickets, performs inspections, verifies completed repairs, and manages preventive-maintenance activities.' },
+  { value: 'Maintenance Personnel', icon: 'wrench', text: 'Reports technical issues, repairs assigned work, and records repair activities and parts used.' },
+];
+
+function UserFormPage({ initialValues, isEditing, onBack, onSubmit, submitLabel, onDirty }) {
+  const seed = (v) => ({
+    name: v?.name ?? '',
+    email: v?.email ?? '',
+    phone: v?.phone ?? '',
+    address: v?.address ?? '',
+    roles: Array.isArray(v?.roles) ? v.roles : [],
+    can_register_vehicles: Array.isArray(v?.can_register_vehicles) ? v.can_register_vehicles.length > 0 : Boolean(v?.can_register_vehicles),
+    password: '',
+    password_confirmation: '',
+  });
+  const [values, setValues] = useState(() => seed(initialValues));
+  const [photo, setPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoError, setPhotoError] = useState('');
+  const [errors, setErrors] = useState({});
+  const [showPw, setShowPw] = useState({ password: false, password_confirmation: false });
+  const [submitting, setSubmitting] = useState(false);
+  const fileRef = useRef(null);
+  const skippedFirst = useRef(false);
+  useEffect(() => {
+    if (!skippedFirst.current) { skippedFirst.current = true; return; }
+    setValues(seed(initialValues));
+  }, [initialValues]);
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+
+  const set = (name, value) => {
+    setValues((v) => ({ ...v, [name]: value }));
+    setErrors((e) => ({ ...e, [name]: undefined }));
+    onDirty?.();
+  };
+  // Selection order matters: the first role selected is the primary one.
+  const toggleRole = (role) => {
+    setValues((v) => ({ ...v, roles: v.roles.includes(role) ? v.roles.filter((r) => r !== role) : [...v.roles, role] }));
+    setErrors((e) => ({ ...e, roles: undefined }));
+    onDirty?.();
+  };
+
+  const pickPhoto = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setPhotoError('Choose an image file (JPG, PNG, …).'); e.target.value = ''; return; }
+    if (file.size > 4 * 1024 * 1024) { setPhotoError('The photo must be 4 MB or smaller.'); e.target.value = ''; return; }
+    setPhotoError('');
+    setPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    onDirty?.();
+  };
+
+  const currentPhoto = photoPreview ?? (initialValues?.photo_url ? resolvePhotoUrl(initialValues.photo_url) : null);
+  const initials = (values.name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('') || '?';
+  const isCustodian = values.roles.includes('Custodian');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (submitting) return;
+    const next = {};
+    if (!values.name.trim()) next.name = 'Full Name is required.';
+    if (!values.email.trim()) next.email = 'Email is required.';
+    else if (!/^\S+@\S+\.\S+$/.test(values.email.trim())) next.email = 'Enter a valid email address.';
+    if (values.phone && !/^[0-9]{10}$/.test(values.phone)) next.phone = 'Phone must be exactly 10 digits.';
+    if (!values.roles.length) next.roles = 'Select at least one role.';
+    const wantsPassword = !isEditing || values.password || values.password_confirmation;
+    if (wantsPassword) {
+      if (!values.password) next.password = 'Password is required.';
+      else if (values.password.length < 8) next.password = 'Password must be at least 8 characters.';
+      if (!values.password_confirmation) next.password_confirmation = 'Confirm the password.';
+      else if (values.password && values.password !== values.password_confirmation) next.password_confirmation = 'Passwords do not match.';
+    }
+    setErrors(next);
+    if (Object.keys(next).length) return;
+
+    // Blank password fields are left out entirely, so the current password
+    // is never touched on an ordinary update.
+    const payload = {
+      name: values.name.trim(),
+      email: values.email.trim(),
+      phone: values.phone,
+      address: values.address,
+      roles: values.roles,
+      ...(isCustodian ? { can_register_vehicles: values.can_register_vehicles ? ['Allow vehicle registration'] : [] } : {}),
+      ...(photo ? { photo } : {}),
+      ...(values.password ? { password: values.password, password_confirmation: values.password_confirmation } : {}),
+    };
+    setSubmitting(true);
+    try {
+      await onSubmit(payload);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const pwField = (name, label, autoComplete) => (
+    <FxField id={`u-${name}`} label={label} error={errors[name]}>
+      <span className="fx-pw">
+        <input
+          id={`u-${name}`}
+          type={showPw[name] ? 'text' : 'password'}
+          value={values[name]}
+          autoComplete={autoComplete}
+          onChange={(e) => set(name, e.target.value)}
+        />
+        <button type="button" className="fx-pw-toggle" onClick={() => setShowPw((s) => ({ ...s, [name]: !s[name] }))} aria-label={showPw[name] ? `Hide ${label}` : `Show ${label}`} aria-pressed={showPw[name]}>
+          <Icon name={showPw[name] ? 'eyeOff' : 'eye'} size={16} />
+        </button>
+      </span>
+    </FxField>
+  );
+
+  return (
+    <FxPage
+      icon="edit"
+      crumbs={['Users', isEditing ? 'Update User' : 'Add User']}
+      title={isEditing ? 'Update User' : 'Add User'}
+      description={isEditing ? 'Edit account details, roles, and sign-in settings.' : 'Create an account, assign roles, and set its sign-in password.'}
+    >
+      <form className="fx-form fx-cols fx-cols--user" onSubmit={handleSubmit} noValidate autoComplete="off">
+        <div className="fx-main">
+          <h3 className="fx-section-title">Personal Information</h3>
+          <div className="fx-grid">
+            <FxField id="u-name" label="Full Name" required error={errors.name}>
+              <input id="u-name" type="text" value={values.name} onChange={(e) => set('name', e.target.value)} />
+            </FxField>
+            <FxField id="u-email" label="Email" required error={errors.email}>
+              <input id="u-email" type="email" value={values.email} placeholder="name@barangay.gov" onChange={(e) => set('email', e.target.value)} />
+            </FxField>
+            <FxField id="u-phone" label="Phone" error={errors.phone}>
+              <input id="u-phone" type="tel" inputMode="numeric" value={values.phone} placeholder="09XXXXXXXXX" onChange={(e) => set('phone', e.target.value)} />
+            </FxField>
+            <FxField id="u-address" label="Address">
+              <input id="u-address" type="text" value={values.address} onChange={(e) => set('address', e.target.value)} />
+            </FxField>
+          </div>
+
+          <hr className="fx-divider" />
+          <h3 className="fx-section-title">Roles and Permissions</h3>
+          <p className="fx-hint">A person can hold more than one role. The first selected role is primary.</p>
+          <div className="fx-roles" role="group" aria-label="Roles">
+            {USER_ROLE_CARDS.map((r) => {
+              const checked = values.roles.includes(r.value);
+              const rank = values.roles.indexOf(r.value);
+              return (
+                <label key={r.value} className={`fx-role${checked ? ' is-selected' : ''}`}>
+                  <input type="checkbox" checked={checked} onChange={() => toggleRole(r.value)} />
+                  <span className="fx-role-icon"><Icon name={r.icon} size={18} /></span>
+                  <span className="fx-role-body">
+                    <strong>{r.value}{checked && rank === 0 && values.roles.length > 1 && <em className="fx-primary-tag">Primary</em>}</strong>
+                    <small>{r.text}</small>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          {errors.roles && <small className="fx-error" role="alert">{errors.roles}</small>}
+          {isCustodian && (
+            <label className="fx-check">
+              <input type="checkbox" checked={values.can_register_vehicles} onChange={(e) => set('can_register_vehicles', e.target.checked)} />
+              <span><strong>Allow vehicle registration</strong><small>Lets this Custodian add vehicles. Admins can always register vehicles.</small></span>
+            </label>
+          )}
+        </div>
+
+        <aside className="fx-aside">
+          <h3 className="fx-section-title">Profile Photo</h3>
+          <div className="fx-photo">
+            <div className="fx-avatar">
+              {currentPhoto ? <img src={currentPhoto} alt={`${values.name || 'User'} profile`} onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : null}
+              <span className="fx-avatar-fallback" aria-hidden="true">{initials}</span>
+            </div>
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={pickPhoto} />
+            <button type="button" className="ghost-button" onClick={() => fileRef.current?.click()}>
+              <Icon name="edit" size={14} /> {currentPhoto ? 'Change Photo' : 'Upload Photo'}
+            </button>
+            <small className="fx-hint">Image files up to 4 MB.</small>
+            {photoError && <small className="fx-error" role="alert">{photoError}</small>}
+          </div>
+
+          <hr className="fx-divider" />
+          <h3 className="fx-section-title">{isEditing ? 'Change Password' : 'Password'}</h3>
+          {isEditing && <p className="fx-hint">Leave blank to keep the current password.</p>}
+          {pwField('password', isEditing ? 'New Password' : 'Password', 'new-password')}
+          {pwField('password_confirmation', isEditing ? 'Confirm New Password' : 'Confirm Password', 'new-password')}
+        </aside>
+
+        <div className="fx-actions fx-actions--full">
+          <button type="button" className="ghost-button" onClick={onBack} disabled={submitting}>Cancel</button>
+          <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Saving…' : (isEditing ? 'Save Changes' : submitLabel)}</button>
+        </div>
+      </form>
+    </FxPage>
+  );
+}
+
 function FormPage({ description, onBack, fields, initialValues, onSubmit, submitLabel, contextVehicles, hubs, warnEndpoint, warnRender, reviewStep = false, wrapperClassName, formTitle = '', onDirty, showDomainPreview = false, categoryVehicleCount = null }) {
   // Scoped to this exact route (new-X vs. editing record #N are different
   // paths) so a form's in-progress values survive clicking a "view" link
@@ -9931,11 +10307,6 @@ function TicketFilterPanel({
   );
   const custodianNames = useMemo(() => custodians.map((c) => c.name).sort(), [custodians]);
 
-  const statusKeys = useMemo(
-    () => TICKET_STAT_CARDS.filter((c) => statusOptions.includes(c.key)).map((c) => c.key),
-    [statusOptions],
-  );
-
   // Same default window every time the applied filter is unset — both on
   // first mount AND after "Clear Filters" resets filterDateStart/End back
   // to '' — instead of only seeding it once and then collapsing to a blank
@@ -9947,7 +10318,7 @@ function TicketFilterPanel({
     mechanic: filterMechanic ?? [],
     custodian: filterCustodian ?? [],
     status: filterStatus ?? [],
-    priorityRange: severityRangeFromSelection(filterPriority, priorityLevels),
+    priority: filterPriority ?? [],
     dateStart: filterDateStart || '2026-01-01',
     dateEnd: filterDateEnd || '2026-12-31',
   });
@@ -9960,26 +10331,12 @@ function TicketFilterPanel({
       mechanic: filterMechanic ?? [],
       custodian: filterCustodian ?? [],
       status: filterStatus ?? [],
-      priorityRange: severityRangeFromSelection(filterPriority, priorityLevels),
+      priority: filterPriority ?? [],
       dateStart: filterDateStart || '2026-01-01',
       dateEnd: filterDateEnd || '2026-12-31',
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCategory, filterCapacity, filterVehicle, filterMechanic, filterCustodian, filterStatus, filterPriority, filterDateStart, filterDateEnd]);
-
-  // An empty draft.status means "no filter" — every chip should read as
-  // checked, the same "everything's included" state the Total/All stat
-  // card represents. Unchecking one FROM that implicit-all state has to
-  // expand it into an explicit "every status except this one" list first —
-  // otherwise toggling off a single chip would (wrongly) read as toggling
-  // it on, since d.status.includes(key) is false for all of them.
-  const toggleDraftStatus = (key) => {
-    setDraft((d) => {
-      const current = d.status.length === 0 ? statusKeys : d.status;
-      const next = current.includes(key) ? current.filter((s) => s !== key) : [...current, key];
-      return { ...d, status: next.length === statusKeys.length ? [] : next };
-    });
-  };
 
   const applyFilters = () => {
     setFilterCategory(draft.category);
@@ -9988,104 +10345,89 @@ function TicketFilterPanel({
     setFilterMechanic(draft.mechanic);
     setFilterCustodian(draft.custodian);
     setFilterStatus(draft.status);
-    setFilterPriority(priorityLevels.slice(draft.priorityRange[0], draft.priorityRange[1] + 1));
+    setFilterPriority(draft.priority);
     setFilterDateStart(draft.dateStart);
     setFilterDateEnd(draft.dateEnd);
   };
 
-  const isFullPriorityRange = draft.priorityRange[0] === 0 && draft.priorityRange[1] === priorityLevels.length - 1;
   const isDirty = !sameSelection(draft.category, filterCategory ?? [])
     || !sameSelection(draft.capacity, filterCapacity ?? [])
     || !sameSelection(draft.vehicle, filterVehicle ?? [])
     || !sameSelection(draft.mechanic, filterMechanic ?? [])
     || !sameSelection(draft.custodian, filterCustodian ?? [])
     || !sameSelection(draft.status, filterStatus ?? [])
-    || !isFullPriorityRange && !sameSelection(priorityLevels.slice(draft.priorityRange[0], draft.priorityRange[1] + 1), filterPriority ?? [])
+    || !sameSelection(draft.priority, filterPriority ?? [])
     || draft.dateStart !== (filterDateStart || '2026-01-01')
     || draft.dateEnd !== (filterDateEnd || '2026-12-31');
 
   return (
-    <div className="issue-filter-panel">
-      <div className="issue-filter-row">
-        <div className="filter-date-group">
-          <span>Category</span>
-          <MultiSelectDropdown
-            placeholder="All Categories"
-            options={categories.map((cat) => ({ value: String(cat.category_id), label: cat.category_name }))}
-            selected={draft.category}
-            onChange={(vals) => setDraft((d) => ({ ...d, category: vals }))}
-          />
-        </div>
-        <div className="filter-date-group">
-          <span>Capacity</span>
-          <MultiSelectDropdown
-            placeholder="All Capacities"
-            options={capacities}
-            selected={draft.capacity}
-            onChange={(vals) => setDraft((d) => ({ ...d, capacity: vals }))}
-          />
-        </div>
-        <div className="filter-date-group">
-          <span>Vehicle</span>
-          <MultiSelectDropdown
-            placeholder="All Vehicles"
-            options={vehicles.map((v) => ({ value: String(v.vehicle_id), label: `${v.vehicle_name} · ${v.plate_number}` }))}
-            selected={draft.vehicle}
-            onChange={(vals) => setDraft((d) => ({ ...d, vehicle: vals }))}
-          />
-        </div>
-        <div className="filter-date-group">
-          <span>Maintenance Personnel</span>
-          <MultiSelectDropdown
-            placeholder="All Maintenance Personnel"
-            options={maintenancePersonnelNames}
-            selected={draft.mechanic}
-            onChange={(vals) => setDraft((d) => ({ ...d, mechanic: vals }))}
-          />
-        </div>
-        <div className="filter-date-group">
-          <span>Custodian</span>
-          <MultiSelectDropdown
-            placeholder="All Custodians"
-            options={custodianNames}
-            selected={draft.custodian}
-            onChange={(vals) => setDraft((d) => ({ ...d, custodian: vals }))}
-          />
-        </div>
-      </div>
-      <div className="issue-filter-dates">
-        <div className="filter-date-group issue-filter-date-input">
-          <span>From Date</span>
-          <DateFilterInput value={draft.dateStart} onChange={(val) => setDraft((d) => ({ ...d, dateStart: val }))} />
-        </div>
-        <div className="filter-date-group issue-filter-date-input">
-          <span>To Date</span>
-          <DateFilterInput value={draft.dateEnd} onChange={(val) => setDraft((d) => ({ ...d, dateEnd: val }))} />
-        </div>
-      </div>
-
-      <div className="issue-filter-severity-card">
-        <span className="issue-filter-severity-label">Priority</span>
-        <DualRangeSlider
-          labels={priorityLevels}
-          minIndex={draft.priorityRange[0]}
-          maxIndex={draft.priorityRange[1]}
-          onChange={(min, max) => setDraft((d) => ({ ...d, priorityRange: [min, max] }))}
+    <div className="issue-filter-panel is-inline is-wrap">
+      <div className="filter-date-group">
+        <span>Category</span>
+        <MultiSelectDropdown
+          placeholder="All Categories"
+          options={categories.map((cat) => ({ value: String(cat.category_id), label: cat.category_name }))}
+          selected={draft.category}
+          onChange={(vals) => setDraft((d) => ({ ...d, category: vals }))}
         />
       </div>
-      <div className="issue-filter-right-cluster">
-        <div className="issue-filter-status-grid">
-          {TICKET_STAT_CARDS.filter((c) => statusOptions.includes(c.key)).map((c) => (
-            <label key={c.key} className="issue-filter-status-chip" style={{ background: c.bg }}>
-              <input type="checkbox" checked={draft.status.length === 0 || draft.status.includes(c.key)} onChange={() => toggleDraftStatus(c.key)} />
-              <span style={{ color: c.color }}>{c.label}</span>
-            </label>
-          ))}
-        </div>
-        <div className="issue-filter-actions">
-          <button type="button" className="filter-apply-btn issue-filter-apply-btn" onClick={applyFilters} disabled={!isDirty}>Filter</button>
-        </div>
+      <div className="filter-date-group">
+        <span>Capacity</span>
+        <MultiSelectDropdown
+          placeholder="All Capacities"
+          options={capacities}
+          selected={draft.capacity}
+          onChange={(vals) => setDraft((d) => ({ ...d, capacity: vals }))}
+        />
       </div>
+      <div className="filter-date-group">
+        <span>Vehicle</span>
+        <MultiSelectDropdown
+          placeholder="All Vehicles"
+          options={vehicles.map((v) => ({ value: String(v.vehicle_id), label: `${v.vehicle_name} · ${v.plate_number}` }))}
+          selected={draft.vehicle}
+          onChange={(vals) => setDraft((d) => ({ ...d, vehicle: vals }))}
+        />
+      </div>
+      <div className="filter-date-group">
+        <span>Personnel</span>
+        <MultiSelectDropdown
+          placeholder="All Personnel"
+          options={maintenancePersonnelNames}
+          selected={draft.mechanic}
+          onChange={(vals) => setDraft((d) => ({ ...d, mechanic: vals }))}
+        />
+      </div>
+      <div className="filter-date-group">
+        <span>Custodian</span>
+        <MultiSelectDropdown
+          placeholder="All Custodians"
+          options={custodianNames}
+          selected={draft.custodian}
+          onChange={(vals) => setDraft((d) => ({ ...d, custodian: vals }))}
+        />
+      </div>
+      {/* The status chips and the Priority slider lived here too; statuses are
+          already the stat cards above, so they're gone. Priority stays as a
+          dropdown like every other filter. */}
+      <div className="filter-date-group">
+        <span>Priority</span>
+        <MultiSelectDropdown
+          placeholder="All Priorities"
+          options={priorityLevels}
+          selected={draft.priority}
+          onChange={(vals) => setDraft((d) => ({ ...d, priority: vals.length === priorityLevels.length ? [] : vals }))}
+        />
+      </div>
+      <div className="filter-date-group">
+        <span>From Date</span>
+        <DateFilterInput value={draft.dateStart} onChange={(val) => setDraft((d) => ({ ...d, dateStart: val }))} />
+      </div>
+      <div className="filter-date-group">
+        <span>To Date</span>
+        <DateFilterInput value={draft.dateEnd} onChange={(val) => setDraft((d) => ({ ...d, dateEnd: val }))} />
+      </div>
+      <button type="button" className="filter-apply-btn issue-filter-apply-btn is-inline" onClick={applyFilters} disabled={!isDirty}>Filter</button>
     </div>
   );
 }
@@ -14845,8 +15187,9 @@ function TicketModule({
           <h3>All Tickets <span className="count-badge">{tickets.length}</span></h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {onViewArchives && (
-              <button type="button" className="ghost-button" onClick={onViewArchives}>
-                <Icon name="archive" size={14} /> Archives
+              <button type="button" className="archive-btn" onClick={onViewArchives} title="Closed and deleted tickets">
+                <span className="archive-btn-icon"><Icon name="archive" size={14} /></span>
+                <span>Archives</span>
               </button>
             )}
             <ViewModeDropdown value={ticketViewMode} onChange={changeTicketViewMode} />
@@ -16506,8 +16849,9 @@ function MechanicWorkOrderModule({
                 <p>{viewCopy.note}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button type="button" className="ghost-button" onClick={() => setShowArchive(true)}>
-                  <Icon name="archive" size={14} /> Archive
+                <button type="button" className="archive-btn" onClick={() => setShowArchive(true)} title="Completed and deferred work from the last 30 days">
+                  <span className="archive-btn-icon"><Icon name="archive" size={14} /></span>
+                  <span>Archive</span>
                 </button>
                 <LocalSearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search work orders..." />
               </div>
@@ -16529,8 +16873,9 @@ function MechanicWorkOrderModule({
               <p>Every vehicle you've repaired and where it stands now — completed and deferred work stays here for 30 days.</p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button type="button" className="ghost-button" onClick={() => setShowArchive(false)}>
-                <Icon name="wrench" size={14} /> Back to Work Orders
+              <button type="button" className="archive-btn" onClick={() => setShowArchive(false)}>
+                <span className="archive-btn-icon"><Icon name="wrench" size={14} /></span>
+                <span>Back to Work Orders</span>
               </button>
               <LocalSearchInput value={archiveSearch} onChange={setArchiveSearch} placeholder="Search vehicle, plate, or ticket..." />
             </div>
