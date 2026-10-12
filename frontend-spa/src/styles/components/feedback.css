@@ -1,0 +1,545 @@
+/* Split from App.css (lines 1561-2021). Order matters: see App.css. */
+/* NOTICES */
+.notice {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 18px; border-radius: 10px; font-size: 0.875rem; font-weight: 500;
+  animation: fadeSlide 0.3s ease;
+}
+.notice.success { background: linear-gradient(90deg, #ecfdf5, #d1fae5); border: 1px solid #86efac; color: #065f46; }
+.notice.error { background: linear-gradient(90deg, #fef2f2, #fee2e2); border: 1px solid #fca5a5; color: #991b1b; }
+
+/* A later, dark-workspace-tuned .notice.error/.success rule elsewhere in
+   this file (light text on a near-transparent background, meant for a dark
+   dashboard) has equal specificity and wins by source order — which washed
+   out to near-illegible pale text on these pages' white card. These auth
+   pages are always light/white regardless of the in-app theme toggle, so
+   pin the readable dark-text colors back with a higher-specificity,
+   theme-independent override. */
+.auth-page-shell .notice.success { background: linear-gradient(90deg, #ecfdf5, #d1fae5); border: 1px solid #86efac; color: #065f46; }
+.auth-page-shell .notice.error { background: linear-gradient(90deg, #fef2f2, #fee2e2); border: 1px solid #fca5a5; color: #991b1b; }
+
+/* Same problem, same fix, for the Privacy/Terms body text: their section
+   headings and paragraphs inherit .auth-card's color from a dark-theme
+   variable (these public pages never carry data-theme="light"), reading
+   as near-illegible pale cream against the card's forced-white
+   background. Pin readable colors directly instead of relying on the
+   in-app theme cascade these pages never actually participate in. */
+.policy-card { color: #475569 !important; }
+.policy-card h3 { color: #0f172a !important; }
+.policy-card .eyebrow { color: #1d4ed8 !important; }
+
+/* Floating toast for every add/edit/delete/validation result — replaces the
+   old full-width inline banner so it overlays the page instead of pushing
+   content down, and auto-dismisses instead of sticking around. */
+/* A flat, compact pill instead of a big bordered rounded card — a plain
+   one-line confirmation shouldn't be as visually loud as an actual modal. */
+.toast-notice {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  max-width: 420px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+  animation: toastDrop 0.25s ease;
+}
+@keyframes toastDrop {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.toast-notice-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 2px;
+  border-radius: 50%;
+  color: inherit;
+}
+.toast-notice-close:hover { opacity: 1; background: rgba(0, 0, 0, 0.06); }
+/* Jump straight to the ticket(s) blocking an action (e.g. deactivating a
+   vehicle with an open ticket) instead of leaving the user to go find it. */
+.toast-notice-ticket-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.toast-notice-ticket-link {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.toast-notice-ticket-link:hover {
+  background: rgba(255, 255, 255, 0.22);
+  text-decoration: underline;
+}
+html[data-theme="light"] .toast-notice-ticket-link,
+[data-theme="light"] .toast-notice-ticket-link {
+  background: rgba(0, 0, 0, 0.04);
+}
+html[data-theme="light"] .toast-notice-ticket-link:hover,
+[data-theme="light"] .toast-notice-ticket-link:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+/* Default (dark) theme — the app's :root is dark by default, so this is
+   what renders unless [data-theme="light"] below overrides it. A pale
+   pastel box read as "odd" floating on the dark chrome, so this gets its
+   own dark-appropriate palette instead of reusing the light-mode colors. */
+.toast-notice.success {
+  background: #0b3d28;
+  border: 1px solid #10b981;
+  color: #6ee7b7;
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.18);
+}
+.toast-notice.error {
+  background: #43151a;
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.18);
+}
+/* Action succeeded but flagged something worth a second look (e.g. a
+   self-verification conflict from assign-mechanic/reassign-custodian) —
+   amber, same family as the other warning callouts in the app, so it never
+   blends into an ordinary green success or reads as a red failure. */
+.toast-notice.warning {
+  background: #4a2e05;
+  border: 1px solid #f59e0b;
+  color: #fcd34d;
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.18);
+}
+html[data-theme="light"] .toast-notice.success {
+  background: #eafcf3;
+  border: 1px solid #86efac;
+  color: #15803d;
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.12);
+}
+html[data-theme="light"] .toast-notice.error {
+  background: #fdedee;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.12);
+}
+html[data-theme="light"] .toast-notice.warning {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.12);
+}
+/* Phase A4 — "you're the only active Admin" dashboard banner. Same amber
+   family as .toast-notice.warning, but a persistent inline section (not a
+   dismissible toast) since this is standing state, not a one-off event. */
+.dashboard-sole-admin-warning {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: #4a2e05;
+  border: 1px solid #f59e0b;
+  color: #fcd34d;
+}
+.dashboard-sole-admin-warning > svg { flex-shrink: 0; }
+.dashboard-sole-admin-warning strong { display: block; color: #fde68a; }
+.dashboard-sole-admin-warning p { margin: 2px 0 0; font-size: 0.85rem; opacity: 0.9; }
+.dashboard-sole-admin-warning .ghost-button { flex-shrink: 0; margin-left: auto; border-color: #f59e0b; color: #fde68a; }
+html[data-theme="light"] .dashboard-sole-admin-warning {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+html[data-theme="light"] .dashboard-sole-admin-warning strong { color: #78350f; }
+html[data-theme="light"] .dashboard-sole-admin-warning .ghost-button { border-color: #fcd34d; color: #92400e; }
+/* Phase A4 — the same warning, compact, next to a barangay's Admin Status
+   badge in the Super Admin's barangay list. */
+.sole-admin-flag { display: inline-flex; color: #f59e0b; cursor: help; }
+html[data-theme="light"] .sole-admin-flag { color: #a55a05; }
+/* Icon + message side by side, not stacked — any extra content (e.g. the
+   ticket-link buttons below) still stacks under this row since the outer
+   .toast-notice itself stays a column. */
+.toast-notice-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Centered validation-summary card — every "field is required" message
+   listed on its own line, styled like a floating alert in the middle of
+   the page instead of a single joined sentence at the top. */
+.toast-notice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.25);
+}
+.toast-notice-validation {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+  max-width: 420px;
+  padding: 16px 40px 16px 18px;
+  animation: toastPop 0.18s ease;
+}
+@keyframes toastPop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.toast-notice-validation .toast-notice-icon { flex-shrink: 0; margin-top: 1px; margin-right: 0; }
+.toast-notice-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-weight: 600;
+  align-items: center;
+  text-align: center;
+}
+.toast-notice-validation .toast-notice-close { position: absolute; top: 12px; right: 12px; }
+
+.loading {
+  display: flex; align-items: center; justify-content: center;
+  padding: 60px; color: #2563eb; font-size: 0.9rem; font-weight: 600;
+}
+
+/* Full-screen "working on it" overlay shown while a form submit is in
+   flight (add/edit/save actions across the whole app), matching the
+   spinning-gear loader used on the auth pages. */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.25);
+}
+.loading-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 40px;
+  border-radius: 12px;
+  background: #fff;
+  color: #1f2937;
+  font-weight: 600;
+  font-size: 0.9rem;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.28);
+}
+.loading-overlay-gear {
+  color: #2563eb;
+  animation: vms-gear-spin 4s linear infinite;
+}
+
+/* --- Trendy module loader (spinner + shimmer skeleton) --- */
+.module-loader {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 28px 4px;
+  animation: loaderFadeIn 0.3s ease;
+}
+
+@keyframes loaderFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.module-loader-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  align-self: center;
+  padding: 16px 26px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.10), rgba(37, 99, 235, 0.02));
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  box-shadow: 0 8px 30px rgba(37, 99, 235, 0.10);
+}
+
+.module-loader-spinner svg {
+  display: block;
+  animation: loaderSpin 1s linear infinite;
+}
+
+.module-loader-track {
+  stroke: rgba(37, 99, 235, 0.18);
+}
+
+.module-loader-arc {
+  stroke: #2563eb;
+  stroke-dasharray: 90 150;
+  filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.6));
+}
+
+@keyframes loaderSpin {
+  to { transform: rotate(360deg); }
+}
+
+.module-loader-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #1d4ed8;
+}
+
+.module-loader-dots::after {
+  content: '';
+  animation: loaderDots 1.4s steps(4, end) infinite;
+}
+
+@keyframes loaderDots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+  100% { content: ''; }
+}
+
+.skeleton-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(120, 130, 150, 0.05);
+  animation: skeletonPulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-row.skeleton-head {
+  background: rgba(120, 130, 150, 0.09);
+}
+
+.skeleton-cell {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.12) 25%,
+    rgba(148, 163, 184, 0.28) 37%,
+    rgba(148, 163, 184, 0.12) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeletonShimmer 1.4s ease infinite;
+}
+
+.skeleton-head .skeleton-cell {
+  height: 14px;
+}
+
+.skeleton-cell:first-child { max-width: 70%; }
+.skeleton-cell:nth-child(3) { max-width: 85%; }
+.skeleton-cell:last-child { max-width: 55%; }
+
+@keyframes skeletonShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+/* --- Inline button spinner (login / submit actions) --- */
+.btn-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.btn-spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  animation: loaderSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.btn-gear-spinner {
+  animation: loaderSpin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+/* Centered modal loader (see SubmitLoadingOverlay) — a bigger, more
+   noticeable alternative to the in-button spinner above, for submits that
+   sit on a long scrolled form (e.g. Create Ticket) where a spinner tucked
+   inside the submit button at the bottom is easy to miss. */
+.submit-loading-overlay { z-index: 400; }
+.submit-loading-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.25);
+  animation: modalIn 0.22s ease;
+}
+.submit-loading-gear {
+  animation: loaderSpin 1s linear infinite;
+  color: #2563eb;
+}
+.submit-loading-label {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* --- Full-screen session loader --- */
+.fullscreen-loader {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(120% 120% at 50% 30%, #11151d 0%, #070a0f 70%);
+  z-index: 5000;
+}
+
+.fullscreen-loader-spinner svg {
+  display: block;
+  animation: loaderSpin 1s linear infinite;
+}
+
+.fullscreen-loader-label {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #cbd5e1;
+}
+.empty-state {
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  padding: 48px; text-align: center; color: #64748b;
+  background: linear-gradient(180deg, #ffffff, #f8fbff); border: 2px dashed #bfdbfe; border-radius: 12px;
+  font-size: 0.9rem;
+}
+
+/* Placeholders while a lazily-loaded map or chart downloads (components/lazy.jsx).
+   They fill the same box the real component will, so nothing jumps. */
+.lazy-map-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2, #f8fafc);
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-sm);
+}
+.lazy-fallback-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: ui-spin 0.75s linear infinite;
+}
+.lazy-chart-fallback {
+  width: 100%;
+  min-height: 160px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--surface-2, #f1f5f9) 25%, var(--surface-3, #e2e8f0) 50%, var(--surface-2, #f1f5f9) 75%);
+  background-size: 200% 100%;
+  animation: lazy-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes lazy-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lazy-fallback-spinner, .lazy-chart-fallback { animation: none; }
+}
+
+/* Shared empty / error panels (workspace/components/states.jsx). */
+.state-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 520px;
+  margin: var(--space-8) auto;
+  padding: var(--space-8) var(--space-6);
+  border: 1px dashed var(--border, #cddcf0);
+  border-radius: var(--radius-lg);
+  background: var(--surface, #ffffff);
+  text-align: center;
+}
+.state-panel-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background: var(--status-info-bg);
+  color: var(--status-info-fg);
+}
+.state-panel.is-error {
+  border-style: solid;
+  border-color: var(--status-danger-border);
+}
+.state-panel.is-error .state-panel-icon {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+.state-panel-title {
+  margin: 0;
+  color: var(--text-strong, #071a35);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+.state-panel-text {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}

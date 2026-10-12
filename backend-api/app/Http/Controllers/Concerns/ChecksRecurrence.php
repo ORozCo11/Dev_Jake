@@ -16,13 +16,10 @@ use Illuminate\Support\Carbon;
  * invisible, so a vehicle genuinely fixed 3 times could read as zero
  * recurrences. This counts both, on the same 90-day/same-vehicle window.
  *
- * Matching is keyed on fault_category when given (issue_type's vocabulary —
- * "Brake Problem" — the same standardized catalog fault_category mirrors).
- * A Maintenance Record has no fault_category of its own, so it only counts
- * toward a category match when it's linked to an Issue Report that carries
- * one. Without a category at all, both fall back to normalized-title/
- * problem-reason text matching — best-effort, same as the original ticket-only
- * check.
+ * Matching, most specific first: the repair's Maintenance Types (a prior
+ * ticket counts if any of its sub-issues shared one; a record if its own
+ * maintenance_type matches), else the linked Issue Report's issue_type, else
+ * normalized-title / problem-reason text — best-effort.
  */
 trait ChecksRecurrence
 {
@@ -36,31 +33,54 @@ trait ChecksRecurrence
     private function normalizeTicketTitle(string $title): string
     {
         $stripped = preg_replace('/^\[Issue #\d+\]\s*/i', '', trim($title));
+        // Server titles are "MT-0010 — Vehicle — Issue" (older ones "#42 - …"):
+        // the number is identity, not content, so it must not defeat the
+        // duplicate-Main-Issue match. Dash style is unified for the same reason.
+        $stripped = preg_replace('/^(MT-\d+\s*—\s*|#\d+\s*-\s*)/u', '', $stripped);
+        $stripped = str_replace(' — ', ' - ', $stripped);
 
         return mb_strtolower(trim($stripped));
     }
 
-    private function checkRecurrence(int $vehicleId, ?string $faultCategory, string $title, int $days = 90): array
+    // The issue-summary part of a ticket title, vehicle name and MT-#### number
+    // stripped — what "is this the same Main Issue?" actually compares, since
+    // the vehicle is already fixed by the query's own vehicle_id.
+    private function normalizeSummaryForVehicle(string $title, string $vehicleName): string
+    {
+        $n = $this->normalizeTicketTitle($title);
+        $prefix = $this->normalizeTicketTitle($vehicleName) . ' - ';
+
+        return str_starts_with($n, $prefix) ? substr($n, strlen($prefix)) : $n;
+    }
+
+    private function checkRecurrence(int $vehicleId, array $maintenanceTypes, ?string $issueType, string $title, int $days = 90): array
     {
         $since = now()->subDays($days);
         $normalizedTitle = $this->normalizeTicketTitle($title);
+        $maintenanceTypes = array_values(array_filter(array_unique($maintenanceTypes)));
 
-        $priorTickets = MaintenanceTicket::where('vehicle_id', $vehicleId)
+        $priorTicketsQuery = MaintenanceTicket::where('vehicle_id', $vehicleId)
             ->where('status', 'Closed')
-            ->where('closed_at', '>=', $since)
-            ->when($faultCategory, fn ($q) => $q->where('fault_category', $faultCategory))
-            ->when(!$faultCategory, fn ($q) => $q->whereRaw('LOWER(TRIM(ticket_title)) = ?', [$normalizedTitle]))
-            ->get(['ticket_id as id', 'closed_at as occurred_at']);
-
-        $priorRecords = VehicleMaintenanceRecord::where('vehicle_id', $vehicleId)
+            ->where('closed_at', '>=', $since);
+        $priorRecordsQuery = VehicleMaintenanceRecord::where('vehicle_id', $vehicleId)
             ->where('progress_status', 'Completed')
-            ->where('date_completed', '>=', $since->toDateString())
-            ->when(
-                $faultCategory,
-                fn ($q) => $q->whereHas('issueReport', fn ($iq) => $iq->where('issue_type', $faultCategory)),
-                fn ($q) => $q->whereRaw('LOWER(TRIM(problem_reason)) = ?', [$normalizedTitle])
-            )
-            ->get(['maintenance_id as id', 'date_completed as occurred_at']);
+            ->where('date_completed', '>=', $since->toDateString());
+
+        if ($maintenanceTypes) {
+            $priorTicketsQuery->whereHas('subIssues', fn ($sq) => $sq->whereIn('maintenance_type', $maintenanceTypes));
+            $priorRecordsQuery->whereIn('maintenance_type', $maintenanceTypes);
+        } elseif ($issueType) {
+            $priorTicketsQuery->whereHas('issueReport', fn ($iq) => $iq->where('issue_type', $issueType));
+            $priorRecordsQuery->whereHas('issueReport', fn ($iq) => $iq->where('issue_type', $issueType));
+        } else {
+            // $title is the issue summary; stored titles are either that alone
+            // (older tickets) or "MT-0010 — Vehicle — summary".
+            $priorTicketsQuery->whereRaw('(LOWER(TRIM(ticket_title)) = ? OR LOWER(ticket_title) LIKE ?)', [$normalizedTitle, '% — ' . $normalizedTitle]);
+            $priorRecordsQuery->whereRaw('LOWER(TRIM(problem_reason)) = ?', [$normalizedTitle]);
+        }
+
+        $priorTickets = $priorTicketsQuery->get(['ticket_id as id', 'closed_at as occurred_at']);
+        $priorRecords = $priorRecordsQuery->get(['maintenance_id as id', 'date_completed as occurred_at']);
 
         $all = $priorTickets->map(fn ($t) => ['type' => 'ticket', 'id' => $t->id, 'occurred_at' => $t->occurred_at])
             ->concat($priorRecords->map(fn ($r) => ['type' => 'record', 'id' => $r->id, 'occurred_at' => $r->occurred_at]))

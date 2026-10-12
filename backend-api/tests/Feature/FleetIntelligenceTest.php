@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Barangay;
 use App\Models\MaintenanceTicket;
+use App\Models\TicketSubIssue;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleCategory;
@@ -118,7 +119,7 @@ class FleetIntelligenceTest extends TestCase
         $vehicle = $this->vehicle();
 
         // A previously fixed-and-closed "Overheating" ticket, recently closed.
-        MaintenanceTicket::create([
+        $prior = MaintenanceTicket::create([
             'vehicle_id' => $vehicle->vehicle_id,
             'created_by' => $this->admin->id,
             'ticket_title' => 'Overheating',
@@ -128,13 +129,14 @@ class FleetIntelligenceTest extends TestCase
             'closed_at' => now(),
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $response = $this->postJson('/api/tickets', [
+        TicketSubIssue::create(['ticket_id' => $prior->ticket_id, 'created_by' => $this->admin->id, 'title' => 'Fixed before', 'maintenance_type' => 'Cooling System', 'status' => 'Done']);
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'Overheating',
             'ticket_description' => "it's back",
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => "it's back", 'maintenance_type' => 'Cooling System']],
         ])->assertCreated();
 
         $this->assertSame(1, $response->json('recurrence_count'));
@@ -159,13 +161,14 @@ class FleetIntelligenceTest extends TestCase
         ]);
         $prior->forceFill(['created_at' => now()->subDays(120)])->save();
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $response = $this->postJson('/api/tickets', [
+        TicketSubIssue::create(['ticket_id' => $prior->ticket_id, 'created_by' => $this->admin->id, 'title' => 'Fixed before', 'maintenance_type' => 'Cooling System', 'status' => 'Done']);
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'Overheating',
             'ticket_description' => "it's back again",
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => "it's back again", 'maintenance_type' => 'Cooling System']],
         ])->assertCreated();
 
         $this->assertSame(1, $response->json('recurrence_count'));
@@ -188,13 +191,12 @@ class FleetIntelligenceTest extends TestCase
             'closed_at' => now()->subDays(200),
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
-        $response = $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $response = $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
-            'ticket_title' => 'Overheating',
             'ticket_description' => "it's back",
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => "it's back", 'maintenance_type' => 'Cooling System']],
         ])->assertCreated();
 
         $this->assertSame(0, $response->json('recurrence_count'));
@@ -282,12 +284,13 @@ class FleetIntelligenceTest extends TestCase
         $this->assertFalse($ids->contains($vehicle->vehicle_id));
 
         // ...and can't be ticketed directly.
-        $this->postJson('/api/tickets', [
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson('/api/tickets/propose', [
             'vehicle_id' => $vehicle->vehicle_id,
             'ticket_title' => 'Overheating',
             'ticket_description' => 'x',
             'priority' => 'High',
-            'assigned_custodian_id' => $this->custodian->id,
+            'sub_issues' => [['title' => 'x']],
         ])->assertUnprocessable();
     }
 
@@ -361,11 +364,7 @@ class FleetIntelligenceTest extends TestCase
 
         Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", [
-            'checklist' => [
-                ['item' => 'Fuel full', 'passed' => true],
-                ['item' => 'Oxygen present', 'passed' => true],
-                ['item' => 'Lights & siren work', 'passed' => true],
-            ],
+            'confirmed' => true,
         ])->assertCreated();
 
         Sanctum::actingAs($this->admin, ['*']);
@@ -380,18 +379,53 @@ class FleetIntelligenceTest extends TestCase
     }
 
     #[Test]
-    public function a_failed_readiness_check_flags_the_vehicle_not_ready(): void
+    public function only_a_custodian_can_record_a_readiness_check(): void
+    {
+        $ambulance = $this->vehicle('Ambulance');
+        $payload = ['confirmed' => true];
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", $payload)->assertForbidden();
+
+        Sanctum::actingAs($this->custodian, ['*']);
+        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", $payload)->assertCreated();
+    }
+
+    #[Test]
+    public function readiness_check_is_a_plain_confirmation_not_a_checklist(): void
     {
         $ambulance = $this->vehicle('Ambulance');
 
         Sanctum::actingAs($this->custodian, ['*']);
-        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", [
-            'checklist' => [
-                ['item' => 'Fuel full', 'passed' => false], // empty tank
-                ['item' => 'Oxygen present', 'passed' => true],
-            ],
-        ])->assertCreated();
+        // No "confirmed" flag at all — simplified per product direction to a
+        // single attestation; there is no longer a "failed check" path
+        // through this endpoint (see a_readiness_check_record_made_directly_
+        // with_all_passed_false_still_flags_not_ready below for how a vehicle
+        // still ends up not_ready: a direct historical record, not this form).
+        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", [])
+            ->assertUnprocessable();
 
+        $this->postJson("/api/vehicles/{$ambulance->vehicle_id}/readiness-check", ['confirmed' => false])
+            ->assertUnprocessable();
+    }
+
+    #[Test]
+    public function a_readiness_check_record_with_all_passed_false_still_flags_the_vehicle_not_ready(): void
+    {
+        $ambulance = $this->vehicle('Ambulance');
+
+        // The endpoint itself is approve-only now, but older/historical
+        // records (or direct data fixes) can still carry all_passed=false —
+        // the readiness STATE computation must still honour that.
+        VehicleReadinessCheck::create([
+            'vehicle_id' => $ambulance->vehicle_id,
+            'checked_by' => $this->custodian->id,
+            'checklist'  => [['item' => 'Fuel full', 'passed' => false]],
+            'all_passed' => false,
+            'checked_at' => now(),
+        ]);
+
+        Sanctum::actingAs($this->admin, ['*']);
         $state = $this->getJson("/api/vehicles/{$ambulance->vehicle_id}/readiness")->assertOk()->json('state');
         $this->assertSame('not_ready', $state);
     }
@@ -647,7 +681,7 @@ class FleetIntelligenceTest extends TestCase
             'decommissioned_at' => now(),
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/conditions', [
             'vehicle_id' => $vehicle->vehicle_id,
             'condition_result' => 'Good',
@@ -676,7 +710,7 @@ class FleetIntelligenceTest extends TestCase
             'decommissioned_at' => now(),
         ]);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->putJson("/api/conditions/{$condition->condition_check_id}", [
             'condition_result' => 'Good',
         ])->assertOk();
@@ -717,7 +751,7 @@ class FleetIntelligenceTest extends TestCase
     {
         $vehicle = $this->vehicle(overrides: ['status' => 'Available', 'condition' => 'Good']);
 
-        Sanctum::actingAs($this->admin, ['*']);
+        Sanctum::actingAs($this->custodian, ['*']);
         $this->postJson('/api/conditions', [
             'vehicle_id' => $vehicle->vehicle_id,
             'condition_result' => 'Needs Repair',
@@ -783,5 +817,127 @@ class FleetIntelligenceTest extends TestCase
         ])->assertOk();
 
         $this->assertDatabaseCount('vehicle_locations', 0);
+    }
+
+    // ---- Final feature: Fleet Capability & Readiness Impact ---------------
+
+    #[Test]
+    public function a_type_with_no_units_down_is_covered_and_not_listed(): void
+    {
+        $vehicle = $this->vehicle('Fire Truck'); // Available, alone
+        $this->vehicle('Fire Truck', ['category_id' => $vehicle->category_id]); // also Available
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $impact = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'));
+
+        $this->assertNull($impact->firstWhere('category', $vehicle->fresh()->category->category_name), 'A fully-covered type should not appear.');
+    }
+
+    #[Test]
+    public function a_type_with_one_of_several_units_down_is_limited(): void
+    {
+        $vehicle = $this->vehicle('Fire Truck');
+        $this->vehicle('Fire Truck', ['category_id' => $vehicle->category_id]);
+        $this->vehicle('Fire Truck', ['category_id' => $vehicle->category_id, 'status' => 'Under Maintenance']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $impact = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'));
+        $row = $impact->firstWhere('category', $vehicle->fresh()->category->category_name);
+
+        $this->assertNotNull($row);
+        $this->assertSame('LIMITED', $row['coverage_state']);
+        $this->assertSame(2, $row['ready']);
+        $this->assertSame(1, $row['down']);
+        $this->assertSame(3, $row['total']);
+        $this->assertCount(1, $row['affected_vehicles']);
+    }
+
+    #[Test]
+    public function a_type_down_to_its_last_ready_unit_is_at_risk_and_matches_fragility(): void
+    {
+        $ambulance = $this->vehicle('Ambulance');
+        $this->vehicle('Ambulance', ['category_id' => $ambulance->category_id, 'status' => 'Under Maintenance']);
+        $this->vehicle('Ambulance', ['category_id' => $ambulance->category_id, 'status' => 'Under Maintenance']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $dash = $this->getJson('/api/dashboard')->assertOk();
+        $categoryName = $ambulance->fresh()->category->category_name;
+
+        $impactRow = collect($dash->json('capability_impact'))->firstWhere('category', $categoryName);
+        $fragilityRow = collect($dash->json('fragility'))->firstWhere('category', $categoryName);
+
+        $this->assertSame('AT_RISK', $impactRow['coverage_state']);
+        $this->assertSame(1, $impactRow['ready']);
+        $this->assertTrue($fragilityRow['single_point'], 'AT_RISK must agree with fragility()\'s single_point flag.');
+        $this->assertFalse($fragilityRow['critical']);
+    }
+
+    #[Test]
+    public function a_type_with_zero_ready_units_is_no_coverage_with_a_reason(): void
+    {
+        $ambulance = $this->vehicle('Ambulance', ['status' => 'Under Maintenance']);
+        $this->vehicle('Ambulance', ['category_id' => $ambulance->category_id, 'status' => 'Under Maintenance']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $impact = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'));
+        $row = $impact->firstWhere('category', $ambulance->fresh()->category->category_name);
+
+        $this->assertSame('NO_COVERAGE', $row['coverage_state']);
+        $this->assertSame(0, $row['ready']);
+        $this->assertSame('In maintenance', $row['primary_reason']);
+        $this->assertCount(2, $row['affected_vehicles']);
+    }
+
+    #[Test]
+    public function at_risk_types_are_ranked_critical_before_normal(): void
+    {
+        $critical = $this->vehicle('Fire Truck', ['criticality' => 'Critical']);
+        $this->vehicle('Fire Truck', ['category_id' => $critical->category_id, 'status' => 'Under Maintenance']);
+
+        $normal = $this->vehicle('Water Rescue');
+        $this->vehicle('Water Rescue', ['category_id' => $normal->category_id, 'status' => 'Under Maintenance']);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $impact = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'));
+
+        $critIndex = $impact->search(fn ($r) => $r['category'] === $critical->fresh()->category->category_name);
+        $normalIndex = $impact->search(fn ($r) => $r['category'] === $normal->fresh()->category->category_name);
+        $this->assertNotFalse($critIndex);
+        $this->assertNotFalse($normalIndex);
+        $this->assertLessThan($normalIndex, $critIndex, 'Critical-criticality type must rank before a Normal one.');
+    }
+
+    #[Test]
+    public function an_affected_vehicles_open_ticket_is_linked_but_a_closed_one_is_not(): void
+    {
+        $ambulance = $this->vehicle('Ambulance', ['status' => 'Under Maintenance']);
+
+        $closed = MaintenanceTicket::create([
+            'vehicle_id' => $ambulance->vehicle_id,
+            'created_by' => $this->admin->id,
+            'ticket_title' => 'Old Issue',
+            'ticket_description' => 'x',
+            'priority' => 'High',
+            'status' => 'Closed',
+            'closed_at' => now()->subDay(),
+        ]);
+
+        Sanctum::actingAs($this->admin, ['*']);
+        $row = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'))
+            ->firstWhere('category', $ambulance->fresh()->category->category_name);
+        $this->assertNull($row['affected_vehicles'][0]['active_ticket_id'], 'A Closed ticket must not be linked as active.');
+
+        $active = MaintenanceTicket::create([
+            'vehicle_id' => $ambulance->vehicle_id,
+            'created_by' => $this->admin->id,
+            'ticket_title' => 'Brake Failure',
+            'ticket_description' => 'x',
+            'priority' => 'High',
+            'status' => 'Active',
+        ]);
+
+        $row = collect($this->getJson('/api/dashboard')->assertOk()->json('capability_impact'))
+            ->firstWhere('category', $ambulance->fresh()->category->category_name);
+        $this->assertSame($active->ticket_id, $row['affected_vehicles'][0]['active_ticket_id']);
     }
 }

@@ -14,6 +14,7 @@ class VehicleMaintenanceRecord extends Model
     protected $fillable = [
         'vehicle_id',
         'source_vehicle_id',
+        'part_name',
         'issue_report_id',
         'maintenance_type',
         'problem_reason',

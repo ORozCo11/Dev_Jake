@@ -11,9 +11,24 @@ class UserSeeder extends Seeder
 {
     /**
      * Run the database seeds.
+     *
+     * Fixed, publicly-known demo credentials (including a Super Admin, the
+     * one account that can see across every barangay) — local/testing
+     * convenience only, same guard as
+     * 2026_08_31_000001_create_super_admin_account.php. Unlike that
+     * migration, this seeder isn't guaranteed to only run in those
+     * environments: it's called unconditionally from DatabaseSeeder, and
+     * `php artisan db:seed` / `migrate:fresh --seed` are ordinary things to
+     * run when first standing up a new environment. Provision a real Super
+     * Admin in production with `php artisan superadmin:create` instead.
      */
     public function run(): void
     {
+        if (!app()->environment(['local', 'testing'])) {
+            $this->command?->warn('UserSeeder skipped — demo accounts (including Super Admin) only seed in local/testing.');
+            return;
+        }
+
         // Remove any other users not part of this fixed demo roster.
         User::whereNotIn('email', [
             'superadmin@barangay.gov',

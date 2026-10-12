@@ -11,6 +11,13 @@ class MaintenanceTicket extends Model
 
     protected $primaryKey = 'ticket_id';
 
+    // The one place a ticket title is built — always server-side, never typed:
+    // "MT-0010 — Fire Truck Uno — Brake Failure".
+    public static function composeTitle(int $ticketId, string $vehicleName, string $summary): string
+    {
+        return sprintf('MT-%04d — %s — %s', $ticketId, $vehicleName, $summary);
+    }
+
     protected $fillable = [
         'vehicle_id',
         'issue_report_id',
@@ -20,8 +27,10 @@ class MaintenanceTicket extends Model
         'ticket_description',
         'priority',
         'status',
+        'decline_reason',
         'down_since',
         'assigned_custodian_id',
+        'assigned_mechanic_id',
         'assigned_at',
         'inspection_notes',
         'inspection_result',
@@ -64,6 +73,12 @@ class MaintenanceTicket extends Model
     public function assignedCustodian()
     {
         return $this->belongsTo(User::class, 'assigned_custodian_id');
+    }
+
+    /** The current workflow assigns one mechanic to the whole ticket. */
+    public function assignedMechanic()
+    {
+        return $this->belongsTo(User::class, 'assigned_mechanic_id');
     }
 
     public function inspectedBy()

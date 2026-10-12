@@ -1,14 +1,4 @@
-import { useContext } from 'react';
 import { Link } from 'react-router-dom';
-import Icon from './Icon';
-import { AuthContext } from '../context/AuthContextObject';
-
-const roleRoutes = {
-  Admin: '/admin',
-  Custodian: '/custodian',
-  'Maintenance Personnel': '/maintenance',
-  'Super Admin': '/superadmin',
-};
 
 // Footer for the public-facing pages (Login, About, Developers) — no
 // logo (the header already carries the brand), a large tagline + social
@@ -16,26 +6,16 @@ const roleRoutes = {
 // bar along the bottom. Distinct from WorkspaceFooter, which stays as-is
 // for the authenticated app.
 export default function AuthFooter() {
-  const { user } = useContext(AuthContext);
-  const dashboardPath = user ? (roleRoutes[user.role] ?? '/admin') : null;
-
   return (
     <footer className="auth-footer">
       <div className="auth-footer-main">
         <div className="auth-footer-brand">
           <h2 className="auth-footer-tagline">A Smarter Way to Manage Your Barangay's Fleet.</h2>
-          <div className="auth-footer-social">
-            <a href="#" aria-label="LinkedIn"><Icon name="linkedin" size={15} filled /></a>
-            <a href="#" aria-label="Facebook"><Icon name="facebook" size={15} filled /></a>
-            <a href="#" aria-label="Instagram"><Icon name="instagram" size={15} filled /></a>
-            <a href="#" aria-label="X"><Icon name="twitterX" size={15} filled /></a>
-          </div>
         </div>
         <div className="auth-footer-links">
-          <Link to={dashboardPath ?? '/login'}>{dashboardPath ? 'Dashboard' : 'Home'}</Link>
-          <Link to="/about">About</Link>
-          <Link to="/developers">Developers</Link>
-          <Link to="/support">Support</Link>
+          {/* Home/About/Support already live in AuthHeader's own nav right
+              above this footer — repeating them here was redundant. */}
+          <Link to="/developers">Team</Link>
           <Link to="/support#contact">Contact Us</Link>
         </div>
       </div>

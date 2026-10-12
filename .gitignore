@@ -1,3 +1,6 @@
 
 # Local PHP runtime (downloaded binaries)
 .runtime/
+
+# Local MCP server config (machine-specific absolute paths)
+.mcp.json

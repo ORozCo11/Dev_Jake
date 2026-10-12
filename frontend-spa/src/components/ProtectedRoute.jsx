@@ -4,7 +4,7 @@ import { AuthContext } from '../context/AuthContextObject';
 import { Swirling } from './Swirling';
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { user, token, loading } = useContext(AuthContext);
+  const { user, token, loading, sessionError, retrySession, logout } = useContext(AuthContext);
   const location = useLocation();
 
   // Pause rendering while checking for an existing browser session token
@@ -22,8 +22,35 @@ export const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // If logged in but lacks the required role, bounce them to an unauthorized alert view
-  if (allowedRoles && !allowedRoles.includes(user?.role)) {
+  // Signed in, but the server couldn't be reached to confirm it — say so and
+  // offer a retry, rather than bouncing to Login or Unauthorized.
+  if (sessionError && !user) {
+    return (
+      <main className="auth-page">
+        <section className="auth-card" role="alert">
+          <p className="eyebrow">VMS</p>
+          <h1>Can't reach the server</h1>
+          <p className="auth-subtitle">
+            Your session is still saved on this device. Check your connection, then try again.
+          </p>
+          <div className="form-actions" style={{ justifyContent: 'center', marginTop: 16 }}>
+            <button type="button" className="ghost-button" onClick={logout}>Sign out</button>
+            <button type="button" className="primary-button" onClick={retrySession}>Try again</button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  // If logged in but lacks the required role, bounce them to an unauthorized alert view.
+  // Mirrors Workspace.jsx's hasRole(): check the full `roles` set the account holds, not
+  // just the primary `role` string, so a multi-role user isn't bounced from a secondary
+  // role's URL that in-page gates would otherwise allow once there.
+  const roles = user?.roles;
+  const hasAnyAllowedRole = allowedRoles?.some((r) => (
+    Array.isArray(roles) && roles.length ? roles.includes(r) : user?.role === r
+  ));
+  if (allowedRoles && !hasAnyAllowedRole) {
     return <Navigate to="/unauthorized" replace />;
   }
 

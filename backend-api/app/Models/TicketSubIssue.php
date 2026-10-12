@@ -30,7 +30,39 @@ class TicketSubIssue extends Model
         'title',
         'status',
         'assigned_mechanic_id',
+        // Every mechanic who ever held assigned_mechanic_id on this sub-issue
+        // before the current one — closes a self-verification gap for a
+        // mechanic reassigned away mid-repair (see the 2026_10_10 migration).
+        'prior_mechanic_ids',
+        // A Custodian's proposed mechanic, before an Admin has approved the
+        // ticket — see the 2026_09_28_000002 migration's docblock.
+        'suggested_mechanic_id',
         'maintenance_type',
+        // How this sub-issue's repair was/will be carried out — in_house,
+        // cannibalized, or external. Set at ticket creation when already
+        // known, or at the Log Repairs step once a mechanic starts the work.
+        'repair_type',
+        'source_vehicle_id',
+        'part_missing',
+        'part_needed',
+        'part_quantity',
+        'part_condition',
+        'cannibal_reason',
+        'part_installed_at',
+        'external_sent_at',
+        'external_returned_at',
+        'external_return_notes',
+        'external_actual_cost',
+        // Only meaningful when repair_type is 'external' — which shop did
+        // the work, and how long the repair is warrantied for.
+        'external_vendor',
+        'external_reason',
+        'external_work_scope',
+        'external_shop_contact',
+        'external_sent_by',
+        'external_contact_person',
+        'external_estimated_cost',
+        'warranty_until',
         'work_order_notes',
         'mechanic_assigned_at',
         'mechanic_assigned_by',
@@ -59,16 +91,31 @@ class TicketSubIssue extends Model
         'deferred_by',
         'deferred_at',
         'deferred_issue_report_id',
+        // VMS-IMPROVEMENT-PLAN.md Phase A3 — an Admin's sign-off gate for a
+        // cannibalized repair, before it's allowed on to Custodian
+        // verification. Null for in_house/external repairs entirely.
+        'cannibalization_status',
+        'cannibalization_rejection_reason',
+        'cannibalization_reviewed_by',
+        'cannibalization_reviewed_at',
+        'cannibalization_issue_report_id',
     ];
 
     protected $casts = [
         'mechanic_assigned_at' => 'datetime',
         'verified_at'          => 'datetime',
         'confirmed_at'         => 'datetime',
+        'warranty_until'       => 'date',
+        'part_installed_at'    => 'date:Y-m-d',
+        'external_sent_at'     => 'datetime',
+        'external_returned_at' => 'datetime',
         'deferred_at'          => 'datetime',
+        'cannibalization_reviewed_at' => 'datetime',
         'maintenance_cost'     => 'decimal:2',
+        'external_estimated_cost' => 'decimal:2',
         'functional_test'      => 'array',
         'test_attested'        => 'boolean',
+        'prior_mechanic_ids'   => 'array',
     ];
 
     public function ticket()
@@ -89,6 +136,16 @@ class TicketSubIssue extends Model
     public function assignedMechanic()
     {
         return $this->belongsTo(User::class, 'assigned_mechanic_id');
+    }
+
+    public function suggestedMechanic()
+    {
+        return $this->belongsTo(User::class, 'suggested_mechanic_id');
+    }
+
+    public function sourceVehicle()
+    {
+        return $this->belongsTo(Vehicle::class, 'source_vehicle_id', 'vehicle_id');
     }
 
     public function mechanicAssignedBy()
@@ -119,6 +176,16 @@ class TicketSubIssue extends Model
     public function deferredBy()
     {
         return $this->belongsTo(User::class, 'deferred_by');
+    }
+
+    public function cannibalizationReviewedBy()
+    {
+        return $this->belongsTo(User::class, 'cannibalization_reviewed_by');
+    }
+
+    public function cannibalizationIssueReport()
+    {
+        return $this->belongsTo(VehicleIssueReport::class, 'cannibalization_issue_report_id', 'issue_report_id');
     }
 
     /**

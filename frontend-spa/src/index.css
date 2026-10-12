@@ -44,7 +44,15 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: 0;
-  color: #fff8ef;
+  /* Was a hardcoded dark-theme color from before the light/dark theme
+     variable system existed (App.css). Every heading that already had its
+     own specific selector got its own var(--text-strong) override over
+     time, masking this — but any NEW heading with no such override (like
+     .entry-chooser-card h3) falls through to this rule and renders in the
+     old dark-theme cream color regardless of the active theme. Using the
+     variable here (same fallback value, so dark mode is pixel-identical)
+     fixes it at the root instead of adding yet another one-off override. */
+  color: var(--text-strong, #fff8ef);
 }
 
 p { margin: 0; }

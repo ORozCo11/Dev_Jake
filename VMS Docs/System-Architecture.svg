@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 1020" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569" />
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1300" height="1020" fill="#f6f8fb" />
+
+  <text x="650" y="42" text-anchor="middle" font-size="26" font-weight="700" fill="#0f172a">Barangay VMS — System Architecture</text>
+  <text x="650" y="66" text-anchor="middle" font-size="13" fill="#64748b">React SPA + Laravel API, multi-tenant per Barangay</text>
+
+  <!-- ===================== LAYER 1: USER ROLES ===================== -->
+  <text x="40" y="104" font-size="13" font-weight="700" fill="#92400e">USERS / ROLES</text>
+  <g font-size="13" fill="#78350f">
+    <rect x="40"  y="114" width="190" height="52" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="135" y="136" text-anchor="middle" font-weight="700">Admin</text>
+    <text x="135" y="153" text-anchor="middle" font-size="10.5" fill="#92400e">Runs one Barangay's fleet</text>
+
+    <rect x="248" y="114" width="190" height="52" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="343" y="136" text-anchor="middle" font-weight="700">Custodian</text>
+    <text x="343" y="153" text-anchor="middle" font-size="10.5" fill="#92400e">Inspects &amp; verifies repairs</text>
+
+    <rect x="456" y="114" width="220" height="52" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="566" y="136" text-anchor="middle" font-weight="700">Maintenance Personnel</text>
+    <text x="566" y="153" text-anchor="middle" font-size="10.5" fill="#92400e">Repairs vehicles</text>
+
+    <rect x="694" y="114" width="210" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="799" y="136" text-anchor="middle" font-weight="700" fill="#4c1d95">Super Admin</text>
+    <text x="799" y="153" text-anchor="middle" font-size="10.5" fill="#5b21b6">Platform-wide, cross-Barangay</text>
+  </g>
+  <text x="920" y="136" font-size="11" fill="#64748b" width="340">
+    <tspan x="920" dy="0">Admin / Custodian / Maintenance</tspan>
+    <tspan x="920" dy="14">Personnel are scoped to ONE Barangay.</tspan>
+    <tspan x="920" dy="14">Super Admin sees every Barangay via</tspan>
+    <tspan x="920" dy="14">its own separate portal (no fleet data).</tspan>
+  </text>
+
+  <!-- connectors roles -> client -->
+  <line x1="135" y1="166" x2="135" y2="196" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="343" y1="166" x2="343" y2="196" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="566" y1="166" x2="566" y2="196" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="799" y1="166" x2="799" y2="196" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===================== LAYER 2: CLIENT ===================== -->
+  <rect x="40" y="198" width="1220" height="150" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="60" y="222" font-size="14" font-weight="700" fill="#1d4ed8">CLIENT — React 19 SPA (Vite, react-router-dom)</text>
+
+  <rect x="60" y="234" width="560" height="98" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="340" y="256" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a8a">Workspace.jsx</text>
+  <text x="340" y="272" text-anchor="middle" font-size="10.5" fill="#475569">Admin / Custodian / Maintenance Personnel — one shared shell,</text>
+  <text x="340" y="286" text-anchor="middle" font-size="10.5" fill="#475569">modules shown per role (sidebar + routed pages, no page reload)</text>
+  <text x="340" y="308" text-anchor="middle" font-size="10" fill="#64748b">Vehicles · Tickets · Issue Reports · Schedules · Condition Monitoring</text>
+  <text x="340" y="322" text-anchor="middle" font-size="10" fill="#64748b">Locations/Map (Leaflet) · Users · Reports · Activity Log</text>
+
+  <rect x="644" y="234" width="290" height="98" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="789" y="256" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a8a">SuperAdminWorkspace.jsx</text>
+  <text x="789" y="276" text-anchor="middle" font-size="10.5" fill="#475569">Separate portal at /superadmin</text>
+  <text x="789" y="294" text-anchor="middle" font-size="10" fill="#64748b">Barangays · Users · Registration</text>
+  <text x="789" y="308" text-anchor="middle" font-size="10" fill="#64748b">codes · Concern reports · Impersonation</text>
+
+  <rect x="958" y="234" width="282" height="98" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="1099" y="256" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a8a">Public pages</text>
+  <text x="1099" y="276" text-anchor="middle" font-size="10.5" fill="#475569">Login · Register (per-Barangay</text>
+  <text x="1099" y="292" text-anchor="middle" font-size="10.5" fill="#475569">staff code) · About · Support</text>
+  <text x="1099" y="312" text-anchor="middle" font-size="10" fill="#64748b">axios (Bearer token) · Leaflet · GSAP</text>
+
+  <!-- connector client -> api -->
+  <line x1="650" y1="348" x2="650" y2="382" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="662" y="370" font-size="11" fill="#334155">HTTPS · JSON · Sanctum Bearer token</text>
+
+  <!-- ===================== LAYER 3: API ===================== -->
+  <rect x="40" y="384" width="1220" height="290" rx="14" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5"/>
+  <text x="60" y="408" font-size="14" font-weight="700" fill="#4338ca">API — Laravel 13 (PHP 8.3), routes/api.php</text>
+
+  <rect x="60" y="420" width="1180" height="56" rx="8" fill="#e0e7ff" stroke="#818cf8" stroke-width="1.2"/>
+  <text x="650" y="440" text-anchor="middle" font-size="11.5" fill="#3730a3" font-weight="600">
+    Middleware chain (protected routes): auth:sanctum  →  EnsureUserIsActive  →  RestrictSuperAdminScope
+  </text>
+  <text x="650" y="458" text-anchor="middle" font-size="10.5" fill="#4338ca">
+    Public routes (no auth): login · register · registration-status · provinces/cities/barangays lookup · concern-reports
+  </text>
+
+  <!-- controller cards -->
+  <g font-size="10.8" fill="#312e81">
+    <rect x="60"  y="490" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="151" y="508" text-anchor="middle" font-weight="700">AuthController</text>
+    <text x="151" y="524" text-anchor="middle" font-size="9.5" fill="#4f46e5">Login · Register · Impersonate</text>
+    <text x="151" y="538" text-anchor="middle" font-size="9.5" fill="#4f46e5">Profile · Password</text>
+
+    <rect x="254" y="490" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="345" y="508" text-anchor="middle" font-weight="700">FleetController</text>
+    <text x="345" y="524" text-anchor="middle" font-size="9.5" fill="#4f46e5">Vehicles · Issues · Conditions</text>
+    <text x="345" y="538" text-anchor="middle" font-size="9.5" fill="#4f46e5">Schedules · Maintenance Records</text>
+
+    <rect x="448" y="490" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="539" y="508" text-anchor="middle" font-weight="700">TicketController</text>
+    <text x="539" y="524" text-anchor="middle" font-size="9.5" fill="#4f46e5">5-phase repair workflow</text>
+    <text x="539" y="538" text-anchor="middle" font-size="9.5" fill="#4f46e5">Sub-issues, defer, close</text>
+
+    <rect x="642" y="490" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="733" y="508" text-anchor="middle" font-weight="700">HubController</text>
+    <text x="733" y="524" text-anchor="middle" font-size="9.5" fill="#4f46e5">Map hubs (add/hide/delete,</text>
+    <text x="733" y="538" text-anchor="middle" font-size="9.5" fill="#4f46e5">guarded by assigned vehicles)</text>
+
+    <rect x="836" y="490" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="927" y="508" text-anchor="middle" font-weight="700">UserController</text>
+    <text x="927" y="524" text-anchor="middle" font-size="9.5" fill="#4f46e5">User accounts within</text>
+    <text x="927" y="538" text-anchor="middle" font-size="9.5" fill="#4f46e5">the current Barangay</text>
+
+    <rect x="1030" y="490" width="170" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="1115" y="508" text-anchor="middle" font-weight="700">NotificationController</text>
+    <text x="1115" y="524" text-anchor="middle" font-size="9.5" fill="#4f46e5">Bell notifications,</text>
+    <text x="1115" y="538" text-anchor="middle" font-size="9.5" fill="#4f46e5">polled every 10s</text>
+
+    <rect x="60"  y="562" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="151" y="580" text-anchor="middle" font-weight="700">CatalogController</text>
+    <text x="151" y="596" text-anchor="middle" font-size="9.5" fill="#4f46e5">Vehicle Types, Maintenance</text>
+    <text x="151" y="610" text-anchor="middle" font-size="9.5" fill="#4f46e5">Types — shared lookups</text>
+
+    <rect x="254" y="562" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="345" y="580" text-anchor="middle" font-weight="700">BarangayController</text>
+    <text x="345" y="596" text-anchor="middle" font-size="9.5" fill="#4f46e5">Barangay/City/Province</text>
+    <text x="345" y="610" text-anchor="middle" font-size="9.5" fill="#4f46e5">directory for registration</text>
+
+    <rect x="448" y="562" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="539" y="580" text-anchor="middle" font-weight="700">ConcernReportController</text>
+    <text x="539" y="596" text-anchor="middle" font-size="9.5" fill="#4f46e5">User-submitted concerns</text>
+    <text x="539" y="610" text-anchor="middle" font-size="9.5" fill="#4f46e5">to Super Admin</text>
+
+    <rect x="642" y="562" width="182" height="60" rx="8" fill="#fdf4ff" stroke="#e9d5ff"/>
+    <text x="733" y="580" text-anchor="middle" font-weight="700" fill="#6b21a8">SuperAdminController</text>
+    <text x="733" y="596" text-anchor="middle" font-size="9.5" fill="#7e22ce">Cross-Barangay users,</text>
+    <text x="733" y="610" text-anchor="middle" font-size="9.5" fill="#7e22ce">registration codes, no fleet data</text>
+
+    <rect x="836" y="562" width="182" height="60" rx="8" fill="#ffffff" stroke="#c7d2fe"/>
+    <text x="927" y="580" text-anchor="middle" font-weight="700">City / Province</text>
+    <text x="927" y="596" text-anchor="middle" font-size="9.5" fill="#4f46e5">Controllers</text>
+    <text x="927" y="610" text-anchor="middle" font-size="9.5" fill="#4f46e5">Address lookups</text>
+
+    <rect x="1030" y="562" width="170" height="60" rx="8" fill="#eef2ff" stroke="#c7d2fe" stroke-dasharray="4 3"/>
+    <text x="1115" y="586" text-anchor="middle" font-size="9.5" fill="#4338ca">Eloquent Models &amp;</text>
+    <text x="1115" y="600" text-anchor="middle" font-size="9.5" fill="#4338ca">BelongsToBarangay scope</text>
+  </g>
+
+  <rect x="60" y="634" width="1180" height="26" rx="6" fill="#ede9fe"/>
+  <text x="650" y="652" text-anchor="middle" font-size="10.5" fill="#5b21b6">
+    Activity Log — every create/update/status-change is recorded (ActivityLog model), visible per-Barangay to Admin
+  </text>
+
+  <!-- connector api -> data -->
+  <line x1="440" y1="674" x2="440" y2="708" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1000" y1="674" x2="1000" y2="708" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="452" y="696" font-size="11" fill="#334155">Eloquent ORM</text>
+  <text x="912" y="696" font-size="11" fill="#334155">Flysystem S3 driver</text>
+
+  <!-- ===================== LAYER 4: DATA ===================== -->
+  <rect x="40" y="710" width="1220" height="130" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="1.5"/>
+  <text x="60" y="734" font-size="14" font-weight="700" fill="#166534">DATA LAYER</text>
+
+  <rect x="180" y="746" width="520" height="76" rx="10" fill="#ffffff" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="440" y="770" text-anchor="middle" font-size="13" font-weight="700" fill="#14532d">Relational Database</text>
+  <text x="440" y="788" text-anchor="middle" font-size="10.5" fill="#166534">SQLite (local dev)  →  PostgreSQL on Supabase (deployed)</text>
+  <text x="440" y="804" text-anchor="middle" font-size="10" fill="#4b7a5a">Barangays, Users, Vehicles, Tickets, Issues, Schedules, Activity Log…</text>
+
+  <rect x="760" y="746" width="380" height="76" rx="10" fill="#ffffff" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="950" y="770" text-anchor="middle" font-size="13" font-weight="700" fill="#14532d">Supabase Storage (S3-compatible)</text>
+  <text x="950" y="788" text-anchor="middle" font-size="10.5" fill="#166534">Vehicle photos, issue attachments, receipts</text>
+  <text x="950" y="804" text-anchor="middle" font-size="10" fill="#4b7a5a">via league/flysystem-aws-s3-v3</text>
+
+  <!-- ===================== TENANCY NOTE ===================== -->
+  <rect x="40" y="856" width="1220" height="140" rx="14" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="60" y="880" font-size="14" font-weight="700" fill="#9a3412">MULTI-TENANCY — everything is scoped to a Barangay</text>
+  <text x="60" y="902" font-size="11.5" fill="#7c2d12">• Vehicles, Tickets, Issues, Schedules, Hubs, Activity Log, and Registration Codes all carry a barangay_id and are isolated per Barangay.</text>
+  <text x="60" y="920" font-size="11.5" fill="#7c2d12">• Users are NOT globally scoped — Super Admin can see every user/Barangay through its own portal; Admin/Custodian/Maintenance Personnel see only their own.</text>
+  <text x="60" y="938" font-size="11.5" fill="#7c2d12">• Self-registration is per-Barangay: a shared "Staff Registration Code" gates who can register at all; the FIRST person to register for a new Barangay becomes its Admin automatically.</text>
+  <text x="60" y="956" font-size="11.5" fill="#7c2d12">• Everyone after that first Admin must pick Custodian or Maintenance Personnel and stays inactive until an existing Admin approves them.</text>
+  <text x="60" y="978" font-size="10.5" fill="#9a3412" font-style="italic">Known gap: the first-registrant-becomes-Admin step has no identity check beyond the shared staff code — see Must-Haves.md.</text>
+</svg>

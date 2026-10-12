@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesAbilities;
+use App\Http\Controllers\Concerns\GuardsLastAdmin;
+use App\Http\Controllers\Concerns\GuardsOpenWorkOnDeactivation;
 use App\Http\Controllers\Concerns\UploadsImages;
+use App\Models\ActivityLog;
 use App\Models\RegistrationSetting;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -12,13 +16,11 @@ use Illuminate\Validation\Rule;
 class UserController extends Controller
 {
     use UploadsImages;
+    use GuardsLastAdmin;
+    use GuardsOpenWorkOnDeactivation;
+    use AuthorizesAbilities;
 
     private const ROLES = ['Admin', 'Custodian', 'Maintenance Personnel'];
-
-    private function requireAdmin(Request $request): void
-    {
-        abort_unless($request->user()->hasRole('Admin'), 403, 'Only Admins can manage users.');
-    }
 
     /**
      * Cross-tenant guard for the User model, which — unlike Vehicle/Hub —
@@ -30,6 +32,22 @@ class UserController extends Controller
     private function requireSameBarangay(Request $request, User $target): void
     {
         abort_if($target->barangay_id !== $request->user()->barangay_id, 404);
+    }
+
+    // Production-readiness audit finding #4 — account/role management had no
+    // audit trail at all. Mirrors FleetController/TicketController's own
+    // private log() helper (each controller keeps its own rather than a
+    // shared trait, per the existing pattern in this codebase).
+    private function log(Request $request, string $action, ?int $affectedUserId, string $details): void
+    {
+        ActivityLog::create([
+            'user_id' => $request->user()?->id,
+            'role'    => $request->attributes->get('vms_acted_as_role') ?? $request->user()?->role,
+            'action'  => $action,
+            'module'  => 'Users',
+            'affected_record_id' => $affectedUserId,
+            'details' => $details,
+        ]);
     }
 
     /**
@@ -52,7 +70,7 @@ class UserController extends Controller
 
     public function index(Request $request)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.view', 'Only Admins can manage users.');
 
         $query = User::where('barangay_id', $request->user()->barangay_id);
 
@@ -76,7 +94,7 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.create', 'Only Admins can manage users.');
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -88,6 +106,7 @@ class UserController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
             'photo' => ['nullable', 'image', 'max:4096'],
+            'can_register_vehicles' => ['sometimes', 'boolean'],
         ]);
 
         $data = $this->normalizeRoles($request, $data);
@@ -104,12 +123,14 @@ class UserController extends Controller
 
         $user = User::create($data);
 
+        $this->log($request, 'Add', $user->id, "Created user \"{$user->name}\" ({$user->email}), role: " . implode('/', $user->roles ?? [$user->role]));
+
         return response()->json($user, 201);
     }
 
     public function update(Request $request, User $user)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.edit', 'Only Admins can manage users.');
         $this->requireSameBarangay($request, $user);
 
         $data = $request->validate([
@@ -122,6 +143,7 @@ class UserController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
             'photo' => ['nullable', 'image', 'max:4096'],
+            'can_register_vehicles' => ['sometimes', 'boolean'],
         ]);
 
         $data = $this->normalizeRoles($request, $data);
@@ -132,6 +154,14 @@ class UserController extends Controller
         // barangay — out of user management with no other way back in.
         if ($user->id === $request->user()->id && $user->hasRole('Admin') && array_key_exists('roles', $data)) {
             abort_if(!in_array('Admin', $data['roles'], true), 422, 'You cannot remove your own Admin role.');
+        }
+
+        // Phase A4 — same protection, extended to an Admin editing SOMEONE
+        // ELSE'S roles: the self-check above only covers the acting Admin
+        // locking out their own account, not them demoting the barangay's
+        // only OTHER Admin.
+        if (array_key_exists('roles', $data) && !in_array('Admin', $data['roles'], true)) {
+            $this->abortIfLastActiveAdmin($user, 'removing their Admin role');
         }
 
         if (!empty($data['password'])) {
@@ -145,28 +175,51 @@ class UserController extends Controller
         }
         unset($data['photo']);
 
+        // Built BEFORE update() so a role change is compared against what
+        // the account held a moment ago — and the password's own VALUE is
+        // never logged, only the fact that it changed.
+        $changeNotes = [];
+        if (array_key_exists('roles', $data) && $data['roles'] !== $user->roles) {
+            $changeNotes[] = 'roles ' . implode('/', $user->roles ?? [$user->role]) . ' -> ' . implode('/', $data['roles']);
+        }
+        if (array_key_exists('password', $data)) {
+            $changeNotes[] = 'password reset';
+        }
+        if (array_key_exists('email', $data) && $data['email'] !== $user->email) {
+            $changeNotes[] = "email {$user->email} -> {$data['email']}";
+        }
+        if (array_key_exists('can_register_vehicles', $data) && (bool) $data['can_register_vehicles'] !== (bool) $user->can_register_vehicles) {
+            $changeNotes[] = $data['can_register_vehicles'] ? 'granted vehicle registration' : 'revoked vehicle registration';
+        }
+
         $user->update($data);
+
+        $this->log($request, 'Edit', $user->id, "Updated user \"{$user->name}\"" . ($changeNotes ? ' (' . implode('; ', $changeNotes) . ')' : ''));
 
         return $user->fresh();
     }
 
     public function deactivate(Request $request, User $user)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.deactivate', 'Only Admins can manage users.');
         $this->requireSameBarangay($request, $user);
         abort_if($user->id === $request->user()->id, 422, 'You cannot deactivate your own account.');
+        $this->abortIfLastActiveAdmin($user, 'deactivating them');
+        $this->abortIfHasOpenWork($user, 'deactivating them');
 
         $user->update(['is_active' => false]);
         // Revoke every existing token immediately — otherwise a session
         // already in progress keeps working until it happens to expire.
         $user->tokens()->delete();
 
+        $this->log($request, 'Deactivate', $user->id, "Deactivated user \"{$user->name}\" ({$user->email}).");
+
         return response()->json(['message' => 'User deactivated.']);
     }
 
     public function activate(Request $request, User $user)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'user.activate', 'Only Admins can manage users.');
         $this->requireSameBarangay($request, $user);
 
         $data = $request->validate([
@@ -192,19 +245,21 @@ class UserController extends Controller
 
         $user->update($update);
 
+        $this->log($request, 'Activate', $user->id, "Activated user \"{$user->name}\" ({$user->email})." . (!empty($data['role']) ? " Role confirmed/changed to {$data['role']}." : ''));
+
         return response()->json(['message' => 'User activated.']);
     }
 
     public function registrationSettings(Request $request)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'registration_code.view', 'Only Admins can manage users.');
 
         return response()->json(['staff_code' => RegistrationSetting::for($request->user()->barangay_id)->staff_code]);
     }
 
     public function regenerateRegistrationCode(Request $request)
     {
-        $this->requireAdmin($request);
+        $this->requireAbility($request, 'registration_code.regenerate', 'Only Admins can manage users.');
 
         $setting = RegistrationSetting::regenerateFor($request->user()->barangay_id);
 

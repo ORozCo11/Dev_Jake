@@ -40,16 +40,28 @@ class BarangayController extends Controller
 
         return Barangay::where('city_id', $request->city_id)
             ->where(fn ($query) => $query->where('name', 'Paknaan')->orWhereHas('users'))
+            ->with('city:id,name')
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name', 'city_id'])
+            ->map(fn ($barangay) => [
+                'id' => $barangay->id,
+                'name' => $barangay->name,
+                'city_name' => $barangay->city?->name,
+            ]);
     }
 
     /**
      * Single barangay lookup, boundary geometry included — used by the
-     * admin Vehicle Location map's boundary selector.
+     * admin Vehicle Location map's boundary selector. Carries the parent
+     * city's name too: several barangay names (e.g. "Banilad", "Basak")
+     * are reused by a neighboring city, so the map must label the drawn
+     * outline "Banilad, Mandaue City" rather than a bare "Banilad" that a
+     * viewer could easily mistake for the same-named barangay next door.
      */
     public function show(Barangay $barangay)
     {
-        return $barangay->setVisible(['id', 'name', 'boundary']);
+        $barangay->load('city:id,name');
+
+        return $barangay->setVisible(['id', 'name', 'boundary'])->append('city_name');
     }
 }

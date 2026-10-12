@@ -1,0 +1,371 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1820 1200" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="one" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <circle cx="5" cy="5" r="2.6" fill="#334155" />
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1820" height="1200" fill="#f8fafc"/>
+  <text x="910" y="34" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">Barangay VMS — Entity-Relationship Diagram</text>
+  <text x="910" y="54" text-anchor="middle" font-size="12" fill="#64748b">Solid = enforced DB foreign key · Dashed = relationship in code, no DB-level FK · Field lists are abbreviated (PK + FKs + key attributes)</text>
+
+  <!-- ================= LINES (drawn first, under boxes) ================= -->
+  <g fill="none" stroke-width="1.6">
+    <!-- tenancy -->
+    <path d="M220,150 H300" stroke="#b45309" marker-end="url(#one)"/>
+    <path d="M480,150 H560" stroke="#b45309" marker-end="url(#one)"/>
+    <path d="M740,150 H800" stroke="#b45309" marker-end="url(#one)"/>
+
+    <!-- vehicle core -->
+    <path d="M1210,180 V220 H1060 V280" stroke="#0891b2" marker-end="url(#one)"/>
+    <path d="M740,280 V170" stroke="#b45309" marker-end="url(#one)" stroke-dasharray="6 4"/>
+
+    <!-- vehicle's direct children (child -> Vehicle) -->
+    <path d="M1360,340 H1000" stroke="#2563eb" marker-end="url(#one)"/>
+    <path d="M260,465 H750 V420" stroke="#2563eb" marker-end="url(#one)"/>
+    <path d="M150,540 V420" stroke="#2563eb" marker-end="url(#one)"/>
+    <path d="M540,540 H760" stroke="#7c3aed" marker-end="url(#one)"/>
+    <path d="M800,470 V420" stroke="#2563eb" marker-end="url(#one)"/>
+    <path d="M420,830 V420 H760" stroke="#2563eb" marker-end="url(#one)"/>
+    <path d="M890,850 V420 H900" stroke="#2563eb" marker-end="url(#one)"/>
+    <path d="M1240,830 V420 H1000" stroke="#2563eb" marker-end="url(#one)"/>
+
+    <!-- vehicle hub: no FK to vehicle, matched by location name -->
+    <path d="M260,300 H700" stroke="#94a3b8" stroke-dasharray="4 4"/>
+
+    <!-- workflow chain -->
+    <path d="M540,600 H760" stroke="#7c3aed" marker-end="url(#one)"/>
+    <path d="M1040,600 H1120" stroke="#7c3aed" marker-end="url(#one)" stroke-width="2.4"/>
+    <path d="M1400,540 H1460" stroke="#94a3b8" stroke-dasharray="5 4" marker-end="url(#one)"/>
+    <path d="M1130,470 V445 H950 V420" stroke="#2563eb" stroke-dasharray="5 4" marker-end="url(#one)"/>
+
+    <!-- user reference lines (one per entity that has >=1 FK to users) -->
+    <path d="M930,270 V480" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M1260,270 V480" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M420,830 V270 H930" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M850,850 V270 H930" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M1100,850 V270 H930" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M400,600 V270 H930" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M1570,620 V270 H1000" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M420,1000 V270 H930" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M700,1000 V270 H930" stroke="#0f766e" marker-end="url(#one)"/>
+    <path d="M1440,1000 V270 H930" stroke="#0f766e" stroke-dasharray="5 4"/>
+
+    <!-- schedule -> resulting maintenance record -->
+    <path d="M900,850 V870 H1100" stroke="#2563eb" stroke-dasharray="5 4" marker-end="url(#one)"/>
+    <!-- condition check -> resulting ticket -->
+    <path d="M540,870 H650 V690" stroke="#7c3aed" stroke-dasharray="5 4" marker-end="url(#one)"/>
+
+    <!-- activity log / registration -> barangay; notification -> ticket -->
+    <path d="M280,1000 V150 H560" stroke="#b45309" stroke-dasharray="4 4" marker-end="url(#one)"/>
+    <path d="M700,1000 V620 H900" stroke="#7c3aed" stroke-dasharray="5 4" marker-end="url(#one)"/>
+    <path d="M1110,1000 V150 H650" stroke="#b45309" marker-end="url(#one)"/>
+  </g>
+
+  <!-- ================= ENTITY BOXES ================= -->
+  <!-- helper style: header rect + label rows -->
+
+  <!-- Province -->
+  <g>
+    <rect x="40" y="100" width="180" height="70" rx="8" fill="#fff7ed" stroke="#f59e0b" stroke-width="1.4"/>
+    <rect x="40" y="100" width="180" height="24" rx="8" fill="#f59e0b"/>
+    <text x="130" y="117" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">provinces</text>
+    <text x="52" y="142" font-size="10.5" fill="#78350f">PK id</text>
+    <text x="52" y="156" font-size="10.5" fill="#78350f">name, code</text>
+  </g>
+
+  <!-- City -->
+  <g>
+    <rect x="300" y="100" width="180" height="70" rx="8" fill="#fff7ed" stroke="#f59e0b" stroke-width="1.4"/>
+    <rect x="300" y="100" width="180" height="24" rx="8" fill="#f59e0b"/>
+    <text x="390" y="117" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">cities</text>
+    <text x="312" y="142" font-size="10.5" fill="#78350f">PK id · FK province_id</text>
+    <text x="312" y="156" font-size="10.5" fill="#78350f">name, code, boundary</text>
+  </g>
+
+  <!-- Barangay -->
+  <g>
+    <rect x="560" y="100" width="180" height="70" rx="8" fill="#fff7ed" stroke="#f59e0b" stroke-width="1.4"/>
+    <rect x="560" y="100" width="180" height="24" rx="8" fill="#f59e0b"/>
+    <text x="650" y="117" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">barangays</text>
+    <text x="572" y="142" font-size="10.5" fill="#78350f">PK id · FK city_id</text>
+    <text x="572" y="156" font-size="10.5" fill="#78350f">name, boundary (GeoJSON)</text>
+  </g>
+
+  <!-- User -->
+  <g>
+    <rect x="800" y="90" width="230" height="180" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.6"/>
+    <rect x="800" y="90" width="230" height="26" rx="8" fill="#0891b2"/>
+    <text x="915" y="108" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">users</text>
+    <text x="812" y="134" font-size="10.5" fill="#164e63">PK id</text>
+    <text x="812" y="148" font-size="10.5" fill="#164e63">FK barangay_id, city_id</text>
+    <text x="812" y="162" font-size="10.5" fill="#164e63">role, roles[] (multi-role)</text>
+    <text x="812" y="176" font-size="10.5" fill="#164e63">is_active, approved_at</text>
+    <text x="812" y="190" font-size="10.5" fill="#164e63">phone, address, photo_url</text>
+    <text x="812" y="208" font-size="9.5" fill="#0e7490" font-style="italic">Roles: Admin, Custodian,</text>
+    <text x="812" y="220" font-size="9.5" fill="#0e7490" font-style="italic">Maintenance Personnel,</text>
+    <text x="812" y="232" font-size="9.5" fill="#0e7490" font-style="italic">Super Admin (unscoped)</text>
+    <text x="812" y="252" font-size="9" fill="#155e63">Referenced by created_by / assigned_*</text>
+    <text x="812" y="264" font-size="9" fill="#155e63">/ verified_by / etc. across most tables</text>
+  </g>
+
+  <!-- VehicleCategory -->
+  <g>
+    <rect x="1040" y="100" width="170" height="80" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.4"/>
+    <rect x="1040" y="100" width="170" height="24" rx="8" fill="#0891b2"/>
+    <text x="1125" y="117" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">vehicle_categories</text>
+    <text x="1052" y="142" font-size="10.5" fill="#164e63">PK category_id</text>
+    <text x="1052" y="156" font-size="10.5" fill="#164e63">category_name</text>
+    <text x="1052" y="170" font-size="10.5" fill="#164e63">domain: Land | Water</text>
+  </g>
+
+  <!-- FaultCategory -->
+  <g>
+    <rect x="1290" y="100" width="160" height="56" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+    <text x="1370" y="118" text-anchor="middle" font-size="11.5" font-weight="700" fill="#334155">fault_categories</text>
+    <text x="1302" y="136" font-size="10" fill="#475569">PK id · name (catalog)</text>
+    <text x="1302" y="150" font-size="9" fill="#64748b" font-style="italic">referenced by name, no FK</text>
+  </g>
+
+  <!-- MaintenanceType -->
+  <g>
+    <rect x="1470" y="100" width="160" height="56" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+    <text x="1550" y="118" text-anchor="middle" font-size="11.5" font-weight="700" fill="#334155">maintenance_types</text>
+    <text x="1482" y="136" font-size="10" fill="#475569">PK id · name (catalog)</text>
+    <text x="1482" y="150" font-size="9" fill="#64748b" font-style="italic">referenced by name, no FK</text>
+  </g>
+
+  <!-- Vehicle (core) -->
+  <g>
+    <rect x="700" y="280" width="300" height="140" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+    <rect x="700" y="280" width="300" height="28" rx="8" fill="#2563eb"/>
+    <text x="850" y="299" text-anchor="middle" font-size="13.5" font-weight="700" fill="#ffffff">vehicles</text>
+    <text x="712" y="326" font-size="10.5" fill="#1e3a8a">PK vehicle_id</text>
+    <text x="712" y="340" font-size="10.5" fill="#1e3a8a">FK category_id, barangay_id</text>
+    <text x="712" y="354" font-size="10.5" fill="#1e3a8a">FK archived_by, decommissioned_by (users)</text>
+    <text x="712" y="368" font-size="10.5" fill="#1e3a8a">vehicle_name, plate_number, domain fields</text>
+    <text x="712" y="382" font-size="10.5" fill="#1e3a8a">status: Available|Under Maintenance|Inactive</text>
+    <text x="712" y="396" font-size="10.5" fill="#1e3a8a">condition: Good|Needs Inspection|Needs Repair</text>
+    <text x="712" y="410" font-size="9.5" fill="#1d4ed8" font-style="italic">+ acquisition_cost, current_location, photo_url…</text>
+  </g>
+
+  <!-- VehicleHub -->
+  <g>
+    <rect x="40" y="280" width="220" height="110" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.4"/>
+    <rect x="40" y="280" width="220" height="24" rx="8" fill="#2563eb"/>
+    <text x="150" y="297" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">vehicle_hubs</text>
+    <text x="52" y="322" font-size="10.5" fill="#1e3a8a">PK hub_id · FK barangay_id</text>
+    <text x="52" y="336" font-size="10.5" fill="#1e3a8a">FK created_by (users)</text>
+    <text x="52" y="350" font-size="10.5" fill="#1e3a8a">name, lat, lng, is_default</text>
+    <text x="52" y="366" font-size="9" fill="#64748b" font-style="italic">matched to vehicles by</text>
+    <text x="52" y="378" font-size="9" fill="#64748b" font-style="italic">current_location name (no FK)</text>
+  </g>
+
+  <!-- VehicleLocation -->
+  <g>
+    <rect x="40" y="420" width="220" height="90" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.4"/>
+    <rect x="40" y="420" width="220" height="24" rx="8" fill="#2563eb"/>
+    <text x="150" y="437" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">vehicle_locations</text>
+    <text x="52" y="462" font-size="10.5" fill="#1e3a8a">PK location_record_id</text>
+    <text x="52" y="476" font-size="10.5" fill="#1e3a8a">FK vehicle_id, updated_by</text>
+    <text x="52" y="490" font-size="10.5" fill="#1e3a8a">current_location, address_area</text>
+  </g>
+
+  <!-- VehicleReadinessCheck -->
+  <g>
+    <rect x="40" y="540" width="220" height="90" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.4"/>
+    <rect x="40" y="540" width="220" height="24" rx="8" fill="#2563eb"/>
+    <text x="150" y="557" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">vehicle_readiness_checks</text>
+    <text x="52" y="582" font-size="10.5" fill="#1e3a8a">PK readiness_check_id</text>
+    <text x="52" y="596" font-size="10.5" fill="#1e3a8a">FK vehicle_id, checked_by</text>
+    <text x="52" y="610" font-size="10.5" fill="#1e3a8a">checklist[], all_passed</text>
+  </g>
+
+  <!-- VehicleHistory -->
+  <g>
+    <rect x="1080" y="280" width="220" height="90" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.4"/>
+    <rect x="1080" y="280" width="220" height="24" rx="8" fill="#2563eb"/>
+    <text x="1190" y="297" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">vehicle_histories</text>
+    <text x="1092" y="322" font-size="10.5" fill="#1e3a8a">PK history_id</text>
+    <text x="1092" y="336" font-size="10.5" fill="#1e3a8a">FK vehicle_id, updated_by</text>
+    <text x="1092" y="350" font-size="10.5" fill="#1e3a8a">activity_type, description</text>
+  </g>
+
+  <!-- VehicleDocument -->
+  <g>
+    <rect x="1360" y="280" width="220" height="90" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.4"/>
+    <rect x="1360" y="280" width="220" height="24" rx="8" fill="#2563eb"/>
+    <text x="1470" y="297" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">vehicle_documents</text>
+    <text x="1372" y="322" font-size="10.5" fill="#1e3a8a">PK document_id</text>
+    <text x="1372" y="336" font-size="10.5" fill="#1e3a8a">FK vehicle_id, added_by</text>
+    <text x="1372" y="350" font-size="10.5" fill="#1e3a8a">title, category, file_url</text>
+  </g>
+
+  <!-- VehicleIssueReport -->
+  <g>
+    <rect x="300" y="470" width="240" height="130" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.6"/>
+    <rect x="300" y="470" width="240" height="26" rx="8" fill="#7c3aed"/>
+    <text x="420" y="488" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">vehicle_issue_reports</text>
+    <text x="312" y="514" font-size="10.5" fill="#4c1d95">PK issue_report_id</text>
+    <text x="312" y="528" font-size="10.5" fill="#4c1d95">FK vehicle_id, reported_by</text>
+    <text x="312" y="542" font-size="10.5" fill="#4c1d95">issue_type, severity_level</text>
+    <text x="312" y="556" font-size="10.5" fill="#4c1d95">status: Pending|Under Review|</text>
+    <text x="312" y="570" font-size="10.5" fill="#4c1d95">In Maintenance|Resolved</text>
+    <text x="312" y="586" font-size="9.5" fill="#6d28d9" font-style="italic">+ photo_url, remarks</text>
+  </g>
+
+  <!-- MaintenanceTicket -->
+  <g>
+    <rect x="760" y="470" width="280" height="220" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.8"/>
+    <rect x="760" y="470" width="280" height="28" rx="8" fill="#7c3aed"/>
+    <text x="900" y="489" text-anchor="middle" font-size="13.5" font-weight="700" fill="#ffffff">maintenance_tickets</text>
+    <text x="772" y="516" font-size="10.5" fill="#4c1d95">PK ticket_id</text>
+    <text x="772" y="530" font-size="10.5" fill="#4c1d95">FK vehicle_id, issue_report_id (nullable)</text>
+    <text x="772" y="544" font-size="10.5" fill="#4c1d95">FK created_by, assigned_custodian_id,</text>
+    <text x="772" y="558" font-size="10.5" fill="#4c1d95">inspected_by, closed_by (all users)</text>
+    <text x="772" y="572" font-size="10.5" fill="#4c1d95">FK recurrence_of_ticket_id (self)</text>
+    <text x="772" y="588" font-size="10.5" fill="#4c1d95">ticket_title ("Main Issue"), fault_category</text>
+    <text x="772" y="602" font-size="10.5" fill="#4c1d95">status: Open|Active|Closed|Cancelled</text>
+    <text x="772" y="616" font-size="10.5" fill="#4c1d95">priority: Low|Medium|High</text>
+    <text x="772" y="630" font-size="10.5" fill="#4c1d95">inspection_result, closing_notes</text>
+    <text x="772" y="646" font-size="9.5" fill="#6d28d9" font-style="italic">recurrence_count, down_since,</text>
+    <text x="772" y="660" font-size="9.5" fill="#6d28d9" font-style="italic">returned_to_service, archived_at</text>
+    <text x="772" y="678" font-size="9" fill="#6d28d9">Rebuilt 2026-07-16: mechanic/repair/verify</text>
+  </g>
+
+  <!-- TicketSubIssue -->
+  <g>
+    <rect x="1120" y="470" width="280" height="220" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.8"/>
+    <rect x="1120" y="470" width="280" height="28" rx="8" fill="#7c3aed"/>
+    <text x="1260" y="489" text-anchor="middle" font-size="13.5" font-weight="700" fill="#ffffff">ticket_sub_issues</text>
+    <text x="1132" y="516" font-size="10.5" fill="#4c1d95">PK sub_issue_id</text>
+    <text x="1132" y="530" font-size="10.5" fill="#4c1d95">FK ticket_id (→ maintenance_tickets)</text>
+    <text x="1132" y="544" font-size="10.5" fill="#4c1d95">FK issue_report_id (nullable)</text>
+    <text x="1132" y="558" font-size="10.5" fill="#4c1d95">FK source_vehicle_id (→ vehicles, nullable)</text>
+    <text x="1132" y="572" font-size="10.5" fill="#4c1d95">FK created_by, assigned_mechanic_id,</text>
+    <text x="1132" y="586" font-size="10.5" fill="#4c1d95">verified_by, confirmed_by (all users)</text>
+    <text x="1132" y="602" font-size="10.5" fill="#4c1d95">title (root cause), repair_type</text>
+    <text x="1132" y="616" font-size="10.5" fill="#4c1d95">status: Open|Under Repair|For Inspection|</text>
+    <text x="1132" y="630" font-size="10.5" fill="#4c1d95">For Confirmation|Done|Deferred</text>
+    <text x="1132" y="646" font-size="9.5" fill="#6d28d9" font-style="italic">repair_logs, parts_used, maintenance_cost,</text>
+    <text x="1132" y="660" font-size="9.5" fill="#6d28d9" font-style="italic">functional_test[], deferred_reason…</text>
+    <text x="1132" y="678" font-size="9" fill="#6d28d9">the real per-item repair state lives here</text>
+  </g>
+
+  <!-- TicketArchiveLog -->
+  <g>
+    <rect x="1460" y="470" width="220" height="150" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="0"/>
+    <rect x="1460" y="470" width="220" height="26" rx="8" fill="#7c3aed"/>
+    <text x="1570" y="488" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">ticket_archive_logs</text>
+    <text x="1472" y="514" font-size="10.5" fill="#4c1d95">PK archive_id</text>
+    <text x="1472" y="528" font-size="10.5" fill="#4c1d95">ticket_id, vehicle_id (historical</text>
+    <text x="1472" y="542" font-size="10.5" fill="#4c1d95">refs, no DB FK — survive deletes)</text>
+    <text x="1472" y="556" font-size="10.5" fill="#4c1d95">FK archived_by (users)</text>
+    <text x="1472" y="572" font-size="10.5" fill="#4c1d95">final_status, maintenance_cost</text>
+    <text x="1472" y="586" font-size="10.5" fill="#4c1d95">full_ticket_snapshot (json)</text>
+    <text x="1472" y="602" font-size="9" fill="#6d28d9" font-style="italic">immutable — no updated_at</text>
+  </g>
+
+  <!-- VehicleConditionCheck -->
+  <g>
+    <rect x="300" y="830" width="240" height="130" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6"/>
+    <rect x="300" y="830" width="240" height="26" rx="8" fill="#16a34a"/>
+    <text x="420" y="848" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">vehicle_condition_checks</text>
+    <text x="312" y="874" font-size="10.5" fill="#14532d">PK condition_check_id</text>
+    <text x="312" y="888" font-size="10.5" fill="#14532d">FK vehicle_id, checked_by</text>
+    <text x="312" y="902" font-size="10.5" fill="#14532d">FK resulting_ticket_id (nullable)</text>
+    <text x="312" y="916" font-size="10.5" fill="#14532d">condition_result: Good|Needs</text>
+    <text x="312" y="930" font-size="10.5" fill="#14532d">Inspection|Needs Repair</text>
+    <text x="312" y="946" font-size="9.5" fill="#15803d" font-style="italic">observations</text>
+  </g>
+
+  <!-- VehicleMaintenanceSchedule -->
+  <g>
+    <rect x="760" y="850" width="260" height="150" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6"/>
+    <rect x="760" y="850" width="260" height="26" rx="8" fill="#16a34a"/>
+    <text x="890" y="868" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">vehicle_maintenance_schedules</text>
+    <text x="772" y="894" font-size="10.5" fill="#14532d">PK schedule_id</text>
+    <text x="772" y="908" font-size="10.5" fill="#14532d">FK vehicle_id, created_by, assigned_to</text>
+    <text x="772" y="922" font-size="10.5" fill="#14532d">FK resulting_maintenance_id (nullable)</text>
+    <text x="772" y="936" font-size="10.5" fill="#14532d">maintenance_type, scheduled_date</text>
+    <text x="772" y="950" font-size="10.5" fill="#14532d">status: Scheduled|Completed|Cancelled</text>
+    <text x="772" y="966" font-size="9.5" fill="#15803d" font-style="italic">recurrence_months (custom or preset)</text>
+    <text x="772" y="980" font-size="9.5" fill="#15803d" font-style="italic">completing one auto-creates the next</text>
+  </g>
+
+  <!-- VehicleMaintenanceRecord -->
+  <g>
+    <rect x="1100" y="830" width="280" height="180" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6"/>
+    <rect x="1100" y="830" width="280" height="26" rx="8" fill="#16a34a"/>
+    <text x="1240" y="848" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">vehicle_maintenance_records</text>
+    <text x="1112" y="874" font-size="10.5" fill="#14532d">PK maintenance_id</text>
+    <text x="1112" y="888" font-size="10.5" fill="#14532d">FK vehicle_id, source_vehicle_id (nullable)</text>
+    <text x="1112" y="902" font-size="10.5" fill="#14532d">FK issue_report_id (nullable)</text>
+    <text x="1112" y="916" font-size="10.5" fill="#14532d">FK maintenance_personnel_id, verified_by,</text>
+    <text x="1112" y="930" font-size="10.5" fill="#14532d">confirmed_by (users, nullable)</text>
+    <text x="1112" y="946" font-size="10.5" fill="#14532d">progress_status: Assigned|Under Repair|</text>
+    <text x="1112" y="960" font-size="10.5" fill="#14532d">On Hold|For Verification|Completed</text>
+    <text x="1112" y="976" font-size="9.5" fill="#15803d" font-style="italic">is_external, external_vendor, receipt_url</text>
+    <text x="1112" y="990" font-size="9.5" fill="#15803d" font-style="italic">performed_by_other (free text fallback)</text>
+  </g>
+
+  <!-- ActivityLog -->
+  <g>
+    <rect x="300" y="1000" width="240" height="100" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.4"/>
+    <rect x="300" y="1000" width="240" height="24" rx="8" fill="#ca8a04"/>
+    <text x="420" y="1017" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">activity_logs</text>
+    <text x="312" y="1042" font-size="10.5" fill="#713f12">PK log_id · FK barangay_id</text>
+    <text x="312" y="1056" font-size="10.5" fill="#713f12">FK user_id (nullable)</text>
+    <text x="312" y="1070" font-size="10.5" fill="#713f12">action, module, affected_record_id</text>
+    <text x="312" y="1086" font-size="9" fill="#854d0e" font-style="italic">audit trail — every create/update/status change</text>
+  </g>
+
+  <!-- Notification -->
+  <g>
+    <rect x="620" y="1000" width="220" height="100" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.4"/>
+    <rect x="620" y="1000" width="220" height="24" rx="8" fill="#ca8a04"/>
+    <text x="730" y="1017" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">notifications</text>
+    <text x="632" y="1042" font-size="10.5" fill="#713f12">PK notification_id</text>
+    <text x="632" y="1056" font-size="10.5" fill="#713f12">FK user_id, ticket_id (nullable)</text>
+    <text x="632" y="1070" font-size="10.5" fill="#713f12">title, message, type, read_at</text>
+  </g>
+
+  <!-- RegistrationSetting -->
+  <g>
+    <rect x="1000" y="1000" width="220" height="86" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.2"/>
+    <rect x="1000" y="1000" width="220" height="24" rx="8" fill="#ca8a04"/>
+    <text x="1110" y="1017" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">registration_settings</text>
+    <text x="1012" y="1042" font-size="10.5" fill="#713f12">PK id · FK barangay_id (unique, 1:1)</text>
+    <text x="1012" y="1056" font-size="10.5" fill="#713f12">staff_code</text>
+    <text x="1012" y="1072" font-size="9" fill="#854d0e" font-style="italic">one row per Barangay</text>
+  </g>
+
+  <!-- ConcernReport -->
+  <g>
+    <rect x="1260" y="1000" width="220" height="86" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.2"/>
+    <rect x="1260" y="1000" width="220" height="24" rx="8" fill="#ca8a04"/>
+    <text x="1370" y="1017" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">concern_reports</text>
+    <text x="1272" y="1042" font-size="10.5" fill="#713f12">PK id · FK resolved_by (nullable)</text>
+    <text x="1272" y="1056" font-size="10.5" fill="#713f12">concern_type, barangay_name (free text)</text>
+    <text x="1272" y="1072" font-size="9" fill="#854d0e" font-style="italic">public, unauthenticated submissions</text>
+  </g>
+
+  <!-- ================= LEGEND ================= -->
+  <g font-size="11" fill="#334155">
+    <rect x="40" y="1112" width="1740" height="72" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+    <line x1="60" y1="1132" x2="100" y2="1132" stroke="#b45309" stroke-width="1.6" marker-end="url(#one)"/>
+    <text x="108" y="1136">Tenancy (Province/City/Barangay/User)</text>
+    <line x1="60" y1="1152" x2="100" y2="1152" stroke="#2563eb" stroke-width="1.6" marker-end="url(#one)"/>
+    <text x="108" y="1156">Vehicle &amp; its direct records</text>
+    <line x1="420" y1="1132" x2="460" y2="1132" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#one)"/>
+    <text x="468" y="1136">Ticket workflow (issue → ticket → sub-issue → archive)</text>
+    <line x1="420" y1="1152" x2="460" y2="1152" stroke="#16a34a" stroke-width="1.6" marker-end="url(#one)"/>
+    <text x="468" y="1156">Preventive maintenance (condition/schedule/record)</text>
+    <line x1="900" y1="1132" x2="940" y2="1132" stroke="#0f766e" stroke-width="1.6" marker-end="url(#one)"/>
+    <text x="948" y="1136">Reference to users (one line stands in for several role columns)</text>
+    <line x1="900" y1="1152" x2="940" y2="1152" stroke="#ca8a04" stroke-width="1.6" marker-end="url(#one)"/>
+    <text x="948" y="1156">Audit / notification / registration / concern support tables</text>
+    <line x1="1380" y1="1132" x2="1420" y2="1132" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <text x="1428" y="1136">No DB-level FK — Eloquent relation or name-string match only</text>
+    <text x="60" y="1176" font-style="italic" fill="#64748b">Catalogs (vehicle_categories, fault_categories, maintenance_types) are shown top-right; most non-key columns are omitted for legibility — see Documentation.md for the full field list per table.</text>
+  </g>
+</svg>

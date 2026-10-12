@@ -1,0 +1,339 @@
+/* Split from App.css (lines 6183-6521). Order matters: see App.css. */
+/* --- Dashboard Banner & Weather Widget --- */
+.dashboard-banner {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+  color: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 10px 25px rgba(29, 78, 216, 0.15);
+  margin-bottom: 8px;
+}
+.dashboard-banner-welcome h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+}
+.dashboard-banner-welcome p {
+  font-size: 0.9rem;
+  opacity: 0.9;
+  margin: 0;
+}
+/* Compact variant — paired with Fleet Status instead of stretching full
+   width alone; smaller padding/type so the pairing reads as two cards of
+   similar visual weight rather than one dominating the row. */
+.dashboard-banner-compact {
+  padding: 16px 20px;
+}
+.dashboard-banner-compact .dashboard-banner-welcome {
+  flex: 1;
+  min-width: 0;
+}
+.dashboard-banner-compact .dashboard-banner-welcome h2 {
+  font-size: 1.05rem;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dashboard-banner-compact .dashboard-greeting-role {
+  font-size: 0.68rem;
+}
+.dashboard-banner-compact .dashboard-banner-welcome p {
+  font-size: 0.78rem;
+}
+.dashboard-banner-compact .dashboard-banner-widgets {
+  gap: 10px;
+}
+.dashboard-banner-compact .dashboard-banner-time {
+  padding: 8px 12px;
+  min-height: 0;
+  min-width: 0;
+}
+.dashboard-banner-compact .dashboard-banner-weather {
+  padding: 8px 14px;
+  gap: 10px;
+}
+.dashboard-banner-compact .weather-temp {
+  font-size: 1.3rem;
+}
+@media (max-width: 900px) {
+  .dashboard-banner-compact {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+}
+.dashboard-banner-weather {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  padding: 12px 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.weather-temp {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin: 0;
+}
+.weather-details {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.weather-city {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+.weather-desc {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.weather-extra {
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+.weather-icon {
+  font-size: 2.2rem;
+}/* --- Local Search Component --- */
+.local-search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 280px;
+  max-width: 100%;
+}
+.local-search-icon {
+  position: absolute;
+  left: 12px;
+  width: 16px;
+  height: 16px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+.local-search-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 36px 0 38px;
+  font-size: 0.88rem;
+  border-radius: 9px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  transition: all 0.2s ease;
+}
+.local-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.local-search-clear {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+.local-search-clear:hover {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.local-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.export-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1.5px solid #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.export-btn:hover {
+  background: #dbeafe;
+  transform: translateY(-1px);
+}
+
+/* Icon-only "+ Add" button — same square footprint as .export-btn, but
+   solid blue since it's the primary create action for the module. */
+.icon-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1.5px solid #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.icon-add-btn:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  transform: translateY(-1px);
+}
+/* Labeled variant — the primary create action reads as a real button
+   ("＋ Add Vehicle") instead of a bare icon nobody can find. Collapses back
+   to the square icon on narrow screens. */
+.icon-add-btn.has-label {
+  width: auto;
+  gap: 7px;
+  padding: 0 16px 0 13px;
+}
+.icon-add-btn-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .icon-add-btn.has-label { width: 38px; padding: 0; }
+  .icon-add-btn-label { display: none; }
+}
+
+.export-btn.is-active {
+  background: #dbeafe;
+}
+
+/* Choose Columns toolbar button + popover — show/hide a table's columns
+   and drag to reorder them, matching the realcore reference. Currently
+   wired to the Vehicle Management table only (the pilot); other tables
+   can opt in later by passing a `columnChooser` prop through
+   LocalSearchInput the same way. */
+.column-chooser {
+  position: relative;
+}
+.column-chooser-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 260px;
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+}
+.column-chooser-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  flex-shrink: 0;
+}
+.column-chooser-head h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-strong, #0f172a);
+}
+.column-chooser-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 14px;
+  padding: 6px 10px;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 8px;
+  color: var(--text-muted, #64748b);
+  flex-shrink: 0;
+}
+.column-chooser-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  font-size: 0.8rem;
+  color: var(--text-strong, #0f172a);
+}
+.column-chooser-list {
+  overflow-y: auto;
+  padding: 0 6px 6px;
+}
+.column-chooser-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: grab;
+}
+.column-chooser-row:hover {
+  background: var(--surface-2, #f8fafc);
+}
+.column-chooser-row:active {
+  cursor: grabbing;
+}
+.column-chooser-grip {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint, #cbd5e1);
+  flex-shrink: 0;
+}
+.column-chooser-grip.is-disabled {
+  opacity: 0.4;
+}
+.column-chooser-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--text-strong, #0f172a);
+  cursor: pointer;
+}
+.column-chooser-checkbox input {
+  flex-shrink: 0;
+  width: auto;
+  margin: 0;
+}
+.column-chooser-checkbox span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.column-chooser-empty {
+  margin: 10px 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted, #64748b);
+}
+.column-chooser-foot {
+  flex-shrink: 0;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-subtle, #e2e8f0);
+}

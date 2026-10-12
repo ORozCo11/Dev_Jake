@@ -1,0 +1,160 @@
+/* Split from App.css (lines 3409-3568). Order matters: see App.css. */
+/* BUTTONS */
+.primary-button, .primary-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  padding: 0 24px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+  text-decoration: none;
+}
+.primary-button:hover:not(:disabled), .primary-link:hover {
+  background: linear-gradient(90deg, #1d4ed8, #1e40af);
+  box-shadow: 0 6px 20px rgba(29, 78, 216, 0.35);
+  transform: translateY(-2px);
+}
+.primary-button:active {
+  transform: translateY(-0.5px);
+}
+.primary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+ 
+/* SUB-BUTTONS */
+.ghost-button, .row-actions button, .report-heading button, table button, .table-shell button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  padding: 0 20px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #475569;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1.5px solid #cbd5e1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.ghost-button:hover, .row-actions button:hover, .report-heading button:hover, table button:hover, .table-shell button:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
+}
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.row-actions button, table button, .table-shell button {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+/* Compact icon-only row actions — replaces wide text buttons in table cells. */
+.row-actions button.icon-btn,
+table button.icon-btn,
+.table-shell button.icon-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  gap: 0;
+}
+.row-actions button.icon-btn svg,
+table button.icon-btn svg,
+.table-shell button.icon-btn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+/* --- Action Button Color Modifiers --- */
+.row-actions button.btn-edit-action, .DataTable button.btn-edit-action, button.btn-edit-action {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.15);
+}
+.row-actions button.btn-edit-action:hover, .DataTable button.btn-edit-action:hover, button.btn-edit-action:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.3);
+}
+
+.row-actions button.btn-delete-action, .DataTable button.btn-delete-action, button.btn-delete-action {
+  background: #dc2626;
+  border-color: #ef4444;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.15);
+}
+.row-actions button.btn-delete-action:hover, .DataTable button.btn-delete-action:hover, button.btn-delete-action:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+}
+
+/* Reversible actions (archive / deactivate) — amber, NOT red. Red is reserved
+   for truly destructive/permanent actions so users can tell them apart. */
+.row-actions button.btn-archive-action, .DataTable button.btn-archive-action, button.btn-archive-action {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.18);
+}
+.row-actions button.btn-archive-action:hover, .DataTable button.btn-archive-action:hover, button.btn-archive-action:hover {
+  background: #d97706;
+  border-color: #d97706;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3);
+}
+
+.row-actions button.btn-confirm-action, .DataTable button.btn-confirm-action, button.btn-confirm-action {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.15);
+}
+.row-actions button.btn-confirm-action:hover, .DataTable button.btn-confirm-action:hover, button.btn-confirm-action:hover {
+  background: #059669;
+  border-color: #059669;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+
+.row-actions button.btn-reopen-action, .DataTable button.btn-reopen-action, button.btn-reopen-action {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.15);
+}
+.row-actions button.btn-reopen-action:hover, .DataTable button.btn-reopen-action:hover, button.btn-reopen-action:hover {
+  background: #d97706;
+  border-color: #d97706;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3);
+}
+
+ 
+.report-heading button { background: linear-gradient(180deg, #eff6ff, #dbeafe); color: #1e3a8a; }
+ 
+.auth-subtitle, .report-heading p, .module-description { color: #334155; }

@@ -1,0 +1,514 @@
+/* Field-work forms: Log Repairs, Inspect, Verify (workspace/tickets/*). */
+
+/* Context card: what this job is, who's next, why it came back. */
+.work-context {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border, #cddcf0);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2, #f7faff);
+}
+.work-context-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.work-context-head h3 {
+  margin: var(--space-1) 0;
+  font-size: var(--font-size-xl);
+  color: var(--text-strong, #071a35);
+}
+.work-context-head p {
+  margin: 0;
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-sm);
+}
+.work-context-kicker {
+  color: var(--primary-strong, #2366c2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.work-context-step {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--status-info-border);
+  border-radius: var(--radius-pill);
+  background: var(--status-info-bg);
+  color: var(--status-info-fg);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+.work-context-instructions {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}
+.work-context .notice {
+  margin: 0;
+}
+.work-context .notice h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.work-context-logs summary {
+  min-height: var(--touch-target);
+  display: inline-flex;
+  align-items: center;
+  color: var(--primary-strong, #2366c2);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+/* Sections inside the form. */
+.log-repairs-form,
+.work-form {
+  display: grid;
+  gap: var(--space-3);
+}
+.work-section {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle, #e2ebf7);
+  border-radius: var(--radius-md);
+  background: var(--surface-2, #f8fafc);
+}
+.work-section.is-external {
+  border-color: var(--status-info-border);
+  background: var(--status-info-bg);
+}
+.work-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-strong, #071a35);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+.work-hint {
+  margin: 0;
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+.work-section textarea,
+.work-section input[type="text"],
+.work-section input[type="number"],
+.work-section select {
+  width: 100%;
+  min-height: var(--touch-target);
+}
+.work-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.work-row > select,
+.work-row > input {
+  flex: 1 1 220px;
+  width: auto;
+}
+.work-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-2);
+}
+.work-inline-field {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted, #56657a);
+}
+.work-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(200px, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+.work-columns > .work-section:last-child {
+  grid-column: 1 / -1;
+}
+.work-columns.is-muted {
+  opacity: 0.55;
+}
+
+/* Parts table: real column headings instead of unlabeled boxes. */
+.work-parts {
+  display: grid;
+  gap: var(--space-2);
+}
+.work-parts-head,
+.work-parts-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr) var(--touch-target);
+  gap: var(--space-2);
+  align-items: center;
+}
+.work-parts-head {
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+.work-parts-row .icon-btn {
+  width: var(--touch-target);
+  height: var(--touch-target);
+}
+.work-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle, #e2ebf7);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+.work-total strong {
+  color: var(--status-success-fg);
+  font-size: var(--font-size-lg);
+}
+.work-draft-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-xs);
+}
+.work-attachment-thumb {
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border, #cddcf0);
+  flex-shrink: 0;
+}
+.work-attachment-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .work-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* .work-label is a real <label> inside a .smart-form, so undo the floating-
+   caption treatment SmartForm's own fields get (column flex, centred text,
+   absolutely-positioned child spans). */
+.smart-form .work-label {
+  position: static;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  margin-top: 0;
+  text-align: left;
+}
+.smart-form .work-label > span {
+  position: static;
+  transform: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+.smart-form .work-label > .required-asterisk {
+  text-decoration: none;
+  color: var(--status-danger-fg);
+}
+/* Feedback notices in the context card read top-to-bottom (the global
+   .notice is a two-column grid that squeezes on phones). */
+.work-context .notice {
+  display: block;
+}
+.work-context .notice h4 {
+  margin: 0 0 var(--space-1);
+}
+.work-context .notice p {
+  margin: 0;
+}
+
+/* Inspect: what the chosen result will do, and a final review line. */
+.inspect-consequence {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}
+.inspect-consequence.is-warn {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+}
+.inspect-consequence.is-ok {
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+.inspect-consequence svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+.inspect-review {
+  margin: 0;
+  color: var(--text, #17243a);
+  font-size: var(--font-size-sm);
+}
+
+/* Inspect: the original issue report and the vehicle's other open tickets,
+   shown above the form. */
+.inspect-reported,
+.inspect-related {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border, #cddcf0);
+  border-radius: var(--radius-md);
+  background: var(--surface-2, #f7faff);
+}
+.inspect-reported {
+  border-left: 4px solid var(--status-warning-border);
+}
+.inspect-reported h4,
+.inspect-related h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-strong, #071a35);
+  font-size: var(--font-size-sm);
+}
+.inspect-reported-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+.inspect-reported-photo img {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border: 1px solid var(--border, #cddcf0);
+  border-radius: var(--radius-sm);
+}
+.inspect-related ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}
+
+/* Inspect: notes field (sits outside a SmartForm floating-label <label>). */
+.inspect-notes {
+  display: grid;
+  gap: var(--space-1);
+}
+.inspect-notes textarea {
+  width: 100%;
+  min-height: 84px;
+}
+.inspect-notes small {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Inspect: root causes card (was inline light-only colours). */
+.inspect-rootcause-card {
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: var(--radius-md);
+  background: var(--surface-2, #f8fafc);
+}
+.inspect-rootcause-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 var(--space-1);
+  color: var(--text-strong, #0f172a);
+}
+.inspect-rootcause-card > p {
+  margin: 0 0 var(--space-3);
+}
+.inspect-rootcause-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  color: var(--text-muted, #64748b);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Inspect: review summary shown before the real submit. */
+.inspect-review-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 2px solid var(--status-info-border);
+  border-radius: var(--radius-lg);
+  background: var(--surface, #ffffff);
+}
+.inspect-review-card h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-strong, #071a35);
+}
+.inspect-review-card dl {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.inspect-review-card dt {
+  color: var(--text-muted, #56657a);
+}
+.inspect-review-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.inspect-review-card ol {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+.inspect-review-card .form-actions {
+  margin-top: 0;
+}
+@media (max-width: 480px) {
+  .inspect-review-card dl {
+    grid-template-columns: 1fr;
+  }
+  .inspect-review-card dd {
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* Verification: the repair being checked, shown before the tests. */
+.verify-context {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border, #cddcf0);
+  border-radius: var(--radius-md);
+  background: var(--surface-2, #f7faff);
+}
+.verify-context-row {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) 1fr;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.verify-context-row > span {
+  color: var(--text-muted, #56657a);
+}
+
+/* Return-to-service decision at ticket close. */
+.rts-step {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-4);
+  border: 2px solid var(--status-info-border);
+  border-radius: var(--radius-lg);
+  background: var(--surface, #ffffff);
+}
+.rts-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-strong, #071a35);
+}
+.rts-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1.5px solid var(--border, #cddcf0);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.rts-option input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.rts-option strong {
+  display: block;
+  font-size: var(--font-size-md);
+}
+.rts-option small {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+.rts-option.is-selected {
+  border-color: var(--status-success-fg);
+  background: var(--status-success-bg);
+}
+.rts-option.is-danger.is-selected {
+  border-color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+}
+.rts-option:has(input:focus-visible) {
+  outline: 3px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* Log Repairs: compact job summary pinned while scrolling the form. */
+.work-sticky-summary {
+  position: sticky;
+  /* Below the fixed topbar (its height is measured into this var). */
+  top: calc(var(--topbar-height, 64px) + var(--space-2));
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border, #cddcf0);
+  border-radius: var(--radius-md);
+  background: var(--surface, #ffffff);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  font-size: var(--font-size-sm);
+}
+.work-sticky-summary-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-strong, #071a35);
+  font-weight: var(--font-weight-bold);
+}
+.work-sticky-summary-meta {
+  color: var(--text-muted, #56657a);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Polygon, Popup, TileLayer, Tooltip, useMap, ZoomControl } from 'react-leaflet';
-import { toPng } from 'html-to-image';
 import api from '../api/axios';
 import {
   PAKNAAN_CENTER,
   PAKNAAN_POLYGON,
 } from '../data/paknaanLocationDensity';
+import { geoJsonToRings } from '../utils/boundary';
+import useDialogA11y from '../hooks/useDialogA11y';
 
 // Normalizes a hub record from the Laravel `/hubs` API into the shape the map/UI expects.
 function normalizeHub(record) {
@@ -25,6 +26,11 @@ function normalizeHub(record) {
     isCustom: !record.is_default,
     isHidden: !!record.is_hidden,
   };
+}
+
+async function loadHubs() {
+  const response = await api.get('/hubs');
+  return response.data.map(normalizeHub);
 }
 
 // Was CARTO's basemaps.cartocdn.com "light_all" — free and keyless when this
@@ -113,50 +119,6 @@ function isValidCoordinate(value) {
   return Number.isFinite(value);
 }
 
-// Converts a GeoJSON Polygon/MultiPolygon geometry into an array of Leaflet
-// LatLng rings — one ring per Polygon, one per part of a MultiPolygon (e.g.
-// islands). Holes are dropped since this is only ever used to draw a
-// decorative boundary outline, not an exact administrative shape.
-// Malformed/unexpected boundary data (e.g. a ring that isn't an array of
-// [lng, lat] pairs) must not throw here — this runs inside a useMemo during
-// render, so an uncaught error would crash the whole Workspace with a white
-// screen. Any ring that doesn't look right is skipped (and logged) instead.
-function isLngLatPair(point) {
-  return Array.isArray(point) && point.length >= 2
-    && Number.isFinite(point[0]) && Number.isFinite(point[1]);
-}
-
-function toLatLngRing(ring) {
-  if (!Array.isArray(ring) || !ring.every(isLngLatPair)) {
-    console.warn('LocationDensityMap: skipping malformed boundary ring', ring);
-    return null;
-  }
-  return ring.map(([lng, lat]) => [lat, lng]);
-}
-
-function geoJsonToRings(geometry) {
-  if (!geometry) return [];
-
-  if (geometry.type === 'Polygon') {
-    if (!Array.isArray(geometry.coordinates)) {
-      console.warn('LocationDensityMap: skipping malformed Polygon geometry', geometry);
-      return [];
-    }
-    const ring = toLatLngRing(geometry.coordinates[0]);
-    return ring ? [ring] : [];
-  }
-  if (geometry.type === 'MultiPolygon') {
-    if (!Array.isArray(geometry.coordinates)) {
-      console.warn('LocationDensityMap: skipping malformed MultiPolygon geometry', geometry);
-      return [];
-    }
-    return geometry.coordinates
-      .map((polygon) => (Array.isArray(polygon) ? toLatLngRing(polygon[0]) : null))
-      .filter(Boolean);
-  }
-  return [];
-}
-
 function normalizeLocation(value = '') {
   return String(value)
     .trim()
@@ -218,42 +180,14 @@ function groupVehiclesByHub(vehicles, hubs) {
   return Array.from(groups.values());
 }
 
-function MapClickHandler({ addMode, onPickLocation }) {
-  const map = useMap();
-
-  useEffect(() => {
-    const container = map.getContainer();
-
-    if (addMode) {
-      map.dragging.disable();
-      container.style.cursor = 'crosshair';
-    } else {
-      map.dragging.enable();
-      container.style.cursor = '';
-    }
-
-    const handleClick = (e) => {
-      if (!addMode) return;
-      onPickLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
-    };
-
-    map.on('click', handleClick);
-
-    return () => {
-      map.off('click', handleClick);
-      container.style.cursor = '';
-    };
-  }, [map, addMode, onPickLocation]);
-
-  return null;
-}
-
 // Captures the live Leaflet map (tiles + overlays) to a PNG and triggers a download.
-async function captureMapToPng(mapEl) {
+async function captureMapToPng(mapEl, areaLabel = '') {
   if (!mapEl) {
     throw new Error('Map element not found');
   }
 
+  // Loaded on demand — only the Download button needs it.
+  const { toPng } = await import('html-to-image');
   const dataUrl = await toPng(mapEl, {
     cacheBust: true,
     pixelRatio: 2,
@@ -266,12 +200,16 @@ async function captureMapToPng(mapEl) {
       node.classList.contains('leaflet-control-zoom')
       || node.classList.contains('leaflet-control-attribution')
       || node.classList.contains('location-density-basemap-toggle')
+      || node.classList.contains('p23-map-tile-error')
     )),
   });
 
   const link = document.createElement('a');
   link.href = dataUrl;
-  link.download = `vehicle-map-${new Date().toISOString().split('T')[0]}.png`;
+  // Barangay + date in the filename so a downloaded snapshot still says
+  // which area and day it shows once it leaves the app (UI audit §15).
+  const areaSlug = String(areaLabel).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  link.download = `vehicle-map-${areaSlug ? `${areaSlug}-` : ''}${new Date().toISOString().split('T')[0]}.png`;
   link.click();
 }
 
@@ -378,16 +316,17 @@ function LocationDensityMap({
   onClearSelectedVehicle = null,
   onHubsChange = null,
   canManageHubs = false,
-  // { geometry: GeoJSON Polygon|MultiPolygon, label, level: 'city'|'barangay',
-  //   fallback: bool, requestedLabel?, requestedLevel? } | null — set by the
-  // admin topbar's city/barangay selector. Falls back to the hardcoded
-  // Paknaan outline below when nothing is selected. `fallback` marks a shape
-  // standing in for a narrower one that has no outline on file (a barangay
-  // showing its city); `requestedLabel` is what was actually asked for.
+  // Navigates to the dedicated "Add Location" form page — Add Hub used to
+  // start a click-the-map-to-pin mode right here, but that page already
+  // does the same POST /hubs with a proper name/address form and its own
+  // live map, so this button just goes there now instead of duplicating it.
+  onAddHub = null,
+  // { geometry: GeoJSON Polygon|MultiPolygon, label: string } | null — set
+  // by the admin topbar's barangay/city selector. Falls back to the
+  // hardcoded Paknaan outline below when nothing is selected.
   boundaryOverride = null,
 }) {
   const [hubRecords, setHubRecords] = useState([]);
-  const [addMode, setAddMode] = useState(false);
   const [pendingLatLng, setPendingLatLng] = useState(null);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [hubNameDraft, setHubNameDraft] = useState('');
@@ -396,6 +335,14 @@ function LocationDensityMap({
   const [resetViewRequest, setResetViewRequest] = useState(0);
   const [isMaximized, setIsMaximized] = useState(false);
   const [basemap, setBasemap] = useState('satellite'); // 'map' | 'satellite'
+  // UI audit §15/§27 — hub-load and tile failures used to fail silently
+  // (console only), leaving an empty map that looked like "no hubs".
+  const [hubsLoadFailed, setHubsLoadFailed] = useState(false);
+  const [tileErrors, setTileErrors] = useState({ map: false, satellite: false });
+  const tileEvents = useMemo(
+    () => ({ tileerror: () => setTileErrors((prev) => (prev[basemap] ? prev : { ...prev, [basemap]: true })) }),
+    [basemap],
+  );
   const mapShellRef = useRef(null);
   const nameInputRef = useRef(null);
 
@@ -414,22 +361,35 @@ function LocationDensityMap({
     };
   }, [isMaximized]);
 
-  const fetchHubs = useCallback(async () => {
-    try {
-      const response = await api.get('/hubs');
-      const normalized = response.data.map(normalizeHub);
-      setHubRecords(normalized);
-      if (onHubsChange) {
-        onHubsChange(normalized.filter((hub) => !hub.isHidden));
-      }
-    } catch (error) {
-      console.error('Failed to load hubs:', error);
+  const applyHubs = useCallback((normalized) => {
+    setHubRecords(normalized);
+    if (onHubsChange) {
+      onHubsChange(normalized.filter((hub) => !hub.isHidden));
     }
   }, [onHubsChange]);
 
+  const fetchHubs = useCallback(async () => {
+    try {
+      applyHubs(await loadHubs());
+      setHubsLoadFailed(false);
+    } catch (error) {
+      console.error('Failed to load hubs:', error);
+      setHubsLoadFailed(true);
+    }
+  }, [applyHubs]);
+
+  // Initial load. Ignores a response that arrives after unmount or after
+  // onHubsChange changed, so a slow request can't overwrite newer data.
   useEffect(() => {
-    fetchHubs().catch(() => {});
-  }, [fetchHubs]);
+    let cancelled = false;
+    loadHubs()
+      .then((normalized) => { if (!cancelled) applyHubs(normalized); })
+      .catch((error) => {
+        console.error('Failed to load hubs:', error);
+        if (!cancelled) setHubsLoadFailed(true);
+      });
+    return () => { cancelled = true; };
+  }, [applyHubs]);
 
   // When the naming modal opens, focus the input.
   useEffect(() => {
@@ -438,10 +398,14 @@ function LocationDensityMap({
     }
   }, [pendingLatLng]);
 
-  const handlePickLocation = useCallback((latLng) => {
-    setAddMode(false);
+  // Opens the same naming dialog without requiring a map click first — the
+  // lat/lng inputs in it start at the barangay's known center and are fully
+  // editable, so a location can be added by typing coordinates alone (e.g.
+  // copied from another map/GPS reading) instead of having to click the
+  // exact spot.
+  const openManualEntry = useCallback(() => {
     setHubNameDraft('');
-    setPendingLatLng(latLng);
+    setPendingLatLng({ lat: PAKNAAN_CENTER.lat, lng: PAKNAAN_CENTER.lng });
   }, []);
 
   const cancelNaming = useCallback(() => {
@@ -449,17 +413,32 @@ function LocationDensityMap({
     setHubNameDraft('');
   }, []);
 
+  // Both fields are typed as text (not <input type="number">'s value, which
+  // silently reverts to "" on an invalid intermediate keystroke like a
+  // trailing "-" or ".") — parsed to numbers only at save time, so the
+  // field the map click seeded can still be hand-edited digit by digit.
+  const updatePendingCoord = useCallback((axis, rawValue) => {
+    setPendingLatLng((prev) => ({ ...(prev ?? {}), [axis]: rawValue }));
+  }, []);
+
+  const pendingLat = Number(pendingLatLng?.lat);
+  const pendingLng = Number(pendingLatLng?.lng);
+  const hasValidPendingCoords = pendingLatLng
+    && String(pendingLatLng.lat).trim() !== '' && String(pendingLatLng.lng).trim() !== ''
+    && Number.isFinite(pendingLat) && Number.isFinite(pendingLng)
+    && pendingLat >= -90 && pendingLat <= 90 && pendingLng >= -180 && pendingLng <= 180;
+
   const confirmNaming = useCallback(async () => {
     const name = hubNameDraft.trim();
-    if (!name || !pendingLatLng || !canManageHubs) {
+    if (!name || !hasValidPendingCoords || !canManageHubs) {
       return;
     }
 
     try {
       await api.post('/hubs', {
         name,
-        lat: pendingLatLng.lat,
-        lng: pendingLatLng.lng,
+        lat: pendingLat,
+        lng: pendingLng,
         label: name.substring(0, 2).toUpperCase(),
       });
       await fetchHubs();
@@ -470,13 +449,13 @@ function LocationDensityMap({
       setPendingLatLng(null);
       setHubNameDraft('');
     }
-  }, [canManageHubs, fetchHubs, hubNameDraft, pendingLatLng]);
+  }, [canManageHubs, fetchHubs, hasValidPendingCoords, hubNameDraft, pendingLat, pendingLng]);
 
-  const captureMap = useCallback(async () => {
+  const captureMap = useCallback(async (areaLabel) => {
     setCapturing(true);
     setMapNotice(null);
     try {
-      await captureMapToPng(mapShellRef.current?.querySelector('.location-density-map'));
+      await captureMapToPng(mapShellRef.current?.querySelector('.location-density-map'), areaLabel);
       setMapNotice({ type: 'success', text: 'Map image downloaded.' });
     } catch (error) {
       console.error('Failed to capture map:', error);
@@ -493,6 +472,11 @@ function LocationDensityMap({
   const cancelDeleteHub = useCallback(() => {
     setDeleteCandidate(null);
   }, []);
+
+  const namingDialogRef = useRef(null);
+  const deleteDialogRef = useRef(null);
+  useDialogA11y(namingDialogRef, { open: Boolean(pendingLatLng), onClose: cancelNaming, initialFocusRef: nameInputRef });
+  useDialogA11y(deleteDialogRef, { open: Boolean(deleteCandidate), onClose: cancelDeleteHub });
 
   const confirmDeleteHub = useCallback(async () => {
     if (!deleteCandidate || !canManageHubs) return;
@@ -583,6 +567,16 @@ function LocationDensityMap({
   }
   const selectedVehicleIcon = useMemo(() => createSelectedVehicleIcon(), []);
 
+  // Vehicles still parked at the hub pending deletion — the backend already
+  // refuses this delete server-side (a vehicle's current_location still
+  // points at it), but surfacing it here lets the Admin see which vehicles
+  // are blocking it and act on them, instead of only finding out after the
+  // delete request comes back with an error.
+  const deleteCandidateVehicles = useMemo(() => {
+    if (!deleteCandidate) return [];
+    return vehicleGroups.find((group) => group.hub.id === deleteCandidate.id)?.vehicles ?? [];
+  }, [deleteCandidate, vehicleGroups]);
+
   return (
     <div className={`location-density-map-shell${isMaximized ? ' is-maximized' : ''}`} ref={mapShellRef}>
       <div className="location-density-toolbar">
@@ -593,10 +587,27 @@ function LocationDensityMap({
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
           {canManageHubs
-            ? (addMode ? 'Click anywhere on the map to drop the new hub.' : 'Click "Add Hub", then click the map to pin a new location.')
+            ? '"Add Hub" opens the add-location form, or use "By Coordinates" to type its name and lat/lng directly.'
             : 'Hubs shown here are shared by every workspace user.'}
         </span>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="p23-map-toolbar-actions">
+          {/* UI audit §15 — "Fit to barangay": re-frames the map on the
+              active boundary after panning/zooming away (same reset the
+              Cancel Focus action already used). */}
+          <button
+            type="button"
+            className="location-density-btn is-secondary"
+            onClick={() => setResetViewRequest((value) => value + 1)}
+            title={`Zoom the map back to the whole ${boundaryLabel} area`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 8V3h5" />
+              <path d="M21 8V3h-5" />
+              <path d="M3 16v5h5" />
+              <path d="M21 16v5h-5" />
+            </svg>
+            Fit to {boundaryLabel}
+          </button>
           {selectedVehicleId != null && (
             <button
               type="button"
@@ -628,32 +639,36 @@ function LocationDensityMap({
           {canManageHubs && (
             <button
               type="button"
-              className={`location-density-btn ${addMode ? 'is-active' : 'is-primary'}`}
-              onClick={() => setAddMode((prev) => !prev)}
+              className="location-density-btn is-primary"
+              onClick={onAddHub}
             >
-              {addMode ? (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                  Cancel
-                </>
-              ) : (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
-                    <circle cx="12" cy="9" r="2.5" fill="currentColor" stroke="none" />
-                  </svg>
-                  Add Hub
-                </>
-              )}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+                <circle cx="12" cy="9" r="2.5" fill="currentColor" stroke="none" />
+              </svg>
+              Add Hub
+            </button>
+          )}
+          {canManageHubs && (
+            <button
+              type="button"
+              className="location-density-btn is-secondary"
+              onClick={openManualEntry}
+              title="Type a name and coordinates instead of clicking the map"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              By Coordinates
             </button>
           )}
           <button
             type="button"
             className="location-density-btn is-secondary"
-            onClick={captureMap}
+            onClick={() => captureMap(boundaryLabel)}
             disabled={capturing}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -693,14 +708,14 @@ function LocationDensityMap({
           </button>
         </div>
       </div>
-      <div className="location-density-legend" aria-label="Map legend">
+      <div className="location-density-legend" role="group" aria-label="Map legend">
         <span className="location-density-legend-item">
           <span className="legend-symbol legend-symbol-hub" aria-hidden="true" />
-          Hub
+          Hub (assigned station)
         </span>
         <span className="location-density-legend-item">
           <span className="legend-symbol legend-symbol-vehicle" aria-hidden="true" />
-          Vehicle count
+          Number of vehicles at a hub
         </span>
         <span className="location-density-legend-item">
           <span className="legend-symbol legend-symbol-focus" aria-hidden="true">
@@ -709,7 +724,7 @@ function LocationDensityMap({
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </span>
-          FOCUS
+          Focused vehicle
         </span>
         {boundaryRings.length > 0 && (
           <span className="location-density-legend-item">
@@ -717,17 +732,19 @@ function LocationDensityMap({
             {boundaryLabel} boundary
           </span>
         )}
+        <span className="location-density-legend-item p23-legend-note">
+          Positions are assigned hubs, not live GPS.
+        </span>
       </div>
+      {hubsLoadFailed && (
+        <div className="location-density-notice error" role="alert">
+          <span>Hubs couldn&apos;t be loaded, so vehicles may be missing from the map. The Vehicle Location Record tab still lists every vehicle.</span>
+          <button type="button" className="p23-notice-action" onClick={fetchHubs}>Retry</button>
+        </div>
+      )}
       {hasBoundarySelection && !hasBoundaryGeometry && (
         <div className="location-density-notice info" role="status">
           <span>No boundary outline on file for {boundaryLabel} yet — only Mandaue City barangays have one today. Hubs and vehicles below aren't affected.</span>
-        </div>
-      )}
-      {hasBoundarySelection && hasBoundaryGeometry && boundaryOverride?.fallback && (
-        <div className="location-density-notice info" role="status">
-          <span>
-            No boundary on file yet for {boundaryOverride.requestedLabel} — showing {boundaryLabel} instead.
-          </span>
         </div>
       )}
       {mapNotice && (
@@ -756,14 +773,13 @@ function LocationDensityMap({
         zoom={16}
         zoomControl={false}
       >
-        <MapClickHandler addMode={addMode} onPickLocation={handlePickLocation} />
         {basemap === 'satellite' ? (
           <>
-            <TileLayer attribution={ESRI_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={ESRI_IMAGERY_URL} />
+            <TileLayer attribution={ESRI_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={ESRI_IMAGERY_URL} eventHandlers={tileEvents} />
             <TileLayer attribution="" crossOrigin="anonymous" maxZoom={19} url={ESRI_LABELS_URL} />
           </>
         ) : (
-          <TileLayer attribution={STREET_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={STREET_TILE_URL} />
+          <TileLayer attribution={STREET_ATTRIBUTION} crossOrigin="anonymous" maxZoom={19} url={STREET_TILE_URL} eventHandlers={tileEvents} />
         )}
 
         {/* Map / Satellite base-layer toggle — floats over the map like Google.
@@ -771,11 +787,18 @@ function LocationDensityMap({
             clicks from panning the map underneath. */}
         <div
           className="location-density-basemap-toggle"
+          role="group"
+          aria-label="Base map"
           ref={(el) => { if (el) { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); } }}
         >
-          <button type="button" className={basemap === 'map' ? 'is-active' : ''} onClick={() => setBasemap('map')}>Map</button>
-          <button type="button" className={basemap === 'satellite' ? 'is-active' : ''} onClick={() => setBasemap('satellite')}>Satellite</button>
+          <button type="button" aria-pressed={basemap === 'map'} className={basemap === 'map' ? 'is-active' : ''} onClick={() => setBasemap('map')}>Map</button>
+          <button type="button" aria-pressed={basemap === 'satellite'} className={basemap === 'satellite' ? 'is-active' : ''} onClick={() => setBasemap('satellite')}>Satellite</button>
         </div>
+        {tileErrors[basemap] && (
+          <div className="p23-map-tile-error" role="status">
+            Some map tiles didn&apos;t load — check your connection or switch to {basemap === 'satellite' ? 'Map' : 'Satellite'}.
+          </div>
+        )}
         {/* Dark casing (halo) drawn UNDER the boundary so the yellow line pops
             on both the light street map and the dark satellite imagery. One
             <Polygon> per ring so a MultiPolygon (e.g. a city with islands)
@@ -806,6 +829,7 @@ function LocationDensityMap({
           <Marker
             icon={hubIcons[hub.id]}
             key={hub.id}
+            title={hub.name}
             position={[hub.lat, hub.lng]}
             zIndexOffset={1050}
           >
@@ -847,6 +871,7 @@ function LocationDensityMap({
           <Marker
             icon={vehicleIcons[hub.id]}
             key={`vehicles-${hub.id}`}
+            title={`${hubVehicles.length} vehicle${hubVehicles.length === 1 ? '' : 's'} at ${hub.name}`}
             position={[hub.lat, hub.lng]}
             zIndexOffset={1400}
           >
@@ -882,6 +907,7 @@ function LocationDensityMap({
         {selectedVehicleGroup && (
           <Marker
             icon={selectedVehicleIcon}
+            title={`Selected vehicle at ${selectedVehicleGroup.hub.name}`}
             key={`selected-vehicle-${selectedVehicleGroup.vehicle.vehicle_id}`}
             position={[selectedVehicleGroup.hub.lat, selectedVehicleGroup.hub.lng]}
             zIndexOffset={1750}
@@ -915,6 +941,8 @@ function LocationDensityMap({
       {pendingLatLng && (
         <div className="hub-modal-overlay" onMouseDown={cancelNaming}>
           <div
+            ref={namingDialogRef}
+            tabIndex={-1}
             className="hub-modal"
             role="dialog"
             aria-modal="true"
@@ -930,10 +958,6 @@ function LocationDensityMap({
               </span>
               <h3 id="hub-modal-title">Name this location hub</h3>
             </div>
-
-            <p className="hub-modal-coords">
-              Lat {pendingLatLng.lat.toFixed(6)} · Lng {pendingLatLng.lng.toFixed(6)}
-            </p>
 
             <label className="hub-modal-label" htmlFor="hub-name-input">Hub name</label>
             <input
@@ -951,6 +975,51 @@ function LocationDensityMap({
               maxLength={60}
             />
 
+            {/* Seeded from wherever the map was clicked (or the barangay
+                center, for the "By Coordinates" entry point) but always
+                editable — clicking gets you close, typing gets you exact. */}
+            <div className="hub-modal-coord-fields">
+              <div>
+                <label className="hub-modal-label" htmlFor="hub-lat-input">Latitude</label>
+                <input
+                  id="hub-lat-input"
+                  className="hub-modal-input"
+                  type="number"
+                  step="any"
+                  min={-90}
+                  max={90}
+                  placeholder="e.g. 10.346106"
+                  value={pendingLatLng.lat}
+                  onChange={(e) => updatePendingCoord('lat', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') confirmNaming();
+                    if (e.key === 'Escape') cancelNaming();
+                  }}
+                />
+              </div>
+              <div>
+                <label className="hub-modal-label" htmlFor="hub-lng-input">Longitude</label>
+                <input
+                  id="hub-lng-input"
+                  className="hub-modal-input"
+                  type="number"
+                  step="any"
+                  min={-180}
+                  max={180}
+                  placeholder="e.g. 123.961186"
+                  value={pendingLatLng.lng}
+                  onChange={(e) => updatePendingCoord('lng', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') confirmNaming();
+                    if (e.key === 'Escape') cancelNaming();
+                  }}
+                />
+              </div>
+            </div>
+            {!hasValidPendingCoords && (
+              <p className="hub-modal-coord-hint">Enter a latitude between -90 and 90, and a longitude between -180 and 180.</p>
+            )}
+
             <div className="hub-modal-actions">
               <button type="button" className="hub-modal-btn hub-modal-cancel" onClick={cancelNaming}>
                 Cancel
@@ -959,7 +1028,7 @@ function LocationDensityMap({
                 type="button"
                 className="hub-modal-btn hub-modal-save"
                 onClick={confirmNaming}
-                disabled={!hubNameDraft.trim()}
+                disabled={!hubNameDraft.trim() || !hasValidPendingCoords}
               >
                 Save Hub
               </button>
@@ -971,8 +1040,10 @@ function LocationDensityMap({
       {deleteCandidate && (
         <div className="hub-modal-overlay" onMouseDown={cancelDeleteHub}>
           <div
+            ref={deleteDialogRef}
+            tabIndex={-1}
             className="hub-modal hub-modal-danger"
-            role="dialog"
+            role="alertdialog"
             aria-modal="true"
             aria-labelledby="hub-delete-title"
             onMouseDown={(e) => e.stopPropagation()}
@@ -989,10 +1060,23 @@ function LocationDensityMap({
               <h3 id="hub-delete-title">Delete hub</h3>
             </div>
 
-            <p className="hub-modal-message">
-              Remove <strong>{deleteCandidate.name}</strong> from the map and location choices?
-            </p>
-            {!deleteCandidate.isCustom && (
+            {deleteCandidateVehicles.length > 0 ? (
+              <>
+                <p className="hub-modal-message">
+                  <strong>{deleteCandidate.name}</strong> still has {deleteCandidateVehicles.length} vehicle{deleteCandidateVehicles.length > 1 ? 's' : ''} assigned to it. Relocate or update {deleteCandidateVehicles.length > 1 ? 'those vehicles' : 'that vehicle'} to another location before this hub can be deleted.
+                </p>
+                <ul className="hub-modal-vehicle-list">
+                  {deleteCandidateVehicles.map((vehicle) => (
+                    <li key={vehicle.vehicle_id}>{vehicle.vehicle_name} · {vehicle.plate_number}</li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="hub-modal-message">
+                Remove <strong>{deleteCandidate.name}</strong> from the map and location choices?
+              </p>
+            )}
+            {!deleteCandidate.isCustom && deleteCandidateVehicles.length === 0 && (
               <p className="hub-modal-coords">
 Built-in hubs are hidden for every user and can be restored later.
               </p>
@@ -1000,11 +1084,13 @@ Built-in hubs are hidden for every user and can be restored later.
 
             <div className="hub-modal-actions">
               <button type="button" className="hub-modal-btn hub-modal-cancel" onClick={cancelDeleteHub}>
-                Cancel
+                {deleteCandidateVehicles.length > 0 ? 'Close' : 'Cancel'}
               </button>
-              <button type="button" className="hub-modal-btn hub-modal-delete" onClick={confirmDeleteHub}>
-                Delete Hub
-              </button>
+              {deleteCandidateVehicles.length === 0 && (
+                <button type="button" className="hub-modal-btn hub-modal-delete" onClick={confirmDeleteHub}>
+                  Delete Hub
+                </button>
+              )}
             </div>
           </div>
         </div>

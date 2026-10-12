@@ -1,0 +1,32 @@
+/* Split from App.css (lines 4169-4200). Order matters: see App.css. */
+/* RESPONSIVE */
+/* Below this width there's no room for the full-label sidebar beside page
+   content, so it's forced into the same icon-only rail used for the
+   manual desktop-collapsed state — narrow enough that content always has
+   room, without the "stack the whole nav list above the page" bug a
+   `position: static` sidebar used to cause here. */
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 76px 1fr; }
+  .sidebar .module-nav-section { display: none; }
+  .sidebar .module-nav-group + .module-nav-group { margin-top: 8px; }
+  .sidebar .sidebar-brand { justify-content: center; padding: 8px 0 24px; }
+  .sidebar .eyebrow,
+  .sidebar .module-nav button span,
+  .sidebar .module-nav-badge,
+  .sidebar .profile-info,
+  .sidebar .profile-arrow-icon {
+    display: none;
+  }
+  .sidebar .module-nav button { justify-content: center; padding: 10px; }
+  .sidebar .profile-card { justify-content: center; }
+  .content-area > *:not(.topbar) { padding: 20px 18px; }
+  .module-grid { grid-template-columns: 1fr !important; }
+  .form-panel { position: static; }
+  .value-list { grid-column: span 12; }
+}
+@media (max-width: 768px) {
+  .topbar { padding: 14px 18px; }
+  .topbar-search { width: 140px; }
+  .metric-grid { grid-template-columns: 1fr 1fr; }
+  .auth-card { padding: 32px 24px; }
+}

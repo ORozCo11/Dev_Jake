@@ -1,46 +1,20 @@
 import { Link } from 'react-router-dom';
-import Icon from './Icon';
 
-// Footer for the authenticated app shell (Workspace, Super Admin) — its own
-// "Visit Support Center" / "Contact Us" buttons live here since a logged-in
-// user is the more likely audience for those. Public pages (Login, About,
-// Support, etc.) use the separate, lighter AuthFooter instead.
+// Footer for the authenticated app shell (Workspace, Super Admin). Kept
+// deliberately quiet: one thin row of copyright + legal links under the
+// content column, so it never competes with the operational screens above.
+// Help & Support / Contact Us live in the account (profile) menu instead.
+// Public pages (Login, About, Support, etc.) use AuthFooter.
 export default function WorkspaceFooter() {
   return (
     <footer className="workspace-footer">
-      <div className="workspace-footer-brand">
-        <div className="workspace-footer-wordmark">
-          <Icon name="gear" size={36} className="workspace-footer-gear-icon" filled />
-          <span className="vms-wordmark vms-wordmark-md workspace-footer-vms-text">vms</span>
-        </div>
-        <p className="workspace-footer-tagline">A Smarter Way to Manage Your Barangay's Fleet.</p>
-        <div className="workspace-footer-social">
-          <a href="#" aria-label="Facebook"><Icon name="facebook" size={15} filled /></a>
-          <a href="#" aria-label="Instagram"><Icon name="instagram" size={15} filled /></a>
-          <a href="#" aria-label="X"><Icon name="twitterX" size={15} filled /></a>
-          <a href="#" aria-label="LinkedIn"><Icon name="linkedin" size={15} filled /></a>
-        </div>
-      </div>
-      <div className="workspace-footer-actions">
-        <div className="workspace-footer-action-icon" aria-hidden="true">
-          <Icon name="clipboard" size={22} />
-        </div>
-        <div className="workspace-footer-buttons">
-          <Link to="/support" className="workspace-footer-btn workspace-footer-btn-light">
-            <Icon name="clipboard" size={13} /> Visit Support Center
-          </Link>
-          <Link to="/support#contact" className="workspace-footer-btn workspace-footer-btn-dark">
-            <Icon name="alert" size={13} /> Contact Us
-          </Link>
-        </div>
-        <p className="workspace-footer-copyright">
-          © {new Date().getFullYear()} Barangay Vehicle Management System. All rights reserved.
-        </p>
-        <div className="workspace-footer-links">
-          <Link to="/privacy">Privacy Policy</Link>
-          <Link to="/terms">Terms of Service</Link>
-        </div>
-      </div>
+      <p className="workspace-footer-copyright">
+        © {new Date().getFullYear()} Barangay Vehicle Management System. All rights reserved.
+      </p>
+      <nav className="workspace-footer-links" aria-label="Legal">
+        <Link to="/privacy">Privacy Policy</Link>
+        <Link to="/terms">Terms of Service</Link>
+      </nav>
     </footer>
   );
 }

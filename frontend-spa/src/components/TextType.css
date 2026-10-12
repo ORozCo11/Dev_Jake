@@ -7,6 +7,16 @@
   margin-left: 0.25rem;
   display: inline-block;
   opacity: 1;
+  animation: text-type-cursor-blink 1s ease-in-out infinite;
+}
+
+@keyframes text-type-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-type__cursor { animation: none; }
 }
 
 .text-type__cursor--hidden {

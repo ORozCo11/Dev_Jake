@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             FleetReferenceSeeder::class,
             MockDataSeeder::class,
+            DemoActivitySeeder::class,
         ]);
     }
 }

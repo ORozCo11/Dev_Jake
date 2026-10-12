@@ -111,8 +111,8 @@ The system has **three roles**. Each account has a **primary role** plus an opti
 
 | Role | Responsibility |
 |---|---|
-| **Admin** | Owns the fleet: registers vehicles, creates & closes tickets, assigns/reassigns mechanics, confirms repairs, manages users, decommissions vehicles, reads all analytics. |
-| **Custodian** | The field inspector: reports issues, performs physical inspections, populates the repair checklist (sub-issues), and verifies completed repairs before they reach the Admin. |
+| **Admin** | Manages, assigns, and closes: reviews and approves/declines tickets a Custodian proposes, assigns/reassigns mechanics, gives final confirmation, closes tickets, registers vehicles, manages users, decommissions vehicles, reads all analytics. Admin does **not** create a ticket directly. |
+| **Custodian** | Reports issues, is the **only** role that creates a Maintenance Ticket (by proposing one for Admin's approval), registers vehicles when delegated to, and verifies a mechanic's completed repair. |
 | **Maintenance Personnel** (Mechanic) | Executes the actual repairs, logs work performed & parts used, and submits work orders for verification. |
 
 Permission checks use role membership (not just the primary role), so multi-role users are correctly allowed to act under any hat they hold.
@@ -122,44 +122,49 @@ Permission checks use role membership (not just the primary role), so multi-role
 ## Modules by Role
 
 **Admin**
-- Dashboard · Issue Reports · Maintenance Tickets · Ticket Archives
-- Vehicle Management · Vehicle Types · Vehicle Location · Vehicle History
+- Dashboard · Issue Reports · Maintenance Tickets (Archives live inside this module now, not a separate row)
+- Vehicle Management · Vehicle Types · Vehicle Location · Vehicle Documents
 - Condition Monitoring · Maintenance Schedule · Maintenance Records
-- Users · Reports · Logs
+- Users · Reports · Activity Log
 
 **Custodian**
-- Dashboard · View Vehicles
-- Report Vehicle Issue · Assigned Inspections · Repair Verifications
-- Condition Monitoring · Maintenance Status
+- Dashboard
+- Vehicles: View Vehicles · Vehicle Documents · Vehicle History
+- Vehicle Operations: Report Vehicle Issue · My Tasks (Assigned Inspections / Repair Verification / Work Tracker, tabbed) · Condition Monitoring
+- Maintenance: Maintenance Schedule · Maintenance Records
 
 **Maintenance Personnel**
-- Dashboard · My Work Orders · View Vehicle Issues
-- Maintenance Schedule · Maintenance History · Maintenance Records
+- Dashboard
+- Maintenance: My Work Orders · Work Tracker · Maintenance Records · Maintenance Schedule
+- Issues: Vehicle Issues (their own reports, with a Report Technical Issue action inline)
+- Vehicles: View Vehicles (no Vehicle Documents access — repair evidence lives on the work order itself)
 
 ---
 
 ## The Maintenance Ticket Workflow
 
-The core of the system is a **5-phase ticket workflow** built on a **Main Issue → Sub-Issue** model. A ticket (the "Main Issue") represents a problem on a vehicle; the individual root causes found during inspection become **sub-issues**, each with its own repair lifecycle.
+**Only a Custodian creates a Maintenance Ticket.** There is no Admin "create ticket" path — `ticket.create` is a permanently empty permission grant (nobody holds it, by design); the only reachable way a ticket comes into existence is a Custodian's proposal, which an Admin reviews and approves or declines. The ticket (the "Main Issue") represents a problem on a vehicle; the Custodian's proposal already states the sub-issues (root causes) and how each will be repaired.
 
 ### Ticket states
-`Open → Active → Closed` (plus `Cancelled`)
+`Pending Approval → Active → Closed` (plus `Cancelled`; `Open` only exists as a historical/legacy status, no longer reachable)
 
 ### Sub-issue states
 `Open → Under Repair → For Inspection → For Confirmation → Done` (plus `Deferred`)
 
-### The five phases
+### The workflow
 
-1. **Phase 1 — Create (Admin).** Admin opens a ticket for a vehicle and assigns it to a Custodian. If the vehicle was already fixed for this same problem recently, the ticket is flagged as **recurring** (Nth time).
+1. **Report (Custodian or Maintenance Personnel).** Either can file an Issue Report. A Maintenance Personnel account's report notifies the barangay's Custodians, since they still can't create the ticket themselves.
 
-2. **Phase 2 — Inspect (Custodian).** The Custodian physically inspects the vehicle and records findings, turning the Main Issue into a list of concrete **sub-issues** (each with a maintenance category).
+2. **Propose (Custodian).** The Custodian proposes a ticket — optionally linked to an Issue Report, carrying its vehicle/type/description/severity forward automatically — entering **Pending Approval**. If the vehicle was already fixed for this same problem recently, the proposal is flagged as **recurring** (Nth time).
 
-3. **Phase 3 — Dispatch & Repair (Admin → Mechanic).** Admin dispatches each sub-issue as a work order to a Maintenance Personnel. The mechanic logs repairs and parts used, then submits it **For Inspection**.
+3. **Approve (Admin).** The Admin reviews, can edit ticket/sub-issue fields, and approves (the ticket becomes **Active**, dispatching any suggested mechanic) or declines (the proposal is removed).
+
+4. **Repair (Admin assigns → Maintenance Personnel repairs).** Admin assigns/reassigns a mechanic per sub-issue. The mechanic logs repairs and parts used, then submits it **For Inspection**.
    - **Reassign:** while a work order is *Under Repair*, the Admin can hand it to a different mechanic (with a reason) so a repair is never frozen because one person is unavailable — both mechanics are notified.
 
-4. **Phase 4 Tier 1 — Verify (Custodian).** The Custodian reviews the mechanic's work and runs a **functional test** — a domain checklist confirming the vehicle actually works (e.g. siren, lights) with an operator attestation. A failed test **bounces** the sub-issue back to the mechanic.
+5. **Verify (Custodian).** The Custodian reviews the mechanic's work and runs a **functional test** — a domain checklist confirming the vehicle actually works (e.g. siren, lights) with an operator attestation. A failed test **bounces** the sub-issue back to the mechanic. A user can never verify their own repair — enforced server-side even for a dual-role (Custodian + Maintenance Personnel) account on the same sub-issue; an Admin can step in for that specific case.
 
-5. **Phase 4 Tier 2 — Confirm (Admin) → Phase 5 Close.** Admin issues the final confirmation verdict per sub-issue. Once every sub-issue is **resolved**, the Admin closes the ticket.
+6. **Confirm (Admin) → Close (Admin).** Admin issues the final confirmation verdict per sub-issue (the same self-verification rule applies here too). Once every sub-issue is **resolved**, the Admin closes the ticket.
 
 ### Handling reality: deferral & decision-close
 - **Defer a sub-issue:** something that can't be finished now (no budget, part on back-order) can be recorded as **Deferred** with a reason — and a **follow-up Issue Report is opened automatically** so it isn't forgotten.
@@ -180,7 +185,7 @@ Closed tickets are locked in a permanent **Ticket Archive** audit log. An accide
 - Rich **vehicle profile page**: information, status & key dates, analytics, reliability, location map, documents/photos, and full maintenance record history.
 
 ### Issue Reporting
-- Custodians report vehicle issues (severity-rated); Admin can convert an issue directly into a maintenance ticket.
+- Custodian and Maintenance Personnel can both report vehicle issues (severity-rated, with photo evidence); filing one lands on that report's own page with a **Create Maintenance Ticket** action right there for the Custodian — not back on a list to search for what was just submitted.
 - Deferred sub-issues auto-generate breadcrumb issue reports.
 
 ### Maintenance Records & Schedules

@@ -1,0 +1,279 @@
+/* Split from App.css (lines 13625-13783). Order matters: see App.css. */
+/* ============================================================
+   Ticket Details redesign — `html`-prefixed so these win over the older,
+   more scattered ticket-process/ticket-section rules earlier in this
+   file instead of having to hunt down and edit every one of them.
+   ============================================================ */
+
+/* White header, larger title, muted kicker/meta (was a dark glass card). */
+html .ticket-process-hero {
+  background: #ffffff;
+  border: 1px solid #d5dbe3;
+  color: #0f172a;
+}
+html section.ticket-process-hero .ticket-detail-title {
+  color: #0f172a;
+  font-size: 1.5rem;
+}
+html .ticket-process-kicker,
+html .ticket-process-kicker > span:not(:first-child),
+html .ticket-process-hero .ticket-detail-subline,
+html .ticket-process-hero .ticket-meta-item {
+  color: #64748b;
+}
+
+/* Resolved-% ring on a white header — a light inner circle instead of the
+   dark one, so it reads as a ring on the card, not a hole punched in it. */
+html .ticket-process-meter {
+  background: conic-gradient(var(--ticket-hero-accent, #2563eb) var(--ticket-progress, 0%), #e2e8f0 0);
+}
+html .ticket-process-meter-core {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+html .ticket-process-meter-core span { color: var(--ticket-hero-accent, #2563eb); }
+html .ticket-process-meter-core strong { color: #0f172a; }
+html .ticket-process-meter-core small { color: #64748b; }
+
+/* Next Best Action — a light blue-tinted card instead of a translucent
+   glass panel competing with the header for attention. */
+html .ticket-process-next-card {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+html .ticket-process-next-label { color: #2563eb; }
+html .ticket-process-next-card > strong { color: #1d4ed8; }
+html .ticket-process-next-card > p { color: #475569; }
+html .ticket-process-close { color: #94a3b8; }
+html .ticket-process-close:hover { color: #0f172a; }
+html .ticket-process-stat-grid { border-top: 1px solid #e2e8f0; }
+html .ticket-process-stat-icon { background: #eff6ff; color: #2563eb; }
+html .ticket-process-stat-label { color: #64748b; }
+html .ticket-process-stat-value { color: #0f172a; }
+
+/* Small uppercase section headings with a light divider for clearer
+   separation between the card's title and its content. */
+html .ticket-section h4 {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  border-bottom: 1px solid #eef2f7;
+  padding-bottom: 10px;
+  margin: 0 0 12px;
+}
+html .ticket-section h4 svg { color: #2563eb; stroke: #2563eb; flex-shrink: 0; }
+
+/* Custodian Inspection card — a left accent border that mirrors the
+   inspection result, so "needs maintenance" reads as a flag at a glance
+   instead of only being legible once you reach the small badge inside. */
+html .ticket-section--flag-warn { border-left: 3px solid #f59e0b; }
+html .ticket-section--flag-ok { border-left: 3px solid #22c55e; }
+
+/* Sub-Issues heading: count pill + hover tooltip icon instead of a long
+   help sentence sitting under the heading. */
+html .ticket-count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: normal;
+}
+html .ticket-section-info-icon { display: inline-flex; color: #94a3b8; cursor: help; }
+html .ticket-section-info-icon:hover { color: #64748b; }
+
+/* Overview / Custodian Inspection key-value pairs — class-based instead of
+   the inline styles they used to carry. */
+html .ticket-kv-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+html .ticket-kv-row > div > span {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+
+/* Ticket Timeline — same, now class-based and a touch lighter than the
+   inline version it replaces. */
+html .ticket-timeline { display: flex; flex-direction: column; }
+html .ticket-timeline-item { display: flex; gap: 10px; }
+html .ticket-timeline-marker { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+html .ticket-timeline-dot {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #f1f5f9; color: #64748b;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+html .ticket-timeline-line { width: 2px; flex: 1; min-height: 18px; background: #eef1f5; margin-top: 2px; }
+html .ticket-timeline-content { padding-bottom: 16px; }
+html .ticket-timeline-item:last-child .ticket-timeline-content { padding-bottom: 2px; }
+html .ticket-timeline-content p { margin: 0 0 3px; font-size: 0.82rem; font-weight: 600; color: #334155; }
+html .ticket-timeline-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: 0.76rem; color: #64748b; }
+
+@media (max-width: 860px) {
+  html .ticket-process-hero { grid-template-columns: 1fr; }
+}
+
+/* Page background behind the Ticket Details cards. */
+html .content-area:has(.ticket-detail-panel) { background: #f4f6f9; }
+
+/* Sub-issue cards — same grey border as the rest of the page, a lighter
+   shadow, white background. */
+html .subissue-card {
+  border: 1px solid #d5dbe3;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+html .subissue-card-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+
+/* Numbered index badge + title in the sub-issue card head — pulled out of
+   inline styles so the sizing/weight stays consistent everywhere this
+   pattern repeats. */
+html .subissue-index {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: #eff6ff; color: #2563eb;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 700; flex-shrink: 0;
+}
+html .subissue-title { font-size: 0.9rem; }
+html .subissue-card-head-actions { margin-left: auto; display: inline-flex; gap: 4px; }
+
+/* Body stack — every direct child (meta strip, repair logs, parts used,
+   banners, forms) gets consistent spacing from this one gap instead of each
+   block carrying its own one-off margin-top. */
+html .subissue-body-main { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+/* Compact meta strip — mechanic avatar, maintenance type, donor/vendor,
+   cost and verdict badge in one scannable row. */
+html .subissue-meta-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  padding: 7px 10px; background: #f8fafc; border-radius: 8px; font-size: 0.8rem;
+}
+html .subissue-meta-chip { display: inline-flex; align-items: center; gap: 4px; color: #475569; }
+html .subissue-meta-cost { color: #16a34a; }
+
+/* Stage banner (cannibalized/logged handoffs) — color comes from inline
+   --stage-* custom properties set per status, since the palette is dynamic. */
+html .subissue-stage-banner {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px; border-radius: 999px; font-size: 0.76rem; font-weight: 600;
+  background: var(--stage-bg); color: var(--stage-text);
+  border: 1px solid color-mix(in srgb, var(--stage-color) 40%, transparent);
+}
+
+html .subissue-field-label {
+  display: block; font-size: 0.66rem; font-weight: 700; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px;
+}
+html .subissue-attachment-link {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 0.85rem;
+}
+html .subissue-functional-test {
+  padding: 8px 10px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;
+}
+html .subissue-test-chip-row { display: flex; flex-wrap: wrap; gap: 5px; }
+html .subissue-test-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.76rem; padding: 2px 8px; border-radius: 999px;
+}
+html .subissue-test-chip.is-pass { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+html .subissue-test-chip.is-fail { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+/* Reopened / Deferred notices — same amber alert treatment, now shared. */
+html .subissue-alert-banner {
+  padding: 10px 12px; background: #fef3c7; border-left: 3px solid #f59e0b;
+  border-radius: 6px; font-size: 0.82rem; color: #92400e;
+}
+html .subissue-alert-banner p { margin: 4px 0 0; }
+html .subissue-alert-banner-head { display: flex; align-items: center; gap: 8px; }
+html .subissue-alert-banner-footnote { font-style: italic; opacity: 0.85; }
+
+html .subissue-cannibal-approval-actions { display: flex; gap: 8px; }
+
+/* Compact variant of .ticket-inline-form for use nested inside a sub-issue
+   card — no border-top/full-bleed padding, since it's already inside a
+   bordered card rather than spanning the page. */
+html .ticket-inline-form.subissue-inline-form {
+  padding: 10px 12px;
+  border-top: 0;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+/* Reassign/Defer per-sub-issue icon buttons — quiet by default (white,
+   1px grey border), colored only on hover; sit below the meta strip. */
+html .subissue-icon-row { display: flex; gap: 6px; margin-top: 8px; }
+html .icon-btn.subissue-icon-btn {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: #ffffff; border: 1px solid #e2e8f0; color: #94a3b8;
+}
+html .icon-btn.subissue-icon-btn svg { width: 14px; height: 14px; }
+html .icon-btn.subissue-icon-btn.is-reassign:hover { color: #2563eb; border-color: #2563eb; background: #eff6ff; }
+html .icon-btn.subissue-icon-btn.is-defer:hover { color: #a55a05; border-color: #d97706; background: #fffbeb; }
+
+/* Inline Reassign/Defer form (replaces the old modals) — a two-column grid
+   that only appears once a panel is open, stacking below 1100px. */
+html .subissue-body-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 8px; }
+html .subissue-body-grid:has(.subissue-inline-panel) { grid-template-columns: 1fr 1fr; align-items: start; }
+html .subissue-body-main { min-width: 0; }
+html .subissue-inline-panel {
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+@media (max-width: 1100px) {
+  html .subissue-body-grid:has(.subissue-inline-panel) { grid-template-columns: 1fr; }
+}
+
+/* Footer actions: destructive/rare on the left, forward action on the right. */
+.ticket-detail-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.ticket-detail-footer-secondary,
+.ticket-detail-footer-primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ticket-detail-footer-primary {
+  margin-left: auto;
+}
+.text-danger-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--status-danger-fg);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+.text-danger-button:hover {
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-bg);
+}

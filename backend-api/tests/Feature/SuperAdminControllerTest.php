@@ -96,4 +96,74 @@ class SuperAdminControllerTest extends TestCase
 
         $this->assertDatabaseMissing('concern_reports', ['id' => $report->id]);
     }
+
+    #[Test]
+    public function pending_approvals_lists_only_accounts_never_approved(): void
+    {
+        $superAdmin = User::factory()->create(['role' => 'Super Admin', 'roles' => ['Super Admin']]);
+        $pending = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin'], 'approved_at' => null]);
+        $approved = User::factory()->create(['role' => 'Custodian', 'roles' => ['Custodian'], 'approved_at' => now()]);
+
+        Sanctum::actingAs($superAdmin, ['*']);
+        $response = $this->getJson('/api/superadmin/pending-approvals')->assertOk();
+
+        $ids = collect($response->json())->pluck('id');
+        $this->assertTrue($ids->contains($pending->id));
+        $this->assertFalse($ids->contains($approved->id));
+    }
+
+    #[Test]
+    public function rejecting_a_never_approved_registration_deletes_the_account(): void
+    {
+        $superAdmin = User::factory()->create(['role' => 'Super Admin', 'roles' => ['Super Admin']]);
+        $pending = User::factory()->create(['role' => 'Admin', 'roles' => ['Admin'], 'approved_at' => null]);
+
+        Sanctum::actingAs($superAdmin, ['*']);
+        $this->deleteJson("/api/superadmin/users/{$pending->id}/reject")->assertOk();
+
+        $this->assertDatabaseMissing('users', ['id' => $pending->id]);
+    }
+
+    #[Test]
+    public function rejecting_an_account_that_was_ever_approved_is_refused(): void
+    {
+        $superAdmin = User::factory()->create(['role' => 'Super Admin', 'roles' => ['Super Admin']]);
+        // Approved in the past, even if inactive now — reject() must only
+        // ever touch a registration nobody has reviewed yet; anything else
+        // goes through deactivateUser() instead.
+        $approved = User::factory()->create([
+            'role' => 'Custodian', 'roles' => ['Custodian'], 'is_active' => false, 'approved_at' => now()->subDay(),
+        ]);
+
+        Sanctum::actingAs($superAdmin, ['*']);
+        $this->deleteJson("/api/superadmin/users/{$approved->id}/reject")->assertStatus(422);
+
+        $this->assertDatabaseHas('users', ['id' => $approved->id]);
+    }
+
+    /**
+     * RestrictSuperAdminScope allowlists /superadmin/*, /impersonate/*, and a
+     * handful of account routes — everything else 403s so a Super Admin can
+     * never read fleet data through an ordinary endpoint (see its docblock).
+     * /notifications is a deliberate exception: it's how notifySuperAdmins()
+     * (AuthController::register()) actually reaches a Super Admin, and
+     * NotificationController scopes strictly by `user_id`, never barangay —
+     * no fleet data flows through it.
+     */
+    #[Test]
+    public function super_admin_can_read_their_own_notifications(): void
+    {
+        $superAdmin = User::factory()->create(['role' => 'Super Admin', 'roles' => ['Super Admin']]);
+        \App\Models\Notification::create([
+            'user_id' => $superAdmin->id,
+            'title' => 'New barangay Admin awaiting approval',
+            'message' => 'Test Admin registered as the first Admin for Test Barangay.',
+            'type' => 'pending_admin_approval',
+        ]);
+
+        Sanctum::actingAs($superAdmin, ['*']);
+        $response = $this->getJson('/api/notifications')->assertOk();
+
+        $this->assertCount(1, $response->json());
+    }
 }
