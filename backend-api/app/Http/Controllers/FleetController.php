@@ -185,7 +185,14 @@ class FleetController extends Controller
                         ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
                         ->count()
                     : $activeIssues,
-                'tickets' => MaintenanceTicket::whereNotIn('status', ['Closed', 'Cancelled'])->count(),
+                // Admin: what needs a look — proposals awaiting a decision plus
+                // tickets a Custodian closed in the last 14 days (so a closure
+                // shows up here without anyone telling them). Everyone else
+                // keeps the open-ticket count.
+                'tickets' => $user->hasRole('Admin')
+                    ? MaintenanceTicket::where('status', 'Pending Approval')->count()
+                        + MaintenanceTicket::where('status', 'Closed')->where('closed_at', '>=', now()->subDays(14))->count()
+                    : MaintenanceTicket::whereNotIn('status', ['Closed', 'Cancelled'])->count(),
                 'conditions' => VehicleConditionCheck::whereIn('condition_result', ['Needs Inspection', 'Needs Repair'])
                     ->whereHas('vehicle', fn ($q) => $q->whereNotIn('status', ['Inactive', 'Decommissioned']))
                     ->count(),
@@ -195,7 +202,6 @@ class FleetController extends Controller
                 'schedules' => ($user->hasRole('Maintenance Personnel') && !$user->hasRole('Admin'))
                     ? VehicleMaintenanceSchedule::where('status', 'Scheduled')
                         ->where('assigned_to', $user->id)
-                        ->whereDate('scheduled_date', '>=', now()->toDateString())
                         ->count()
                     : $upcomingMaintenance + $overdueMaintenance,
                 // Maintenance Records waiting on someone's check — the same
@@ -218,8 +224,11 @@ class FleetController extends Controller
                 'ticketVerifications' => MaintenanceTicket::where('status', 'For Verification')
                     ->where('assigned_custodian_id', $request->user()->id)
                     ->count(),
-                'ticketWorkOrders' => TicketSubIssue::where('assigned_mechanic_id', $request->user()->id)
-                    ->where('status', 'Under Repair')
+                // Work orders are counted per ticket, the same way the page's
+                // Pending card is: tickets still Active in this mechanic's
+                // hands (a two-sub-issue ticket is one work order, not two).
+                'ticketWorkOrders' => MaintenanceTicket::where('assigned_mechanic_id', $request->user()->id)
+                    ->where('status', 'Active')
                     ->count(),
                 // Admin's queue of Custodian-proposed tickets awaiting
                 // approve/decline (TicketController::proposeTicket).
