@@ -18644,13 +18644,12 @@ function CapabilityImpactCard({ items, onNavigate, basePath }) {
               <span className="risk-watch-item-sub">
                 {row.ready}/{row.total} ready · {row.criticality} · {row.primary_reason ?? 'Based on current records.'}
               </span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, alignItems: 'center' }}>
+              <div className="capability-impact-links">
                 {row.affected_vehicles.slice(0, 4).map((v) => (
-                  <span key={v.vehicle_id} style={{ display: 'inline-flex', borderRadius: 999, overflow: 'hidden', border: '1px solid #cbd5e1' }}>
+                  <span key={v.vehicle_id} className="risk-watch-chip">
                     <button
                       type="button"
-                      className="btn-view-action"
-                      style={{ fontSize: '0.74rem', padding: '3px 9px', border: 'none', borderRadius: 0 }}
+                      className="risk-watch-chip-btn"
                       onClick={() => onNavigate(`${basePath}/vehicles/${v.vehicle_id}`)}
                     >
                       {v.vehicle_name}
@@ -18658,9 +18657,8 @@ function CapabilityImpactCard({ items, onNavigate, basePath }) {
                     {v.active_ticket_id && (
                       <button
                         type="button"
-                        className="btn-view-action"
+                        className="risk-watch-chip-btn is-ticket"
                         title={`Open Ticket #${v.active_ticket_id}`}
-                        style={{ fontSize: '0.74rem', padding: '3px 9px', border: 'none', borderLeft: '1px solid #cbd5e1', borderRadius: 0, background: '#eff6ff' }}
                         onClick={() => onNavigate(`${basePath}/tickets/${v.active_ticket_id}`)}
                       >
                         Ticket

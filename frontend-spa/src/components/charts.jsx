@@ -17,7 +17,13 @@ const GRID_STROKE = 'var(--border-subtle, #1b1d22)';
 const EMPTY_SLICE_COLOR = 'var(--border-subtle, #1b1d22)';
 // Every hover tooltip: drawn above sibling overlays (e.g. a donut's centre
 // label) and never catches the pointer itself, so it can't flicker or block.
-const TOOLTIP_PROPS = { wrapperStyle: { zIndex: 20, pointerEvents: 'none' }, isAnimationActive: false };
+const TOOLTIP_PROPS = {
+  // Let a tooltip escape the SVG at chart edges. Without this, the first and
+  // last bars can crop the label exactly when a user needs to read it.
+  allowEscapeViewBox: { x: true, y: true },
+  wrapperStyle: { zIndex: 20, pointerEvents: 'none' },
+  isAnimationActive: false,
+};
 
 function ChartTooltipCard({ rows }) {
   return (

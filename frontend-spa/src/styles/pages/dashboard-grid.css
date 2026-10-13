@@ -922,6 +922,23 @@ html:not([data-theme="light"]) .action-queue-row-severity {
   outline: 2px solid #2563eb;
   outline-offset: -2px;
 }
+
+/* Capability-impact references must stay legible in both themes and wrap as
+   complete vehicle/ticket pairs rather than inheriting generic table-action
+   styling. */
+.capability-impact-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+.capability-impact-links .risk-watch-chip-btn {
+  max-width: min(100%, 240px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .risk-watch-footer-ok {
   display: flex;
   align-items: center;
@@ -1370,7 +1387,10 @@ html:not([data-theme="light"]) .action-queue-row-severity {
   container-type: inline-size;
 }
 .donut-center.is-active span {
-  font-size: min(0.72rem, 14cqw);
+  /* The previous 14cqw value becomes roughly 5px in the small dashboard
+     donut, making the hovered condition unreadable. Keep a practical floor
+     while retaining a cap for longer labels. */
+  font-size: clamp(0.62rem, 22cqw, 0.82rem);
 }
 .donut-center-dot {
   display: inline-block;
@@ -1384,6 +1404,15 @@ html:not([data-theme="light"]) .action-queue-row-severity {
   cursor: pointer;
   transition: fill-opacity 0.12s;
 }
+
+/* Recharts positions a hover card beside the pointer. Permit it to sit above
+   the chart boundary so labels such as “Needs Repair” are never clipped at
+   the left/right edge of the Custodian condition chart. */
+.column-chart,
+.donut-chart { overflow: visible; }
+.column-chart .recharts-wrapper,
+.donut-chart .recharts-wrapper { overflow: visible; }
+.recharts-tooltip-wrapper { z-index: 30 !important; }
 
 /* Maintenance Personnel dashboard: personal work first, fleet context second. */
 .mp-dashboard { display: grid; min-width: 0; gap: 18px; }
