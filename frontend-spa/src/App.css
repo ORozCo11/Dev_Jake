@@ -14034,9 +14034,11 @@ html .ticket-detail-panel.is-page .ticket-detail-actions {
 html .dashboard-grid-smart > .panel.dashboard-lean-panel { display: block !important; }
 html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-7 { grid-column: span 7; }
 html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-column: span 5; }
+html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-12 { grid-column: 1 / -1; }
 @media (max-width: 960px) {
   html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-7,
-  html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-column: 1 / -1; }
+  html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5,
+  html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-12 { grid-column: 1 / -1; }
 }
 
 
@@ -14046,6 +14048,54 @@ html .dashboard-grid-smart > .panel.dashboard-lean-panel.col-span-5 { grid-colum
 html .dashboard-lean-panel .fleet-status-compact { gap: 28px; padding: 14px 22px 22px; justify-content: center; }
 html .dashboard-lean-panel .donut-chart-small .donut-chart { width: 150px; }
 html .dashboard-lean-panel .fleet-status-legend-col { min-width: 160px; }
+
+/* Custodian dashboard: make the workflow order explicit instead of relying
+   on dense grid backfilling. The 7/5 attention row is followed by the
+   full-width operational lists and count chart, keeping long vehicle rows
+   readable without creating empty columns. */
+html .custodian-dashboard { grid-auto-flow: row; }
+html .custodian-dashboard .dashboard-lean-panel { min-width: 0; }
+html .custodian-dashboard .panel-header-bar {
+  min-height: 48px;
+  padding-block: 12px;
+}
+html .custodian-dashboard .risk-watch-col {
+  padding: 4px 14px 14px;
+}
+html .custodian-dashboard .risk-watch-item {
+  margin-bottom: 6px;
+  padding: 10px 12px;
+}
+html .custodian-dashboard .risk-watch-item:last-child { margin-bottom: 0; }
+html .custodian-dashboard .risk-watch-item-top { gap: 12px; }
+html .custodian-dashboard .risk-watch-item-title,
+html .custodian-dashboard .risk-watch-item-sub { overflow-wrap: anywhere; }
+html .custodian-dashboard .custodian-fleet-condition .fleet-status-compact {
+  min-height: 174px;
+  box-sizing: border-box;
+}
+html .custodian-dashboard .custodian-condition-chart .recharts-responsive-container {
+  min-height: 250px;
+}
+@media (max-width: 640px) {
+  html .custodian-dashboard .panel-header-bar {
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 0;
+  }
+  html .custodian-dashboard .area-chart-tag { white-space: normal; text-align: right; }
+  html .custodian-dashboard .risk-watch-col { padding-inline: 10px; }
+  html .custodian-dashboard .risk-watch-item { padding: 10px; }
+  html .custodian-dashboard .risk-watch-item-top { gap: 8px; }
+  html .custodian-dashboard .risk-watch-tag { font-size: 0.62rem; padding: 3px 6px; }
+  html .custodian-dashboard .custodian-fleet-condition .fleet-status-compact {
+    min-height: 0;
+    padding-inline: 14px;
+  }
+  html .custodian-dashboard .custodian-condition-chart .recharts-responsive-container {
+    min-height: 210px;
+  }
+}
 
 /* Two badges on one sidebar row (count + awaiting-review pill) pushed the
    second one past the sidebar edge. */

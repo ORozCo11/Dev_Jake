@@ -5238,7 +5238,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
     }
 
     return (
-      <div className="dashboard-grid dashboard-grid-smart">
+      <div className={`dashboard-grid dashboard-grid-smart${isCustodianView ? ' custodian-dashboard' : ''}`}>
         <section className={`dashboard-command-center full-span is-${opsTone}`}>
           <div className="dashboard-command-copy">
             <span className="dashboard-command-role">{greetingRole}</span>
@@ -5348,10 +5348,7 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           </section>
         )}
 
-        <CriticalityWatchCard items={criticalityWatch} onNavigate={onNavigate} basePath={basePath} />
-        <CapabilityImpactCard items={capabilityImpact} onNavigate={onNavigate} basePath={basePath} />
-
-        <section className="panel col-span-5 dashboard-lean-panel">
+        <section className="panel col-span-5 dashboard-lean-panel custodian-fleet-condition">
           <div className="panel-header-bar">
             <h3>Fleet Condition</h3>
             <span className="area-chart-tag">{goodConditionRate}% in good condition</span>
@@ -5366,10 +5363,13 @@ function Dashboard({ data, hubs = null, user, basePath, onNavigate, onGoToSchedu
           </div>
         </section>
 
+        <CriticalityWatchCard items={criticalityWatch} onNavigate={onNavigate} basePath={basePath} />
+        <CapabilityImpactCard items={capabilityImpact} onNavigate={onNavigate} basePath={basePath} />
+
         {/* Same vehicle-condition data as the donut above, as a bar graph —
             the donut reads the share (percent in good condition), this
             reads the actual counts per bucket at a glance. */}
-        <section className="panel col-span-7 dashboard-lean-panel">
+        <section className="panel col-span-12 dashboard-lean-panel custodian-condition-chart">
           <div className="panel-header-bar">
             <h3>Fleet Condition by Count</h3>
           </div>
@@ -18576,7 +18576,7 @@ function CriticalityWatchCard({ items, onNavigate, basePath }) {
   const shown = (items ?? []).slice(0, 6);
 
   return (
-    <section className="panel col-span-7 dashboard-lean-panel">
+    <section className="panel col-span-12 dashboard-lean-panel">
       <div className="panel-header-bar">
         <h3><Icon name="alert" size={16} /> Readiness &amp; Criticality Watch</h3>
         {items?.length > 0 && <span className="area-chart-tag">{items.length} not ready</span>}
@@ -18622,7 +18622,7 @@ const CAPABILITY_STATE_LABEL = { LIMITED: 'Limited', AT_RISK: 'At Risk', NO_COVE
 
 function CapabilityImpactCard({ items, onNavigate, basePath }) {
   return (
-    <section className="panel col-span-7 dashboard-lean-panel">
+    <section className="panel col-span-12 dashboard-lean-panel">
       <div className="panel-header-bar">
         <h3><Icon name="alert" size={16} /> Fleet Capability Impact</h3>
         {items?.length > 0 && <span className="area-chart-tag">{items.length} type{items.length === 1 ? '' : 's'} affected</span>}
